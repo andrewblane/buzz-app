@@ -1814,14 +1814,7 @@ export function createRelaySession(
     {
       // Admission needs a current library read; stale rows only display.
       selectable: () =>
-        agentChoices
-          .snapshot()
-          .selectable.filter(
-            (agent) =>
-              agent.managed ||
-              agentLibrary.queries.snapshot().status === "ready",
-          )
-          .map((agent) => agent.pubkey),
+        agentChoices.snapshot().admissible.map((agent) => agent.pubkey),
       archived: (pubkey) =>
         agentUnavailable(
           {
