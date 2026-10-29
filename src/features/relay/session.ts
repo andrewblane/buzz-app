@@ -1831,6 +1831,10 @@ export function createRelaySession(
           },
           pubkey,
         ),
+      refresh: async () => {
+        if (agentLibrary.queries.snapshot().status !== "ready")
+          await agentChoices.refresh();
+      },
     },
     transport?.relayAuthor,
     { read: (filters, settings) => readVerified(filters, settings, false) },
