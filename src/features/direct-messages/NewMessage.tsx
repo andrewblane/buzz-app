@@ -298,24 +298,30 @@ export function NewMessage({
       attempt.current?.abort();
     };
   }, [outbox, session.viewer, session.directMessages, scope]);
-  function validateAgents() {
-    const controlled = new Set(
-      session.agentChoices
-        .snapshot()
-        // Forward-looking: neither archived nor being deleted.
-        .selectable.filter(canMessageAgent)
-        .map((agent) => agent.pubkey),
-    );
-    if (
-      recipients.some(
+  async function validateAgents() {
+    const uncontrolled = () => {
+      const controlled = new Set(
+        session.agentChoices
+          .snapshot()
+          // Forward-looking: neither archived nor being deleted.
+          .selectable.filter(canMessageAgent)
+          .map((agent) => agent.pubkey),
+      );
+      return recipients.some(
         (person) =>
           // By key, whatever its profile says.
           agentUnavailable(session, person.pubkey) ||
           ((person.isAgent ||
             session.profiles.snapshot().get(person.pubkey)?.isAgent) &&
             !controlled.has(person.pubkey)),
-      )
-    )
+      );
+    };
+    // Agents still loading are not missing: wait for the list before refusing.
+    if (uncontrolled() && session.agentChoices.snapshot().pending) {
+      await session.agentChoices.refresh();
+      attempt.current?.signal.throwIfAborted();
+    }
+    if (uncontrolled())
       throw new Error(
         "A selected agent is no longer available. Remove it or refresh its details and try again.",
       );
@@ -366,7 +372,7 @@ export function NewMessage({
         uploaded[0]?.url,
       ).tags;
       if (current && session.directMessages.delivery(current.id) === "failed")
-        validateAgents();
+        await validateAgents();
       if (
         current &&
         (current.recipients !== key ||
@@ -380,7 +386,7 @@ export function NewMessage({
           throw new Error(
             "Retry the earlier message to confirm its delivery before editing.",
           );
-        validateAgents();
+        await validateAgents();
         await outbox?.dismiss(current.id);
         controller.signal.throwIfAborted();
         current = undefined;
@@ -388,7 +394,7 @@ export function NewMessage({
         writeView(scope, "direct-message:pending", null);
       }
       if (!current) {
-        validateAgents();
+        await validateAgents();
         onPreparing?.(recipients.map((person) => person.pubkey));
         const id =
           prepared.current?.key === key
@@ -399,7 +405,7 @@ export function NewMessage({
               );
         controller.signal.throwIfAborted();
         prepared.current = { key, id };
-        validateAgents();
+        await validateAgents();
         const messageId = session.messages.send(
           id,
           content,
