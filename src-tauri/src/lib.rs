@@ -93,6 +93,7 @@ use repositories_folder::{repositories_folder_list, repositories_folder_validate
 mod relaunch;
 mod relay;
 mod relay_admin;
+mod relay_policy;
 mod sign_out;
 mod system_clock;
 use identity::{
