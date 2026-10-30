@@ -51,7 +51,7 @@ test("grouped reaction counts fit and preview in both themes and text sizes", as
     document.documentElement.style.setProperty("--buzz-text-scale", "1"),
   );
   await group.focus();
-  const preview = page.locator('.buzz-preview-card[role="tooltip"]');
+  const preview = page.getByRole("dialog", { name: "👍 reactions" });
   await expect(preview).toBeVisible();
   await expect(preview).toHaveCSS("opacity", "1");
   await preview.screenshot({
@@ -61,20 +61,17 @@ test("grouped reaction counts fit and preview in both themes and text sizes", as
   await expect(preview).toHaveCount(0);
 });
 
-// Browser-only: real wrapping, bounded scrolling, and portal focus/dismissal.
-test("all reactor names wrap and remain reachable with pointer and keyboard", async ({
+// Browser-only: available popup height and real line clamping at enlarged text.
+test("large reaction previews keep the remainder count visible without scrolling", async ({
   page,
-}, testInfo) => {
-  for (const { count, width, height, scale, longNames } of [
-    { count: 40, width: 1440, height: 700, scale: 2, longNames: false },
-    { count: 40, width: 520, height: 400, scale: 1, longNames: false },
-    { count: 150, width: 1440, height: 950, scale: 1, longNames: true },
-    { count: 40, width: 520, height: 950, scale: 2, longNames: true },
-    { count: 40, width: 390, height: 360, scale: 2, longNames: true },
+}) => {
+  for (const { count, width, scale } of [
+    { count: 150, width: 1440, scale: 1 },
+    { count: 40, width: 520, scale: 2 },
   ]) {
-    await page.setViewportSize({ width, height });
+    await page.setViewportSize({ width, height: 950 });
     await page.goto(
-      `/tests/fixtures/emoji.html?reactions&grouped=${count}${longNames ? "&long-names" : ""}`,
+      `/tests/fixtures/emoji.html?reactions&grouped=${count}&long-names`,
     );
     await page.evaluate(
       (scale) =>
@@ -85,99 +82,30 @@ test("all reactor names wrap and remain reachable with pointer and keyboard", as
       scale,
     );
     const group = page.getByRole("button", { name: `👍: ${count} people` });
-    await group.hover();
-    const preview = page.locator(".buzz-preview-card[data-open]");
-    const people = preview.getByRole("region", {
-      name: "Everyone who reacted",
+    await group.focus();
+    const preview = page.getByRole("dialog", { name: "👍 reactions" });
+    const remainder = preview.getByText(`and ${count - 3} others`, {
+      exact: true,
     });
-    await expect(people).toBeVisible();
-    for (let index = 1; index <= count; index++)
-      await expect(people).toContainText(
-        new RegExp(`Teammate ${index}(?:\\s|,|$)`),
-      );
-    await expect(preview).not.toContainText("others");
-    // Long-name fixtures overflow; normal names fit when the popup can use the viewport.
-    await expect(preview).toHaveAttribute(
-      "role",
-      longNames ? "dialog" : "tooltip",
-    );
-    if (longNames) {
-      // The pointer must be able to leave the reaction row and enter its portal.
-      await people.hover();
-      await page.mouse.wheel(0, 400);
-      await expect
-        .poll(() => people.evaluate((el) => el.scrollTop))
-        .toBeGreaterThan(0);
-      await expect(preview).toBeVisible();
-      await group.focus();
-      await page.keyboard.press("Tab");
-      await expect(people).toBeFocused();
-      await page.keyboard.press("ControlOrMeta+End");
-      // End is the native scrollport command; no app handler substitutes for it.
-      await page.keyboard.press("End");
-      await expect
-        .poll(() =>
-          people.evaluate((el) =>
-            Math.abs(el.scrollHeight - el.clientHeight - el.scrollTop),
-          ),
-        )
-        .toBeLessThanOrEqual(1);
-    } else {
-      await expect(people).not.toHaveAttribute("tabindex", "0");
-      // A tooltip can overlap its trigger in a short viewport without taking
-      // its pointer. Otherwise unmounting it manufactures a fresh hover entry.
-      await expect
-        .poll(() =>
-          group.evaluate((button) => {
-            const box = button.getBoundingClientRect();
-            return button.contains(
-              document.elementFromPoint(
-                box.x + box.width / 2,
-                box.y + box.height / 2,
-              ),
-            );
-          }),
-        )
-        .toBe(true);
-      await group.focus();
-    }
+    await expect(remainder).toBeVisible();
+    await expect(preview).toContainText("Teammate 3");
+    await expect(preview).not.toContainText("Teammate 4 ");
     for (const theme of ["light", "dark"]) {
       await page.evaluate(
         (theme) => (document.documentElement.dataset.colorMode = theme),
         theme,
       );
-      const card = await preview.boundingBox();
-      expect(card.x).toBeGreaterThanOrEqual(0);
-      expect(card.x + card.width).toBeLessThanOrEqual(width);
-      expect(card.y).toBeGreaterThanOrEqual(0);
-      expect(card.y + card.height).toBeLessThanOrEqual(height);
       await expect
-        .poll(() => preview.evaluate((el) => el.scrollHeight - el.clientHeight))
-        .toBe(0);
-      // A wrapped name may be taller than the scrollport; its final line must
-      // remain reachable when scrolled to the end.
-      const lastName = await people
-        .locator("[data-author]")
-        .last()
-        .evaluate((element) =>
-          Array.from(element.getClientRects()).at(-1).toJSON(),
-        );
-      const list = await people.boundingBox();
-      expect(lastName.y).toBeGreaterThanOrEqual(list.y);
-      expect(lastName.y + lastName.height).toBeLessThanOrEqual(
-        list.y + list.height + 1,
+        .poll(() =>
+          preview.evaluate((card) => card.scrollHeight <= card.clientHeight),
+        )
+        .toBe(true);
+      const card = await preview.boundingBox();
+      const summary = await remainder.boundingBox();
+      expect(summary.y + summary.height).toBeLessThanOrEqual(
+        card.y + card.height,
       );
-      const label = await preview.locator("span").last().boundingBox();
-      expect(label.y + label.height).toBeLessThanOrEqual(card.y + card.height);
-      await page.screenshot({
-        path: testInfo.outputPath(
-          `all-reactors-${count}-${width}x${height}-${theme}.png`,
-        ),
-      });
     }
-    await page.keyboard.press("Escape");
-    await expect(preview).toHaveCount(0);
-    await expect(group).toBeFocused();
   }
 });
 
@@ -327,65 +255,6 @@ test("counted reaction hover leaves the count and capsule stationary", async ({
     .toBe(1.5);
   expect(await count.boundingBox()).toEqual(countBounds);
   expect(await pill.boundingBox()).toEqual(capsuleBounds);
-});
-
-// Browser-only: real intersection within the scrollport must fetch missing later names.
-test("scrolling a reaction preview loads previously uncached names", async ({
-  page,
-}) => {
-  let releaseLast;
-  const lastGate = new Promise((resolve) => {
-    releaseLast = resolve;
-  });
-  let lastRequested = false;
-  await page.route("**/fixture-reactor-profiles?*", async (route) => {
-    const names = new URL(route.request().url()).searchParams
-      .get("names")
-      .split(",");
-    if (names.includes("Teammate 150")) {
-      lastRequested = true;
-      await lastGate;
-    }
-    await route.fulfill({ body: "ok" });
-  });
-  try {
-    await page.goto(
-      "/tests/fixtures/emoji.html?reactions&grouped=150&cold-profiles",
-    );
-    await page.getByRole("button", { name: "👍: 150 people" }).focus();
-    const people = page.getByRole("region", { name: "Everyone who reacted" });
-    await expect(people).toContainText("Teammate 1");
-    const last = people.locator("[data-author]").last();
-    await expect(last).toHaveText(/, [a-f0-9]{10}$/);
-    // Wait for initial intersection delivery before asserting no offscreen read.
-    expect(
-      await last.evaluate(
-        (el) =>
-          new Promise((resolve) => {
-            const observer = new IntersectionObserver(
-              ([entry]) => {
-                observer.disconnect();
-                resolve(entry.isIntersecting);
-              },
-              { root: el.closest("section") },
-            );
-            observer.observe(el);
-          }),
-      ),
-    ).toBe(false);
-    expect(lastRequested).toBe(false);
-    await people.evaluate((el) => {
-      el.scrollTop = el.scrollHeight;
-    });
-    await expect.poll(() => lastRequested).toBe(true);
-    await expect(last).toHaveText(/, [a-f0-9]{10}$/);
-    releaseLast();
-    await expect(last).toHaveText(", Teammate 150");
-    await page.keyboard.press("Escape");
-    await expect(people).toHaveCount(0);
-  } finally {
-    releaseLast();
-  }
 });
 
 test("reaction bubbles wrap, preview, toggle, and add from the inline control", async ({
@@ -819,30 +688,9 @@ test.describe("reaction control rendering", () => {
   });
 });
 
-// Browser-only: actual overflow decides whether the portal belongs in Tab order.
-test("short reactor lists do not add a keyboard stop", async ({ page }) => {
-  await page.goto("/tests/fixtures/emoji.html?reactions&grouped=8");
-  const group = page.getByRole("button", { name: "👍: 8 people" });
-  await group.focus();
-  const preview = page.getByRole("tooltip").filter({
-    has: page.getByRole("region", { name: "Everyone who reacted" }),
-  });
-  await expect(preview).toBeVisible();
-  const people = preview.getByRole("region", { name: "Everyone who reacted" });
-  await expect(people).not.toHaveAttribute("tabindex", "0");
-  await page.keyboard.press("Tab");
-  await expect(
-    page
-      .getByTestId("reaction-row")
-      .filter({ has: group })
-      .getByRole("button", { name: "Add reaction", exact: true }),
-  ).toBeFocused();
-  await expect(preview).toHaveCount(0);
-});
-
-// Browser-only: real overflow and anchor geometry decide the Tab handoff, and
-// native Enter and Space activation is what the pill must reject.
-test("people who cannot react can read every reactor without toggling", async ({
+// Browser-only: real anchor geometry decides the Tab handoff, and native Enter
+// and Space activation is what the pill must reject.
+test("people who cannot react can list every reactor without toggling", async ({
   page,
 }) => {
   await page.goto(
@@ -852,10 +700,10 @@ test("people who cannot react can read every reactor without toggling", async ({
   const group = page.getByRole("button", { name: "👍: 150 people" });
   await expect(group).toHaveAttribute("aria-disabled", "true");
   await group.focus();
-  const people = page
-    .getByRole("dialog")
-    .getByRole("region", { name: "Everyone who reacted" });
-  await expect(people).toHaveAttribute("tabindex", "0");
+  const others = page
+    .getByRole("dialog", { name: "👍 reactions" })
+    .getByRole("button", { name: "and 147 others" });
+  await expect(others).toBeVisible();
   await group.press("Enter");
   await group.press(" ");
   // Playwright will not click an aria-disabled control unless forced.
@@ -864,7 +712,13 @@ test("people who cannot react can read every reactor without toggling", async ({
   expect(await page.evaluate(() => window.emojiFixture.operations())).toBe(0);
   await expect(group).toHaveAttribute("aria-pressed", "false");
   await group.focus();
-  await expect(people).toBeVisible();
+  await expect(others).toBeVisible();
   await page.keyboard.press("Tab");
-  await expect(people).toBeFocused();
+  await expect(others).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(
+    page
+      .getByRole("menu", { name: "Everyone who reacted with 👍" })
+      .getByRole("menuitem"),
+  ).toHaveCount(150);
 });

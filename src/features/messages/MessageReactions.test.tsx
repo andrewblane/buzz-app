@@ -8,9 +8,11 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ConversationPresentation } from "../conversation/ConversationPresentation";
 import { MessageReactionControls, MessageReactions } from "./MessageReactions";
+import { profileTarget } from "../profiles/target";
 import { PREVIEW_REST_MS } from "../../shared/design-system/ui/hoverIntent";
 import { createRelaySession } from "../relay/session";
 import {
@@ -31,7 +33,7 @@ import type {
   ReactionToolProps,
 } from "../conversation/contracts";
 import { PublishRejected } from "../relay/outbox";
-import { useSyncExternalStore } from "react";
+import { type ComponentProps, useSyncExternalStore } from "react";
 
 const viewer = keypair(),
   other = keypair(),
@@ -121,7 +123,11 @@ function harness(
     disabled = false,
     onFocusedRemoval,
     audience,
-  }: {
+    ...reactors
+  }: Pick<
+    ComponentProps<typeof MessageReactions>,
+    "agentPubkeys" | "onOpenLink" | "canOpenLink"
+  > & {
     audience?: "agents";
     disabled?: boolean;
     onFocusedRemoval?: () => void;
@@ -145,6 +151,7 @@ function harness(
             />
           </div>
           <MessageReactions
+            {...reactors}
             {...(onFocusedRemoval ? { onFocusedRemoval } : {})}
             row={audience ? { ...row, audience } : row}
             session={owner.session}
@@ -219,11 +226,13 @@ it("keeps one bubble and focus when the count crosses the former grouping thresh
   expect(group.textContent).toBe("👍9");
   expect(group.getAttribute("aria-pressed")).toBe("true");
   act(() => group.focus());
-  const preview = await screen.findByRole("tooltip");
+  const preview = await screen.findByRole("dialog", { name: "👍 reactions" });
   expect(preview.textContent).toContain("You");
-  for (const person of others)
+  for (const person of others.slice(0, 2))
     expect(preview.textContent).toContain(person.pubkey.slice(0, 10));
-  expect(preview.textContent).not.toContain("others");
+  expect(preview.textContent).toContain("and 6 others");
+  for (const person of others.slice(2))
+    expect(preview.textContent).not.toContain(person.pubkey.slice(0, 10));
   fireEvent.click(group);
   expect(pills()).toHaveLength(1);
   expect(document.activeElement).toBe(group);
@@ -235,99 +244,163 @@ it("keeps one bubble and focus when the count crosses the former grouping thresh
   });
 });
 
-it.each([3, 4, 5])("shows all %i reactors in the preview", async (count) => {
-  const people = Array.from({ length: count }, () => keypair());
-  const h = harness(people.map((person) => react(person)));
-  render(<h.Controls />);
-  act(() =>
-    screen.getByRole("button", { name: `👍: ${count} people` }).focus(),
-  );
-  const preview = await screen.findByRole("tooltip");
-  for (const person of people)
-    expect(preview.textContent).toContain(person.pubkey.slice(0, 10));
-  expect(
-    within(preview).getByRole("region", { name: "Everyone who reacted" })
-      .tabIndex,
-  ).toBe(-1);
-});
+it.each([
+  [3, null],
+  [4, "and 1 other"],
+  [5, "and 2 others"],
+] as const)(
+  "pluralizes the preview remainder for %i reactors",
+  async (count, remainder) => {
+    const people = Array.from({ length: count }, () => keypair());
+    const h = harness(people.map((person) => react(person)));
+    render(<h.Controls />);
+    act(() =>
+      screen.getByRole("button", { name: `👍: ${count} people` }).focus(),
+    );
+    // A preview with a remainder link is a named dialog; otherwise a tooltip.
+    const preview = remainder
+      ? await screen.findByRole("dialog", { name: "👍 reactions" })
+      : await screen.findByRole("tooltip");
+    if (remainder)
+      expect(
+        within(preview).getByRole("button", { name: remainder }),
+      ).toBeTruthy();
+    else expect(within(preview).queryByText(/^and /)).toBeNull();
+  },
+);
 
-it("opening a large preview preserves unrelated cached profiles", async () => {
-  const h = harness([react(other)]);
-  const unrelated = profile(other, { name: "Existing colleague" });
-  act(() =>
-    h.live.receive([
-      unrelated,
-      ...Array.from({ length: 63 }, (_, index) =>
-        profile(keypair(), { name: `Cached colleague ${index}` }),
-      ),
-    ]),
-  );
-  const people = Array.from({ length: 1025 }, () => keypair());
-  const events = new Map(
-    people.map((person, index) => [
-      person.pubkey,
-      profile(person, { name: `Reactor ${index}` }),
-    ]),
-  );
-  const row = h.session.channels.window("c").rows[0];
-  const first = people[0],
-    last = people.at(-1);
-  if (!row || !first || !last) throw new Error("Missing fixture data");
-  const completed = new Set();
-  const settleReads = async () => {
-    await flush();
-    let pending = h.wire.pending.find((entry) => !completed.has(entry));
-    while (pending) {
-      completed.add(pending);
-      pending.respond(
-        pending.filters.flatMap((filter) =>
-          filter.kinds?.includes(0)
-            ? (filter.authors ?? []).flatMap((id) =>
-                events.get(id) ? [events.get(id) as RelayEvent] : [],
-              )
-            : [],
-        ),
-      );
-      await flush();
-      pending = h.wire.pending.find((entry) => !completed.has(entry));
-    }
-  };
-  await act(settleReads);
+it("lists everyone in a grouped reaction and opens a chosen profile", async () => {
+  const named = keypair(),
+    blocked = keypair(),
+    agent = keypair();
+  const people = [
+    named,
+    blocked,
+    agent,
+    ...Array.from({ length: 7 }, () => keypair()),
+  ];
+  // My later reaction is listed first; a duplicate never lists its author twice.
+  const h = harness([
+    ...people.map((person, index) => react(person, 2 + index)),
+    react(named, 20),
+    react(viewer, 21),
+  ]);
+  const onOpenLink = vi.fn((_target: string) => true);
   render(
-    <MessageReactions
-      row={{
-        ...row,
-        reactions: [
-          {
-            content: "👍",
-            events: people.map((person, index) => ({
-              id: String(index),
-              authorId: person.pubkey,
-            })),
-          },
-        ],
-      }}
-      session={h.session}
-      scope="test"
-      disabled={false}
-      tools={tools}
-      inline={inline}
+    <h.Controls
+      agentPubkeys={new Set([agent.pubkey])}
+      onOpenLink={onOpenLink}
+      canOpenLink={(target) => target !== profileTarget(blocked.pubkey)}
     />,
   );
-  const pill = screen.getByRole("button", { name: "👍: 1025 people" });
-  fireEvent.mouseEnter(pill);
-  // Pointer transit must not start profile enrichment before opening.
-  expect(h.session.profiles.snapshot().get(first.pubkey)).toBeUndefined();
-  act(() => pill.focus());
-  const preview = await screen.findByRole("tooltip");
-  await act(settleReads);
-  expect(preview.textContent).toContain("Reactor 0");
-  expect(h.session.profiles.snapshot().get(other.pubkey)?.name).toBe(
-    "Existing colleague",
+  const group = screen.getByRole("button", { name: "👍: 11 people" });
+  fireEvent.mouseEnter(group);
+  fireEvent.mouseMove(group);
+  const preview = await screen.findByRole(
+    "dialog",
+    { name: "👍 reactions" },
+    { timeout: 2500 },
   );
-  // Names outside the first visible page remain readable as identity fallbacks.
-  expect(preview.textContent).toContain(last.pubkey.slice(0, 10));
-  expect(h.session.profiles.snapshot().has(last.pubkey)).toBe(false);
+  fireEvent.click(
+    within(preview).getByRole("button", { name: "and 8 others" }),
+  );
+  const list = await screen.findByRole("menu", {
+    name: "Everyone who reacted with 👍",
+  });
+  // The preview loads three profiles; the list loads everyone else's too.
+  // Profile reads run one at a time, so answer each as it is issued.
+  const expected = ["You", ...people.map((_, index) => `Person ${index}`)];
+  const resolved = () =>
+    expected.every(
+      (name) => within(list).queryAllByRole("menuitem", { name }).length === 1,
+    );
+  for (let read = 0; read < 10 && !resolved(); read++)
+    await act(async () => {
+      for (const entry of h.wire.pending)
+        if (entry.filters[0]?.kinds?.includes(0))
+          entry.respond(
+            people.flatMap((person, index) =>
+              entry.filters[0]?.authors?.includes(person.pubkey)
+                ? [profile(person, { name: `Person ${index}` })]
+                : [],
+            ),
+          );
+      await flush();
+    });
+  const items = within(list).getAllByRole("menuitem");
+  expect(items).toHaveLength(expected.length);
+  for (const [index, name] of expected.entries())
+    expect(within(list).getByRole("menuitem", { name })).toBe(items[index]);
+  expect(items[2]?.getAttribute("aria-disabled")).toBe("true");
+  expect(
+    items[3]
+      ?.querySelector("[data-avatar-shape]")
+      ?.getAttribute("data-avatar-shape"),
+  ).toBe("squircle");
+  const chosen = items[1];
+  if (!chosen) throw new Error("Expected a reactor row");
+  fireEvent.click(chosen);
+  expect(onOpenLink).toHaveBeenCalledWith(profileTarget(named.pubkey));
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+});
+
+it("reaches the full list by keyboard and returns to the emoji on Escape", async () => {
+  const user = userEvent.setup();
+  const h = harness(
+    Array.from({ length: 9 }, (_, index) => react(keypair(), 2 + index)),
+  );
+  const onOpenLink = vi.fn((_target: string) => true);
+  render(<h.Controls onOpenLink={onOpenLink} canOpenLink={() => true} />);
+  const group = screen.getByRole("button", { name: "👍: 9 people" });
+  act(() => group.focus());
+  const preview = await screen.findByRole("dialog", { name: "👍 reactions" });
+  await user.keyboard("{Tab}");
+  expect(document.activeElement).toBe(
+    within(preview).getByRole("button", { name: "and 6 others" }),
+  );
+  await user.keyboard("{Enter}");
+  const list = await screen.findByRole("menu", {
+    name: "Everyone who reacted with 👍",
+  });
+  expect(within(list).getAllByRole("menuitem")).toHaveLength(9);
+  await waitFor(() => expect(list.contains(document.activeElement)).toBe(true));
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(group));
+  expect(onOpenLink).not.toHaveBeenCalled();
+  expect(h.session.outbox?.snapshot()).toHaveLength(0);
+});
+
+it("closes the full list without dropping focus when the group splits", async () => {
+  const people = Array.from({ length: 4 }, () => keypair());
+  const reactions = people.map((person, index) => react(person, 2 + index));
+  const h = harness(reactions);
+  render(<h.Controls />);
+  const group = screen.getByRole("button", { name: "👍: 4 people" });
+  act(() => group.focus());
+  const preview = await screen.findByRole("dialog", { name: "👍 reactions" });
+  fireEvent.click(within(preview).getByRole("button", { name: "and 1 other" }));
+  const list = await screen.findByRole("menu");
+  await waitFor(() => expect(list.contains(document.activeElement)).toBe(true));
+  // Everyone but the last reactor leaves at once, so the group becomes one emoji.
+  act(() =>
+    h.live.receive(
+      reactions.slice(0, 3).map((removed, index) => {
+        const leaving = people[index];
+        if (!leaving) throw new Error("Expected a reactor");
+        return signed(leaving, {
+          kind: 5,
+          content: "",
+          created_at: 20,
+          tags: [["e", removed.id]],
+        });
+      }),
+    ),
+  );
+  expect(screen.queryByRole("menu")).toBeNull();
+  const individual = screen.getAllByRole("button", { name: /^👍:/ });
+  expect(individual).toHaveLength(1);
+  expect(document.activeElement).toBe(individual[0]);
 });
 
 it("keeps custom emoji URLs separate and updates a grouped count when I join", async () => {
@@ -672,7 +745,7 @@ it("uses the original animated emoji in reaction emojis and previews", async () 
 });
 
 it("loads names for people who only reacted after a preview opens", async () => {
-  const people = Array.from({ length: 5 }, () => keypair());
+  const people = Array.from({ length: 3 }, () => keypair());
   const h = harness(people.map((person) => react(person)));
   render(<h.Controls />);
   // Complete startup reads so the scheduler can admit background reactor names.
@@ -688,7 +761,7 @@ it("loads names for people who only reacted after a preview opens", async () => 
     }
   });
   const pill = screen.getByRole("button", {
-    name: "👍: 5 people",
+    name: "👍: 3 people",
   });
   fireEvent.mouseEnter(pill);
   fireEvent.mouseMove(pill);
