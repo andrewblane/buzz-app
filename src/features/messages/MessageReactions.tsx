@@ -410,6 +410,13 @@ function ReactionEmoji({
   // The emoji keeps its instance as the group shrinks; an open list must not
   // come back when the remainder does.
   if (remaining === 0 && listOpen) setListOpen(false);
+  // The list can also close without MenuRoot hearing it: the remainder
+  // empties above, or this emoji unmounts while it is open. Report every
+  // close from here so the row resets the same way each time.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: onListClose only resets row state.
+  useEffect(() => {
+    if (listOpen) return onListClose;
+  }, [listOpen]);
   const grouped = authorIds.length > 1;
   const labelProfiles = useMemo(
     () => selectProfiles(session.profiles, grouped ? [] : authorIds),
@@ -524,13 +531,7 @@ function ReactionEmoji({
         />
       </PreviewCard>
       {remaining > 0 && (
-        <MenuRoot
-          open={listOpen}
-          onOpenChange={(open) => {
-            setListOpen(open);
-            if (!open) onListClose();
-          }}
-        >
+        <MenuRoot open={listOpen} onOpenChange={setListOpen}>
           <MenuPopup
             ref={listPopup}
             anchor={emojiAnchor}
