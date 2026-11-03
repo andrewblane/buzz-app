@@ -124,7 +124,11 @@ import {
   type OwnerConsent,
 } from "./relay-removal";
 import { UnattestedProfile } from "../relay/identity-archives";
-import { communityDestination, relayOrigin } from "../communities/destination";
+import {
+  communityDestination,
+  RelayPolicyError,
+  relayOrigin,
+} from "../communities/destination";
 import type { Communities } from "../communities/service";
 import {
   prepareRemoteAgentAuthorization,
@@ -1860,6 +1864,15 @@ const originOf = (value: string) => {
     return communityDestination(value).url;
   } catch {
     return undefined;
+  }
+};
+/** Whether this build's relay policy refuses a relay URL or community ID. */
+const relayBlocked = (value: string) => {
+  try {
+    communityDestination(value);
+    return false;
+  } catch (error) {
+    return error instanceof RelayPolicyError;
   }
 };
 /** One of the viewer's kind 30177 agent records. Ones without a `runtime`
@@ -5162,6 +5175,16 @@ export class AgentsService extends Service implements Agents {
     const refresh = () =>
       this.refresh().catch((error: unknown) =>
         console.warn(`Agents list was not refreshed`, error),
+      );
+    // A blocked home never connects, so the config Delete archives there
+    // never could be: refused before anything is saved.
+    if (
+      relayBlocked(homeOf(identity)) &&
+      (!this.homeRemains(pubkey) ||
+        Object.keys(this.configBinding(identity)).length)
+    )
+      throw new Error(
+        `${identity.name} can't be deleted here: its home community's relay is not allowed by this build's relay policy.`,
       );
     // Saved first, so neither a relaunch nor another copy runs it again.
     await native.beginDelete(pubkey);
