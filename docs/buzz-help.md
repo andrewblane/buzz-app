@@ -649,6 +649,10 @@ for 30 days expires.
   and, when you are elsewhere, can open it (except a huddle). Your message and
   files are back in that conversation's composer. Do not
   promise support for every file type or size.
+- **Editing a message** keeps your unsaved changes when you switch channels,
+  close the thread or restart Buzz, and the edit reopens when you come back.
+  If it does not, choose **Edit message** on that message again. Save or Cancel
+  ends it. Unsaved edits are not listed in Drafts.
 - **Emoji suggestions** appear when you type `:` and an emoji name. If a name
   is shortened with an ellipsis, hover over it or use the arrow keys to select
   it and see the full name in a tooltip.
