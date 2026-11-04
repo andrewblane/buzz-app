@@ -71,6 +71,9 @@ const identity: FederatedIdentity = {
     }
     publish({ status: "signed-out", failure: null });
   },
+  async signInLink() {
+    return null;
+  },
   async signOut() {
     publish({ status: "signed-out", email: null, failure: null });
   },
