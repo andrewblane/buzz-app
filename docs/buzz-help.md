@@ -619,7 +619,8 @@ for 30 days expires.
   own attaches where uploads are available.
 - **Pasting rich text with pictures** from TextEdit, Notes, Pages or Mail
   inserts the text and, in the macOS app, attaches its pictures where uploads
-  are available. In browsers such as Chrome only the text pastes.
+  are available. Send waits until they attach, so the paste sends as one
+  message. In browsers such as Chrome only the text pastes.
 - In the composer, Enter sends and Shift+Enter adds a new line by default.
   **Settings → Shortcuts → Sending messages → Send with ⌘ Enter** (Ctrl+Enter
   outside Apple platforms) swaps that on this device: Enter adds a line and
