@@ -617,6 +617,9 @@ for 30 days expires.
 - **Pasting from Excel, Numbers, Word or Keynote** inserts the copied text, even
   though those apps also copy a picture of it. A picture or file copied on its
   own attaches where uploads are available.
+- **Pasting rich text with pictures** from TextEdit, Notes, Pages or Mail
+  inserts the text and, in the macOS app, attaches its pictures where uploads
+  are available. In browsers such as Chrome only the text pastes.
 - In the composer, Enter sends and Shift+Enter adds a new line by default.
   **Settings → Shortcuts → Sending messages → Send with ⌘ Enter** (Ctrl+Enter
   outside Apple platforms) swaps that on this device: Enter adds a line and
