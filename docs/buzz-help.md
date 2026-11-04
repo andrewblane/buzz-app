@@ -614,6 +614,9 @@ for 30 days expires.
 - **Long text pastes** that exceed the message limit show an error and leave
   your draft unchanged. Shorten the text, or save it as a text file and use
   **Attach files** where uploads are available.
+- **Pasting from Excel, Numbers, Word or Keynote** inserts the copied text, even
+  though those apps also copy a picture of it. A picture or file copied on its
+  own attaches where uploads are available.
 - In the composer, Enter sends and Shift+Enter adds a new line by default.
   **Settings → Shortcuts → Sending messages → Send with ⌘ Enter** (Ctrl+Enter
   outside Apple platforms) swaps that on this device: Enter adds a line and
