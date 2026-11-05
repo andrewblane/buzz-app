@@ -44,10 +44,6 @@ export function AgentResponsePreview({
       }>
     | undefined;
 }) {
-  // A flat list's group avatar is on its first row; a continuation keeps only
-  // the label, which names the row while its byline is omitted.
-  const flat = useMessageDensity() === "compact";
-  const hiddenAvatar = stackPrevious && flat;
   const root = useRef<HTMLDivElement>(null);
   // A retiring row hands a focused avatar, name or control to its neighbour.
   useActivityFocusHandoff(root);
@@ -55,6 +51,11 @@ export function AgentResponsePreview({
   // change (a group forming, a stacked row) until focus moves on.
   const [focusedAvatar, setFocusedAvatar] = useState<string>();
   const [focusedName, setFocusedName] = useState(false);
+  // A flat list's group avatar is on its first row; a continuation keeps only
+  // the label, which names the row while its byline is omitted, and no hidden
+  // profile control.
+  const flat = useMessageDensity() === "compact";
+  const hiddenAvatar = stackPrevious && flat && !focusedAvatar;
   // A focused avatar keeps its place while agents ahead of it join.
   const held = participants.findIndex((agent) => agent.id === focusedAvatar);
   const avatars: typeof participants = participants.length
@@ -85,7 +86,7 @@ export function AgentResponsePreview({
   const namedAgent = profile && opener(profile.pubkey);
   // A lone avatar opens its agent's profile; a group is one labelled image.
   const peeks = avatars.map((agent) =>
-    lone || agent.id === focusedAvatar
+    (lone && !hiddenAvatar) || agent.id === focusedAvatar
       ? participants.length
         ? opener(agent.id)
         : namedAgent

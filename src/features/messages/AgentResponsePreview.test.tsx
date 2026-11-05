@@ -73,3 +73,34 @@ it.each([
     expect(screen.getByRole("button", { name: successor })).toHaveFocus();
   },
 );
+
+it("keeps a compact continuation's hidden avatar a labelled image, not a hidden profile control", () => {
+  const { session } = fixture();
+  const root = document.documentElement;
+  root.dataset.messageDensity = "compact";
+  try {
+    render(
+      <AgentResponsePreview
+        name={first.name}
+        participants={[first]}
+        stackPrevious
+        profile={{
+          pubkey: first.id,
+          session,
+          channelId: "channel",
+          canOpen: () => true,
+          open: () => true,
+        }}
+      >
+        <button type="button">Activity</button>
+      </AgentResponsePreview>,
+    );
+    expect(
+      screen.queryByRole("button", { name: "View Agent 0 profile" }),
+    ).toBeNull();
+    const avatar = screen.getByRole("img", { name: "Agent 0" });
+    expect(avatar.parentElement).toHaveClass("sr-only");
+  } finally {
+    delete root.dataset.messageDensity;
+  }
+});
