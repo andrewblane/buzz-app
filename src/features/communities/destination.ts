@@ -76,14 +76,31 @@ const configuredAliases = parseCommunityAliases(
 export type RelayPolicy = Readonly<{
   pinned: string;
   allowlist: readonly string[];
+  /** `*.suffix` entries as suffix origins: each permits one more DNS label. */
+  wildcards: readonly string[];
 }>;
 
 export class RelayPolicyError extends Error {}
 
 /** A policy entry is `host` or `host:port`; it matches both `wss://` and `https://`. */
 function hostOrigin(entry: unknown): string {
-  if (typeof entry !== "string" || entry.includes("/")) throw new Error();
+  if (typeof entry !== "string" || /[/*]/.test(entry)) throw new Error();
   return relayOrigin(`https://${entry}`);
+}
+
+/** `*.suffix[:port]`: the suffix must have at least two labels, so `*.com` fails. */
+function wildcardOrigin(entry: string): string {
+  const origin = hostOrigin(entry.slice(2));
+  if (!new URL(origin).hostname.includes(".")) throw new Error();
+  return origin;
+}
+
+/** True when `url` is exactly one DNS label under a wildcard suffix origin. */
+function matchesWildcard(url: string, wildcard: string) {
+  const host = url.slice("https://".length);
+  const suffix = `.${wildcard.slice("https://".length)}`;
+  const label = host.slice(0, -suffix.length);
+  return host.endsWith(suffix) && label !== "" && !label.includes(".");
 }
 
 /** Deployment policy is compiled configuration, never a saved user preference. */
@@ -102,14 +119,19 @@ export function parseRelayPolicy(raw?: string): RelayPolicy | undefined {
     )
       throw new Error();
     const pinned = hostOrigin(value.pinned);
-    const allowlist = value.allowlist.map(hostOrigin);
+    const entries: unknown[] = value.allowlist;
+    const wild = (entry: unknown): entry is string =>
+      typeof entry === "string" && entry.startsWith("*.");
+    const allowlist = entries.filter((entry) => !wild(entry)).map(hostOrigin);
+    const wildcards = entries.filter(wild).map(wildcardOrigin);
     return Object.freeze({
       pinned,
       allowlist: Object.freeze([...new Set(allowlist)]),
+      wildcards: Object.freeze([...new Set(wildcards)]),
     });
   } catch {
     throw new Error(
-      "BUZZ_BUILD_RELAY_POLICY must be a JSON object with a pinned relay host and an allowlist array of relay hosts, each as host or host:port.",
+      "BUZZ_BUILD_RELAY_POLICY must be a JSON object with a pinned relay host and an allowlist array of relay hosts, each as host, host:port or *.host.",
     );
   }
 }
@@ -122,7 +144,12 @@ export function assertRelayAllowed(
   url: string,
   policy = configuredRelayPolicy,
 ) {
-  if (policy && url !== policy.pinned && !policy.allowlist.includes(url))
+  if (
+    policy &&
+    url !== policy.pinned &&
+    !policy.allowlist.includes(url) &&
+    !policy.wildcards.some((wildcard) => matchesWildcard(url, wildcard))
+  )
     throw new RelayPolicyError(
       "This relay is not allowed by this build's relay policy.",
     );

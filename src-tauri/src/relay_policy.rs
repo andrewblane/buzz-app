@@ -5,15 +5,32 @@ use crate::enterprise_relay_url::canonical_enterprise_relay_url;
 pub(crate) struct RelayPolicy {
     pinned: String,
     allowlist: Vec<String>,
+    /// `*.suffix` entries as suffix origins: each permits one more DNS label.
+    wildcards: Vec<String>,
 }
 
 /// A policy entry is `host` or `host:port`; it matches both `wss://` and `https://`.
 fn host_origin(entry: &serde_json::Value) -> Option<String> {
     let host = entry.as_str()?;
-    if host.contains('/') {
+    if host.contains(['/', '*']) {
         return None;
     }
     canonical_enterprise_relay_url(&format!("wss://{host}")).ok()
+}
+
+/// `*.suffix[:port]`: the suffix must have at least two labels, so `*.com` fails.
+fn wildcard_origin(entry: &str) -> Option<String> {
+    let origin = host_origin(&serde_json::Value::from(entry.strip_prefix("*.")?))?;
+    let host = url::Url::parse(&origin).ok()?.host_str()?.to_owned();
+    host.contains('.').then_some(origin)
+}
+
+/// True when `origin` is exactly one DNS label under a wildcard suffix origin.
+fn matches_wildcard(origin: &str, wildcard: &str) -> bool {
+    let host = &origin["wss://".len()..];
+    let suffix = format!(".{}", &wildcard["wss://".len()..]);
+    host.strip_suffix(&suffix)
+        .is_some_and(|label| !label.is_empty() && !label.contains('.'))
 }
 
 impl RelayPolicy {
@@ -26,20 +43,37 @@ impl RelayPolicy {
                 return None;
             }
             let pinned = host_origin(object.get("pinned")?)?;
-            let allowlist = object
-                .get("allowlist")?
-                .as_array()?
+            let entries = object.get("allowlist")?.as_array()?;
+            let wild =
+                |entry: &serde_json::Value| entry.as_str().is_some_and(|e| e.starts_with("*."));
+            let allowlist = entries
                 .iter()
+                .filter(|entry| !wild(entry))
                 .map(host_origin)
                 .collect::<Option<Vec<_>>>()?;
-            Some(Self { pinned, allowlist })
+            let wildcards = entries
+                .iter()
+                .filter(|entry| wild(entry))
+                .map(|entry| wildcard_origin(entry.as_str()?))
+                .collect::<Option<Vec<_>>>()?;
+            Some(Self {
+                pinned,
+                allowlist,
+                wildcards,
+            })
         };
-        parse().map(Some).ok_or_else(|| "BUZZ_BUILD_RELAY_POLICY must be a JSON object with a pinned relay host and an allowlist array of relay hosts, each as host or host:port.".into())
+        parse().map(Some).ok_or_else(|| "BUZZ_BUILD_RELAY_POLICY must be a JSON object with a pinned relay host and an allowlist array of relay hosts, each as host, host:port or *.host.".into())
     }
 
     pub(crate) fn check(&self, value: &str) -> Result<(), String> {
         let origin = canonical_enterprise_relay_url(value)?;
-        if origin == self.pinned || self.allowlist.contains(&origin) {
+        if origin == self.pinned
+            || self.allowlist.contains(&origin)
+            || self
+                .wildcards
+                .iter()
+                .any(|wildcard| matches_wildcard(&origin, wildcard))
+        {
             Ok(())
         } else {
             Err("This relay is not allowed by this build's relay policy.".into())
@@ -90,6 +124,10 @@ mod tests {
             r#"{"pinned":"relay.example","allowlist":[42]}"#,
             r#"{"pinned":"wss://relay.example","allowlist":[]}"#,
             r#"{"pinned":"relay.example","allowlist":["other.example/path"]}"#,
+            r#"{"pinned":"*.relay.example","allowlist":[]}"#,
+            r#"{"pinned":"relay.example","allowlist":["*.example"]}"#,
+            r#"{"pinned":"relay.example","allowlist":["a.*.example"]}"#,
+            r#"{"pinned":"relay.example","allowlist":["*.*.relay.example"]}"#,
         ] {
             assert!(RelayPolicy::parse(Some(raw)).is_err(), "{raw}");
         }
@@ -123,5 +161,31 @@ mod tests {
             .removable("https://relay.example")
             .unwrap_err()
             .contains("pinned relay"));
+    }
+
+    #[test]
+    fn matches_wildcard_entries_for_exactly_one_label_on_their_port() {
+        let policy = RelayPolicy::parse(Some(
+            r#"{"pinned":"relay.example","allowlist":["*.communities.example","*.staging.example:8443"]}"#,
+        ))
+        .unwrap()
+        .unwrap();
+        for allowed in [
+            "wss://a.communities.example",
+            "https://B.Communities.Example:443/",
+            "wss://c.staging.example:8443",
+        ] {
+            assert!(policy.check(allowed).is_ok(), "{allowed}");
+        }
+        for blocked in [
+            "wss://communities.example",
+            "wss://a.b.communities.example",
+            "wss://a.communities.example:8443",
+            "wss://acommunities.example",
+            "wss://a.communities.example.evil",
+            "wss://c.staging.example",
+        ] {
+            assert!(policy.check(blocked).is_err(), "{blocked}");
+        }
     }
 }

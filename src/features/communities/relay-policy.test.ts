@@ -27,6 +27,10 @@ it.each([
   '{"pinned":"relay.example","allowlist":[42]}',
   '{"pinned":"wss://relay.example","allowlist":[]}',
   '{"pinned":"relay.example","allowlist":["other.example/path"]}',
+  '{"pinned":"*.relay.example","allowlist":[]}',
+  '{"pinned":"relay.example","allowlist":["*.example"]}',
+  '{"pinned":"relay.example","allowlist":["a.*.example"]}',
+  '{"pinned":"relay.example","allowlist":["*.*.relay.example"]}',
 ])("fails closed for malformed policy %j", (value) => {
   expect(() => parseRelayPolicy(value)).toThrow("BUZZ_BUILD_RELAY_POLICY");
 });
@@ -46,6 +50,32 @@ it("matches policy hosts on either scheme and only on their port", () => {
     "wss://relay.example.evil",
   ])
     expect(() => communityDestination(blocked, {}, policy)).toThrow(
+      /not allowed/,
+    );
+});
+
+it("matches a wildcard entry for exactly one label on its port", () => {
+  const wildcard = parseRelayPolicy(
+    JSON.stringify({
+      pinned: "relay.example",
+      allowlist: ["*.communities.example", "*.staging.example:8443"],
+    }),
+  );
+  for (const allowed of [
+    "wss://a.communities.example",
+    "https://B.Communities.Example:443/",
+    "wss://c.staging.example:8443",
+  ])
+    expect(() => communityDestination(allowed, {}, wildcard)).not.toThrow();
+  for (const blocked of [
+    "wss://communities.example",
+    "wss://a.b.communities.example",
+    "wss://a.communities.example:8443",
+    "wss://acommunities.example",
+    "wss://a.communities.example.evil",
+    "wss://c.staging.example",
+  ])
+    expect(() => communityDestination(blocked, {}, wildcard)).toThrow(
       /not allowed/,
     );
 });

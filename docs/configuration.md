@@ -93,7 +93,11 @@ or fragment. An entry permits that host over both `wss://` and `https://`. A bar
 host means port 443; `host:port` permits only that port. Host case and a final
 DNS dot normalize away. IDNs use their ASCII form and IPv6 literals use brackets,
 such as `[2001:db8::1]:8443`. Subdomains, suffixes and different ports are
-separate relays; there are no wildcards. Aliases resolve to an origin before
+separate relays. An allowlist entry `*.suffix` or `*.suffix:port` permits any
+host exactly one DNS label under `suffix`, on that port, such as
+`*.communities.example.com` for `a.communities.example.com`. It does not permit
+`suffix` itself or deeper subdomains. The suffix needs at least two labels, and
+the pin cannot be a wildcard. Aliases resolve to an origin before
 policy checking.
 
 After identity restoration the pin is present in the saved community inventory.
