@@ -156,6 +156,7 @@ export function ChannelNavigationProvider({
     session: RelaySession;
     title: string;
     message: string;
+    refresh: boolean;
   }>();
   const activityThread = useRef<ActivityThread | undefined>(undefined);
   const activityAgent = useRef<ActivityAgent | undefined>(undefined);
@@ -391,8 +392,13 @@ export function ChannelNavigationProvider({
               )?.completed();
               value.closeLifecycle();
             }}
-            failed={(title, message) => {
-              setFailure({ session: connection.session, title, message });
+            failed={(title, message, refresh) => {
+              setFailure({
+                session: connection.session,
+                title,
+                message,
+                refresh,
+              });
               value.closeLifecycle();
             }}
           />
@@ -402,7 +408,23 @@ export function ChannelNavigationProvider({
           title={failure.title}
           description={failure.message}
           onDismiss={() => setFailure(undefined)}
-        />
+        >
+          {failure.refresh && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                // Read the writer, not a replica that may predate the change.
+                connection.session.channels.refreshList?.({
+                  consistency: "strong",
+                });
+                setFailure(undefined);
+              }}
+            >
+              Refresh channels
+            </Button>
+          )}
+        </ToastNotice>
       )}
     </ChannelNavigationContext>
   );
