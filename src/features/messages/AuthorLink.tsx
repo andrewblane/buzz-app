@@ -6,10 +6,12 @@ import styles from "./Messages.module.css";
  * button, so a selection can start on it and a copy keeps it as plain prose
  * (no profile target). */
 export function AuthorLink({
+  pubkey,
   onOpen,
   onFocusChange,
   children,
 }: {
+  pubkey: string;
   onOpen(): void;
   onFocusChange?(focused: boolean): void;
   children: ReactNode;
@@ -20,6 +22,7 @@ export function AuthorLink({
       role="button"
       tabIndex={-1}
       data-message-author=""
+      data-profile-pubkey={pubkey}
       className={styles.authorLink}
       onFocus={() => onFocusChange?.(true)}
       onBlur={(event) => {

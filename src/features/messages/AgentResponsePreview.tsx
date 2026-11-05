@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Avatar } from "../../shared/design-system/ui/Avatar";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { RobotIcon } from "../../shared/design-system/icons";
@@ -55,9 +55,26 @@ export function AgentResponsePreview({
   // change (a group forming, a stacked row) until focus moves on.
   const [focusedAvatar, setFocusedAvatar] = useState<string>();
   const [focusedName, setFocusedName] = useState(false);
+  // A focused avatar keeps its place while agents ahead of it join.
+  const held = participants.findIndex((agent) => agent.id === focusedAvatar);
   const avatars: typeof participants = participants.length
-    ? participants.slice(0, 3)
+    ? participants.filter(
+        (_, index) => index < (held > 2 ? 2 : 3) || index === held,
+      )
     : [{ id: "primary", name, picture }];
+  const departed =
+    !!focusedAvatar && !avatars.some((agent) => agent.id === focusedAvatar);
+  // When its agent stops, the row's first control (the remaining agent's
+  // avatar, or the bubble's) takes focus.
+  useLayoutEffect(() => {
+    if (!departed) return;
+    setFocusedAvatar(undefined);
+    const row = root.current;
+    if (row && row.ownerDocument.activeElement === row.ownerDocument.body)
+      row
+        .querySelector<HTMLElement>("button:not([disabled])")
+        ?.focus({ preventScroll: true });
+  }, [departed]);
   const lone = avatars.length === 1;
   const opener = (pubkey: string) => {
     const target = profileTarget(pubkey, { agent: true });
@@ -161,6 +178,7 @@ export function AgentResponsePreview({
                 <strong className={styles.author}>
                   {link ? (
                     <AuthorLink
+                      pubkey={link.pubkey}
                       onOpen={() => link.open(link.target)}
                       onFocusChange={setFocusedName}
                     >
