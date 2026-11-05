@@ -34,6 +34,7 @@ import {
 import { TypingIndicator } from "../../features/messages/TypingIndicator";
 import {
   claimProfileTranscript,
+  profileTarget,
   profileTranscriptRequest,
 } from "../../features/profiles/target";
 import { createAgentActivity } from "../../features/agents/activity";
@@ -202,6 +203,27 @@ it("shows one bubble with one avatar per agent across multiple turns, removing o
     expect(
       screen.queryByLabelText("Agent activity on this message"),
     ).not.toBeInTheDocument();
+  } finally {
+    view.unmount();
+    f.dispose();
+  }
+});
+it("opens the working agent's profile from its avatar and name through the message's opener", () => {
+  const f = fixture();
+  const view = render(<ActivityAccessory {...f.props} />);
+  try {
+    f.send(B, "b1", 1, "turn_started", { triggeringEventIds: [root] });
+    const region = screen.getByRole("region", {
+      name: "Agent activity on this message",
+    });
+    const target = profileTarget(B, { agent: true });
+    fireEvent.click(
+      within(region).getByRole("button", { name: "View Bubbles profile" }),
+    );
+    expect(f.props.open).toHaveBeenCalledExactlyOnceWith(target);
+    fireEvent.click(within(region).getByRole("button", { name: "Bubbles" }));
+    expect(f.props.open).toHaveBeenCalledTimes(2);
+    expect(f.props.open).toHaveBeenLastCalledWith(target);
   } finally {
     view.unmount();
     f.dispose();
@@ -805,7 +827,9 @@ it.each([false, true])(
           .focus(),
       );
       f.send(B, "other", 2, "turn_completed");
-      expect(screen.getByTitle("Blossom")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "View Blossom profile" }),
+      ).toBeInTheDocument();
       f.send(A, "here", 2, "turn_completed");
       await act(async () => vi.runAllTicks());
       expect(onFocusedRemoval).toHaveBeenCalledOnce();

@@ -14,6 +14,7 @@ import { Profiler } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   profileActivityViewTarget,
+  profileTarget,
   claimProfileTranscript,
   profileTranscriptRequest,
 } from "../profiles/target";
@@ -61,7 +62,9 @@ it("shows an incoming typing preview without invented details, retaining navigat
   const trigger = screen.getByRole("button", {
     name: "Activity: Agent working",
   });
-  expect(screen.getByRole("img", { name: "Agent" })).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "View Agent profile" }),
+  ).toBeVisible();
   expect(trigger.querySelector('[data-state="working"]')).not.toBeNull();
   expect(trigger).not.toHaveTextContent("Working");
   await user.hover(trigger);
@@ -922,6 +925,71 @@ it("keeps a compact in-flow continuation's avatar as its name only, not a second
   } finally {
     delete root.dataset.messageDensity;
   }
+});
+
+it.each([undefined, root])(
+  "opens the working agent's profile from its avatar and name, like a message author's: %s",
+  (threadRootId) => {
+    const f = fixture(),
+      open = vi.fn(() => true);
+    f.update([entry()]);
+    render(
+      <TypingIndicator
+        session={f.session}
+        channelId="channel"
+        threadRootId={threadRootId}
+        openActivity={open}
+        canOpenActivity={() => true}
+      />,
+    );
+    const target = profileTarget(agent, { agent: true });
+    // A thread's row opens beside its thread, as a reply author's does.
+    const origin = threadRootId ? { rootId: threadRootId } : undefined;
+    fireEvent.click(screen.getByRole("button", { name: "View Agent profile" }));
+    expect(open).toHaveBeenCalledExactlyOnceWith(target, origin);
+    // The avatar stays the row's tab stop; the name only answers a click.
+    const name = screen.getByRole("button", { name: "Agent" });
+    expect(name).toHaveAttribute("tabindex", "-1");
+    fireEvent.click(name);
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(open).toHaveBeenLastCalledWith(target, origin);
+  },
+);
+
+it("keeps the working row's identity plain where its profile cannot open, and a group's avatars one image", () => {
+  const f = fixture(),
+    open = vi.fn(() => true);
+  f.update([entry()]);
+  const props = { session: f.session, channelId: "channel" };
+  const view = render(<TypingIndicator {...props} />);
+  expect(screen.getByRole("img", { name: "Agent" })).toBeVisible();
+  expect(screen.getByText("Agent").closest('[role="button"]')).toBeNull();
+  view.rerender(
+    <TypingIndicator
+      {...props}
+      openActivity={open}
+      canOpenActivity={(target) =>
+        target !== profileTarget(agent, { agent: true })
+      }
+    />,
+  );
+  expect(screen.getByRole("img", { name: "Agent" })).toBeVisible();
+  expect(screen.getByText("Agent").closest('[role="button"]')).toBeNull();
+  f.update([entry(), entry(other)]);
+  view.rerender(
+    <TypingIndicator
+      {...props}
+      openActivity={open}
+      canOpenActivity={() => true}
+    />,
+  );
+  expect(screen.getByRole("img", { name: "Agent, Other" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: /profile$/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Agent" }));
+  expect(open).toHaveBeenCalledExactlyOnceWith(
+    profileTarget(agent, { agent: true }),
+    undefined,
+  );
 });
 
 it("uses the agent typing bubble for a public agent outside the viewer’s choices", async () => {
