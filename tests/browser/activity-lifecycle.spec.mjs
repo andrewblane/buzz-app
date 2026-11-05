@@ -126,6 +126,32 @@ for (const inThread of [false, true]) {
           .evaluate((el) => el.getBoundingClientRect().height),
       ).toBe(tailHeight);
     }
+    // Real pointer hit-testing and the host's profile route: the working
+    // row's avatar and name open the agent's profile, as an author's do.
+    const working = history.locator("[data-conversation-activity]");
+    const profile = page.getByRole("region", {
+      name: "Profile details",
+      exact: true,
+    });
+    const closeProfile = page.getByRole("button", {
+      name: "Close Working agent tab",
+      exact: true,
+    });
+    for (const identity of [
+      working.getByRole("button", {
+        name: "View Working agent profile",
+        exact: true,
+      }),
+      working.getByRole("button", { name: "Working agent", exact: true }),
+    ]) {
+      await identity.click();
+      await expect(profile).toBeVisible();
+      await closeProfile.click();
+      await expect(profile).toHaveCount(0);
+      // Closing a profile beside a thread does not restore focus to its
+      // origin, as for any reply author's avatar; the channel does.
+      if (!inThread) await expect(identity).toBeFocused();
+    }
     await trigger.focus();
     const original = await trigger.elementHandle();
     app.append(
@@ -156,6 +182,14 @@ for (const inThread of [false, true]) {
         ),
       )
       .toBe(true);
+    // The activity run that replaces the working row opens the profile too.
+    await disclosure
+      .locator("xpath=ancestor::*[@data-agent-response-preview]")
+      .getByRole("button", { name: "View Working agent profile", exact: true })
+      .click();
+    await expect(profile).toBeVisible();
+    await closeProfile.click();
+    await expect(profile).toHaveCount(0);
     await disclosure.click();
     const collapse = history.getByRole("button", {
       name: /Collapse activity history/,

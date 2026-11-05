@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Avatar } from "../../shared/design-system/ui/Avatar";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { RobotIcon } from "../../shared/design-system/icons";
@@ -7,6 +7,7 @@ import { ProfilePeek } from "../profiles/ProfilePeek";
 import { profileTarget } from "../profiles/target";
 import type { RelaySession } from "../relay/session";
 import { AuthorLink } from "./AuthorLink";
+import { useActivityFocusHandoff } from "./use-activity-focus-handoff";
 import styles from "./Messages.module.css";
 
 /** Incoming message geometry for work that has not published a response yet. */
@@ -31,8 +32,8 @@ export function AgentResponsePreview({
   }[];
   layout?: "timeline" | "thread" | "continuation" | undefined;
   children: ReactNode;
-  /** The named agent: its avatar and name open its profile, as a message
-   * author's do. */
+  /** The named agent and how to open profiles: a lone avatar opens its
+   * agent's, and the name the named agent's, as a message author's do. */
   profile?:
     | Readonly<{
         pubkey: string;
@@ -47,16 +48,35 @@ export function AgentResponsePreview({
   // the label, which names the row while its byline is omitted.
   const flat = useMessageDensity() === "compact";
   const hiddenAvatar = stackPrevious && flat;
+  const root = useRef<HTMLDivElement>(null);
+  // A retiring row hands a focused avatar, name or control to its neighbour.
+  useActivityFocusHandoff(root);
+  // Like a message author's avatar, a focused avatar or name outlives a live
+  // change (a group forming, a stacked row) until focus moves on.
+  const [focusedAvatar, setFocusedAvatar] = useState<string>();
+  const [focusedName, setFocusedName] = useState(false);
   const avatars: typeof participants = participants.length
     ? participants.slice(0, 3)
     : [{ id: "primary", name, picture }];
-  const target = profile && profileTarget(profile.pubkey, { agent: true });
-  const opener =
-    profile && target && profile.canOpen(target)
-      ? { ...profile, target }
+  const lone = avatars.length === 1;
+  const opener = (pubkey: string) => {
+    const target = profileTarget(pubkey, { agent: true });
+    return profile && target && profile.canOpen(target)
+      ? { ...profile, pubkey, target }
       : undefined;
-  // A lone avatar is the named agent's; a group stays one labelled image.
-  const peek = avatars.length === 1 ? opener : undefined;
+  };
+  const namedAgent = profile && opener(profile.pubkey);
+  // A lone avatar opens its agent's profile; a group is one labelled image.
+  const peeks = avatars.map((agent) =>
+    lone || agent.id === focusedAvatar
+      ? participants.length
+        ? opener(agent.id)
+        : namedAgent
+      : undefined,
+  );
+  const nameHeld = focusedName && !!namedAgent;
+  // Only a lone agent's name opens a profile: a group's name is one of many.
+  const link = lone || nameHeld ? namedAgent : undefined;
   const byline = (
     <>
       <RobotIcon aria-hidden="true" className={styles.authorAgentIcon} />
@@ -65,6 +85,7 @@ export function AgentResponsePreview({
   );
   return (
     <div
+      ref={root}
       className={styles.message}
       data-stack-previous={stackPrevious || undefined}
       data-layout={layout}
@@ -77,7 +98,7 @@ export function AgentResponsePreview({
             <span
               className={styles.agentAvatarGroup}
               data-count={Math.max(1, Math.min(participants.length, 3))}
-              {...(peek
+              {...(peeks.some(Boolean)
                 ? {}
                 : {
                     role: "img",
@@ -86,7 +107,8 @@ export function AgentResponsePreview({
                       : name,
                   })}
             >
-              {avatars.map((agent) => {
+              {avatars.map((agent, index) => {
+                const peek = peeks[index];
                 const avatar = (
                   <Avatar
                     src={agent.picture}
@@ -105,19 +127,22 @@ export function AgentResponsePreview({
                     {peek ? (
                       <ProfilePeek
                         viewer={peek.session?.viewer}
-                        name={name}
-                        picture={picture}
+                        name={agent.name}
+                        picture={agent.picture}
                         pubkey={peek.pubkey}
                         agent
                         session={peek.session}
                         channelId={peek.channelId}
                         target={peek.target}
                         onOpen={peek.open}
+                        onFocusChange={(focused) =>
+                          setFocusedAvatar(focused ? agent.id : undefined)
+                        }
                         trigger={
                           <IconButton
                             size={layout === "timeline" ? "md" : "sm"}
                             shape="round"
-                            aria-label={`View ${name} profile`}
+                            aria-label={`View ${agent.name} profile`}
                             icon={avatar}
                           />
                         }
@@ -130,12 +155,15 @@ export function AgentResponsePreview({
               })}
             </span>
           </div>
-          {!stackPrevious && (
+          {(!stackPrevious || nameHeld) && (
             <div className={styles.messageHeader}>
               <div className={styles.byline}>
                 <strong className={styles.author}>
-                  {opener ? (
-                    <AuthorLink onOpen={() => opener.open(opener.target)}>
+                  {link ? (
+                    <AuthorLink
+                      onOpen={() => link.open(link.target)}
+                      onFocusChange={setFocusedName}
+                    >
                       {byline}
                     </AuthorLink>
                   ) : (

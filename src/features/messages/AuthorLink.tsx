@@ -7,9 +7,11 @@ import styles from "./Messages.module.css";
  * (no profile target). */
 export function AuthorLink({
   onOpen,
+  onFocusChange,
   children,
 }: {
   onOpen(): void;
+  onFocusChange?(focused: boolean): void;
   children: ReactNode;
 }) {
   return (
@@ -19,6 +21,17 @@ export function AuthorLink({
       tabIndex={-1}
       data-message-author=""
       className={styles.authorLink}
+      onFocus={() => onFocusChange?.(true)}
+      onBlur={(event) => {
+        // Window blur retains the browser's return-focus target.
+        if (
+          !event.relatedTarget &&
+          event.currentTarget.ownerDocument.activeElement ===
+            event.currentTarget
+        )
+          return;
+        onFocusChange?.(false);
+      }}
       onClick={(event) => {
         // A click arriving with text selected (the end of a drag, or the
         // second click of a double-click) is a selection, not a request. A

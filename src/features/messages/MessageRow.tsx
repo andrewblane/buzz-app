@@ -1942,6 +1942,20 @@ function AgentsMessageRow(props: MessageRowProps & { failure?: boolean }) {
         stackPrevious={!failure && activity?.container !== "standalone"}
         picture={author.picture}
         layout={props.layout === "thread" ? "thread" : "timeline"}
+        profile={
+          props.canOpenLink
+            ? {
+                pubkey: author.pubkey,
+                session,
+                channelId: row.channelId,
+                canOpen: props.canOpenLink,
+                open: (target) =>
+                  props.onOpenLink(target, {
+                    rootId: row.threadRootId ?? row.id,
+                  }),
+              }
+            : undefined
+        }
       >
         <div className={styles.standaloneActivity}>{content}</div>
       </AgentResponsePreview>

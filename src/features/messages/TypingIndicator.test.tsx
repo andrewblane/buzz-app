@@ -956,7 +956,7 @@ it.each([undefined, root])(
   },
 );
 
-it("keeps the working row's identity plain where its profile cannot open, and a group's avatars one image", () => {
+it("keeps the working row's identity plain where its profile cannot open, and a group's avatars and name", () => {
   const f = fixture(),
     open = vi.fn(() => true);
   f.update([entry()]);
@@ -985,9 +985,150 @@ it("keeps the working row's identity plain where its profile cannot open, and a 
   );
   expect(screen.getByRole("img", { name: "Agent, Other" })).toBeVisible();
   expect(screen.queryByRole("button", { name: /profile$/ })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Agent" }));
+  // The byline names one agent of several, so it opens no one's profile.
+  expect(screen.getByText("Agent").closest('[role="button"]')).toBeNull();
+});
+
+it("opens the working agent's profile from a stacked row's avatar, which has no byline", () => {
+  const f = fixture(),
+    open = vi.fn(() => true);
+  f.update([{ pubkey: agent, channelId: "channel" }]);
+  render(
+    <TypingIndicator
+      inFlow
+      previousAuthor={agent}
+      session={f.session}
+      channelId="channel"
+      openActivity={open}
+      canOpenActivity={() => true}
+    />,
+  );
+  expect(screen.queryByText("Agent", { exact: true })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "View Agent profile" }));
   expect(open).toHaveBeenCalledExactlyOnceWith(
     profileTarget(agent, { agent: true }),
+    undefined,
+  );
+});
+
+it.each(["avatar", "name"] as const)(
+  "hands a focused %s to the conversation when the working row retires",
+  async (part) => {
+    const f = fixture();
+    f.update([entry()]);
+    render(
+      <div data-message-scroller="" tabIndex={-1}>
+        <div data-message-id="earlier">
+          <button type="button">Earlier message</button>
+        </div>
+        <TypingIndicator
+          session={f.session}
+          channelId="channel"
+          openActivity={() => true}
+          canOpenActivity={() => true}
+        />
+      </div>,
+    );
+    const earlier = screen.getByRole("button", { name: "Earlier message" });
+    // jsdom lays nothing out; give the neighbour the box a browser would.
+    earlier.getClientRects = () => [new DOMRect()] as unknown as DOMRectList;
+    const identity = screen.getByRole("button", {
+      name: part === "avatar" ? "View Agent profile" : "Agent",
+    });
+    act(() => identity.focus());
+    f.update([]);
+    expect(identity.isConnected).toBe(false);
+    await act(async () => {});
+    expect(earlier).toHaveFocus();
+  },
+);
+
+it.each(["avatar", "name"] as const)(
+  "keeps a focused %s through a group forming, then shows the group once focus moves on",
+  (part) => {
+    const f = fixture();
+    f.update([entry()]);
+    render(
+      <>
+        <button type="button">Elsewhere</button>
+        <TypingIndicator
+          session={f.session}
+          channelId="channel"
+          openActivity={() => true}
+          canOpenActivity={() => true}
+        />
+      </>,
+    );
+    const identity = screen.getByRole("button", {
+      name: part === "avatar" ? "View Agent profile" : "Agent",
+    });
+    act(() => identity.focus());
+    f.update([entry(), entry(other)]);
+    expect(identity).toHaveFocus();
+    if (part === "avatar") {
+      // The other agent joins beside the focused avatar, not as a link.
+      expect(screen.getByTitle("Other")).toBeVisible();
+      expect(screen.queryByRole("button", { name: "Agent" })).toBeNull();
+    } else
+      expect(screen.getByRole("img", { name: "Agent, Other" })).toBeVisible();
+    act(() => screen.getByRole("button", { name: "Elsewhere" }).focus());
+    expect(screen.getByRole("img", { name: "Agent, Other" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /profile$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Agent" })).toBeNull();
+  },
+);
+
+it("keeps a focused name when its row stacks under the agent's message, until focus moves on", () => {
+  const f = fixture();
+  f.update([{ pubkey: agent, channelId: "channel" }]);
+  const props = {
+    inFlow: true,
+    session: f.session,
+    channelId: "channel",
+    openActivity: () => true,
+    canOpenActivity: () => true,
+  };
+  const view = render(
+    <>
+      <button type="button">Elsewhere</button>
+      <TypingIndicator {...props} />
+    </>,
+  );
+  const name = screen.getByRole("button", { name: "Agent" });
+  act(() => name.focus());
+  view.rerender(
+    <>
+      <button type="button">Elsewhere</button>
+      <TypingIndicator {...props} previousAuthor={agent} />
+    </>,
+  );
+  expect(name).toHaveFocus();
+  act(() => screen.getByRole("button", { name: "Elsewhere" }).focus());
+  expect(screen.queryByRole("button", { name: "Agent" })).toBeNull();
+  expect(screen.queryByText("Agent", { exact: true })).toBeNull();
+});
+
+it("keeps a focused avatar, and its own profile, when an agent ahead of it joins", () => {
+  const f = fixture(),
+    open = vi.fn(() => true);
+  f.update([entry(other)]);
+  render(
+    <TypingIndicator
+      session={f.session}
+      channelId="channel"
+      openActivity={open}
+      canOpenActivity={() => true}
+    />,
+  );
+  const avatar = screen.getByRole("button", { name: "View Other profile" });
+  act(() => avatar.focus());
+  // Agents are ordered by key, so the row is now named for the newcomer.
+  f.update([entry(), entry(other)]);
+  expect(screen.getByText("Agent", { exact: true })).toBeVisible();
+  expect(avatar).toHaveFocus();
+  fireEvent.click(avatar);
+  expect(open).toHaveBeenCalledExactlyOnceWith(
+    profileTarget(other, { agent: true }),
     undefined,
   );
 });

@@ -369,6 +369,11 @@ type Entry = {
   turns: readonly ActivityTurn[];
 };
 
+/** The working agent's avatar and name retire with the bubble's trigger. */
+function retiring(trigger: HTMLElement | null) {
+  return trigger?.closest<HTMLElement>("[data-message-activity]") ?? trigger;
+}
+
 function ActivityBubble({
   entries,
   interactive,
@@ -464,8 +469,7 @@ function ActivityBubble({
       const focused = trigger.current?.ownerDocument.activeElement;
       if (
         focused &&
-        (controlsRoot.current?.contains(focused) ||
-          trigger.current?.contains(focused) ||
+        (retiring(controlsRoot.current ?? trigger.current)?.contains(focused) ||
           popup.current?.contains(focused))
       )
         retirement.current.onFocusedRemoval?.();
@@ -475,7 +479,7 @@ function ActivityBubble({
   useLayoutEffect(() => {
     if (interactive) return;
     const source = popup.current;
-    const button = controlsRoot.current ?? trigger.current;
+    const button = retiring(controlsRoot.current ?? trigger.current);
     const document = (source ?? button)?.ownerDocument;
     const active = document?.activeElement;
     setExpanded(false);
