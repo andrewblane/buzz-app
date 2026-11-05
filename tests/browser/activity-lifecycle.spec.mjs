@@ -144,6 +144,9 @@ for (const inThread of [false, true]) {
       }),
       working.getByRole("button", { name: "Working agent", exact: true }),
     ]) {
+      // A typing pulse lasts 8 seconds; renew it before each round trip so
+      // slow runs keep the working row.
+      publish(20002, "");
       await identity.click();
       await expect(profile).toBeVisible();
       await closeProfile.click();
@@ -152,6 +155,8 @@ for (const inThread of [false, true]) {
       // origin, as for any reply author's avatar; the channel does.
       if (!inThread) await expect(identity).toBeFocused();
     }
+    // Renew it once more: the append below must find this same row working.
+    publish(20002, "");
     await trigger.focus();
     const original = await trigger.elementHandle();
     app.append(
