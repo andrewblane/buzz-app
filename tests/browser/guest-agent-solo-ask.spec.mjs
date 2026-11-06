@@ -40,8 +40,9 @@ test("a Viewing-only agent is asked in a Solo chat that links back to the channe
   await composer.click();
   await page.keyboard.type("@Poll");
   const row = page.getByRole("option", { name: /^Pollen / });
+  // Pollen is the viewer's Bestie, named ahead of the unchanged detail.
   await expect(row).toContainText(
-    "Viewing only · Answers in your DM or a Solo chat",
+    "Bestie · Viewing only · Answers in your DM or a Solo chat",
   );
   await shot(page, "1-chooser", testInfo);
   await row.click();
@@ -289,6 +290,7 @@ test("someone else's Viewing-only agent sends as before, with no dialog", async 
   await page.keyboard.type("@Poll");
   const row = page.getByRole("option", { name: /^Pollen / });
   await expect(row).toContainText("Viewing only · Can’t reply here");
+  await expect(row).not.toContainText("Bestie");
   await shot(page, "12-other-chooser", testInfo);
   await row.click();
   await page.keyboard.type(" can you take a look?");

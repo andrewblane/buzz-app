@@ -355,7 +355,8 @@ const owner = createRelaySession(
 );
 if (cold) await owner.restore();
 live?.state({ status: "connected", routes: [] });
-setDefaultAgent(owner.session.scope, bestie.pubkey);
+// Someone else's agent is never the viewer's Bestie.
+if (!other) setDefaultAgent(owner.session.scope, bestie.pubkey);
 const snapshot = {
   status: "ready" as const,
   generation: 1,
