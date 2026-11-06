@@ -1198,9 +1198,10 @@ export function ChannelInventory({
     name: string,
     muted: boolean,
     surface?: ChannelMenuSurface,
+    settled?: (saved: boolean) => void,
   ) => {
-    if (!mute) return;
-    mute.change(channelId, name, muted);
+    if (!mute) return settled?.(false);
+    mute.change(channelId, name, muted, settled);
     if (surface) {
       surface.close();
       surface.focus();
@@ -1218,7 +1219,8 @@ export function ChannelInventory({
     surface?: ChannelMenuSurface,
   ) => {
     if (!alerts || from === to) return;
-    if (to !== "mute") {
+    const choose = () => {
+      if (to === "mute") return;
       const posts = alerts.snapshot().preferences.allPosts;
       const listed = posts.includes(channel.id);
       if (to === "all" && !listed)
@@ -1227,15 +1229,23 @@ export function ChannelInventory({
         alerts.updatePreferences({
           allPosts: posts.filter((id) => id !== channel.id),
         });
-    }
-    if (from === "mute" || to === "mute")
-      changeMute(channel.id, channel.name, to === "mute", surface);
-    else if (surface) {
-      surface.close();
-      surface.focus();
-    } else {
-      setRowFocus(channel.id);
-      closeRowMenu();
+    };
+    if (to === "mute") changeMute(channel.id, channel.name, true, surface);
+    // Leaving Mute changes the device's level only once unmute is confirmed,
+    // so a failed unmute keeps the earlier choice. Its Retry only unmutes.
+    else if (from === "mute")
+      changeMute(channel.id, channel.name, false, surface, (saved) => {
+        if (saved) choose();
+      });
+    else {
+      choose();
+      if (surface) {
+        surface.close();
+        surface.focus();
+      } else {
+        setRowFocus(channel.id);
+        closeRowMenu();
+      }
     }
   };
   // Publish presentation callbacks, not a second mutation owner. Header renders

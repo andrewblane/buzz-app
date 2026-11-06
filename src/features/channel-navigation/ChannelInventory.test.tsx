@@ -707,14 +707,21 @@ it("chooses All new posts, Mute and Just mentions for a channel; DMs keep the Mu
     await waitFor(() =>
       expect(preferences.queries.snapshot().data?.muted).toEqual(["alpha"]),
     );
+    // A failed unmute stays muted and keeps the device's earlier choice.
+    write.mockRejectedValueOnce(new Error("offline"));
+    expect(await level("Just mentions")).toEqual(["Mute"]);
+    await screen.findByRole("dialog", { name: "Couldn’t unmute alpha" });
+    expect(alerts.snapshot().preferences.allPosts).toEqual(["alpha"]);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+
     expect(await level("Just mentions")).toEqual(["Mute"]);
     await waitFor(() =>
-      expect(write).toHaveBeenLastCalledWith(
-        { channelId: "alpha", muted: false },
-        expect.any(AbortSignal),
-      ),
+      expect(alerts.snapshot().preferences.allPosts).toEqual([]),
     );
-    expect(alerts.snapshot().preferences.allPosts).toEqual([]);
+    expect(write).toHaveBeenLastCalledWith(
+      { channelId: "alpha", muted: false },
+      expect.any(AbortSignal),
+    );
 
     // Every DM message already alerts, so a DM offers only Mute.
     fireEvent.keyDown(screen.getByRole("button", { name: "Alice" }), {

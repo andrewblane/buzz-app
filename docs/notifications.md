@@ -106,7 +106,8 @@ checks, not that an OS banner was displayed or read.
   category, **Channel posts**, with its own switch and sound. Replies keep
   thread rules, mentions stay mentions, and confirmed mute cancels pending post
   candidates; switching back to Just mentions cancels them too. Muting keeps the
-  device's All new posts choice; leaving Mute replaces it with the picked level.
+  device's All new posts choice; leaving Mute applies the picked level only after
+  unmute is confirmed, so a failed unmute (and its Retry) keeps the earlier choice.
 - Permission is requested explicitly from Settings where a browser needs a user
   gesture. A fresh pending candidate is reconsidered after Allow; a newer off
   choice still wins. Observable API errors are reported, never auto-retried.
