@@ -2449,14 +2449,16 @@ function Composer({
                 : [];
             },
           );
-          if (agentsHere.length) {
-            const solo =
-              agentsHere.length === 1 &&
-              !!agentsHere[0]?.own &&
-              captured.recipients.length === 1 &&
-              !capturedAttachments.length &&
-              !!catchUp &&
-              !!relaySession;
+          // Only your own agent can be asked in a Solo chat; anyone else keeps
+          // today's flow (the chooser label, then §7 for outside people).
+          const solo =
+            agentsHere.length === 1 &&
+            !!agentsHere[0]?.own &&
+            captured.recipients.length === 1 &&
+            !capturedAttachments.length &&
+            !!catchUp &&
+            !!relaySession;
+          if (solo) {
             setSending(true);
             setError(undefined);
             const choice = await unheard.prepare(
