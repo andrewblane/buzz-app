@@ -2466,8 +2466,18 @@ function Composer({
             !capturedAttachments.length &&
             !!catchUp &&
             !!relaySession;
+          // Your agent from another community joins through §7's bring
+          // prompt instead, which also sets it up here.
+          const elsewhere =
+            !!agent &&
+            (agents?.joinable() ?? []).some(
+              (item) => item.pubkey === agent.pubkey,
+            );
           const join =
-            single && agent && (agent.reason === "viewing-only" || solo)
+            single &&
+            agent &&
+            !elsewhere &&
+            (agent.reason === "viewing-only" || solo)
               ? joinOffer(session, here, agent)
               : undefined;
           if (solo || join) {
@@ -2490,7 +2500,7 @@ function Composer({
               attempt.signal,
             );
             if (choice === null) return;
-            if (agent?.reason === "not-in-channel") {
+            if (agent?.reason === "not-in-channel" && !elsewhere) {
               // This dialog settles the outside agent, so §7 doesn't ask
               // again. Send here anyway names it without notifying it, like
               // §7's "Do nothing".

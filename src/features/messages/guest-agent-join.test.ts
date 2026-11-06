@@ -99,7 +99,7 @@ it("makes a Viewing-only agent a member, and its next turn sees it can post", as
 
   const join = joinOffer(session, summary, pollen);
   expect(join).toBeDefined();
-  await join?.();
+  await join?.(new AbortController().signal);
 
   expect(published).toHaveLength(1);
   expect(published[0]?.kind).toBe(9000);
@@ -117,9 +117,22 @@ it("makes a Viewing-only agent a member, and its next turn sees it can post", as
 it("keeps the agent Viewing only and rejects when the relay refuses", async () => {
   const { session, summary, reads } = await channel("owner", { refuse: true });
   const join = joinOffer(session, summary, pollen);
-  await expect(join?.()).rejects.toThrow(/only owners and admins/);
+  await expect(join?.(new AbortController().signal)).rejects.toThrow(
+    /only owners and admins/,
+  );
   expect((await reads.channel(id))?.viewingOnly).toBe(true);
   expect([...guestKeys(session.memberAdministration, id)]).toEqual([agent]);
+});
+
+it("publishes nothing once the send is abandoned", async () => {
+  const { session, summary, reads, published } = await channel("owner");
+  const abandoned = new AbortController();
+  abandoned.abort();
+  await expect(
+    joinOffer(session, summary, pollen)?.(abandoned.signal),
+  ).rejects.toThrow();
+  expect(published).toEqual([]);
+  expect((await reads.channel(id))?.viewingOnly).toBe(true);
 });
 
 it("offers nothing to a viewer who can't change roles", async () => {
@@ -141,7 +154,7 @@ it("adds an outside agent like Invite, only where the viewer may add people", as
     channelType: "stream",
     members: [owner],
   } as never;
-  await joinOffer(session, here, outside)?.();
+  await joinOffer(session, here, outside)?.(new AbortController().signal);
   expect(add).toHaveBeenCalledWith(id, agent);
   const asGuest = { ...(here as object), viewerRole: "guest" } as never;
   expect(joinOffer(session, asGuest, outside)).toBeUndefined();

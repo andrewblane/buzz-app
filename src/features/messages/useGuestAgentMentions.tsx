@@ -24,7 +24,7 @@ export type UnheardOffer = {
   solo: boolean;
   /** Lets the agent post here: resolves once the relay confirms it. Absent
    * when the viewer can't change the agent's membership here. */
-  join?: (() => Promise<void>) | undefined;
+  join?: ((signal: AbortSignal) => Promise<void>) | undefined;
   /** Whether the captured draft is still the one being sent. */
   current(): boolean;
 };
@@ -48,7 +48,7 @@ export function useGuestAgentMentions(restoreFocus: () => void) {
     joining.current = true;
     setPending({ ...request, busy: true, error: undefined });
     try {
-      await request.join();
+      await request.join(request.signal);
       request.signal.throwIfAborted();
       if (!request.current())
         throw new Error("The draft changed. Close this dialog and send again.");
@@ -183,7 +183,7 @@ export function joinOffer(
   >,
   channel: ChannelSummary,
   agent: UnheardAgent,
-): (() => Promise<void>) | undefined {
+): ((signal: AbortSignal) => Promise<void>) | undefined {
   if (agent.reason === "not-in-channel")
     return canAddMembers(session, channel)
       ? () => session.memberAdditions.add(channel.id, agent.pubkey)
@@ -198,9 +198,14 @@ export function joinOffer(
     !canManageMember(roles.snapshot(channel.id).authority, viewer, agent.pubkey)
   )
     return undefined;
-  return async () => {
+  return async (signal) => {
     const result = await administerMember(
-      { refresh: roles.refresh, snapshot: roles.snapshot, run },
+      {
+        refresh: roles.refresh,
+        snapshot: roles.snapshot,
+        // An abandoned send publishes nothing it hasn't already.
+        run: (id, change) => run(id, change, signal, () => !signal.aborted),
+      },
       channel.id,
       agent.pubkey,
       (role) =>
@@ -216,7 +221,7 @@ export function joinOffer(
       throw new Error(
         result.status === "uncertain"
           ? unconfirmed
-          : (result.error ?? unconfirmed),
+          : (result.error ?? "The change didn’t go through. Try again."),
       );
   };
 }
