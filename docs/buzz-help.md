@@ -1064,9 +1064,11 @@ available rather than silently discarding it.
   sidebar omits the duplicate Bestie row, and links to that DM, one of its
   threads or one of its messages, such as a thread's **In DM** link in Activity,
   a notification or a search result, open in Bestie. A thread link opens the
-  thread beside the chat and scrolls the chat to the thread's root message,
-  briefly marked; a message link scrolls to that message the same way, or opens
-  its thread when it is a reply. Forward and Members still open in Messages.
+  thread beside the chat, which keeps focus, and briefly marks the thread's
+  root message in the chat once it is loaded; a message link scrolls to that
+  message, or opens its thread when it is a reply. **View thread** and Back or
+  Forward leave the chat where you were. Forward and Members still open in
+  Messages.
   Bestie uses the same conversation tabs as
   Messages: threads open beside the chat (or in the main pane, following your
   thread placement setting), and can be moved, renamed, or closed. Collapsing
