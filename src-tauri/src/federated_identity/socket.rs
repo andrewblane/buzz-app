@@ -16,6 +16,7 @@ use tokio_tungstenite::tungstenite::{
 use tokio_util::sync::CancellationToken;
 
 struct Connection {
+    relay: String,
     stop: CancellationToken,
     sender: mpsc::Sender<String>,
     start: Option<oneshot::Sender<()>>,
@@ -87,6 +88,7 @@ pub(crate) async fn relay_socket_connect(
         live.insert(
             id.clone(),
             Connection {
+                relay: relay.clone(),
                 stop: stop.clone(),
                 sender,
                 start: Some(start),
@@ -227,15 +229,38 @@ pub(crate) fn relay_socket_send(
     if data.len() > 1024 * 1024 {
         return Err("Socket frame too large".into());
     }
-    sockets
+    let live = sockets
         .0
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .get(&id)
-        .ok_or("Native socket retired")?
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let connection = live.get(&id).ok_or("Native socket retired")?;
+    admit_frame(&connection.relay, &data, crate::relay_policy::removable)?;
+    connection
         .sender
         .try_send(data)
         .map_err(|_| "Socket send queue is full".into())
+}
+
+/// A NIP-43 leave names no relay, so one signed for another community could
+/// leave whichever relay receives it: check removal against this socket's.
+fn admit_frame(
+    relay: &str,
+    data: &str,
+    removable: impl Fn(&str) -> Result<(), String>,
+) -> Result<(), String> {
+    let leave = serde_json::from_str::<serde_json::Value>(data).is_ok_and(|frame| {
+        frame.get(0).and_then(|v| v.as_str()) == Some("EVENT")
+            && frame
+                .get(1)
+                .and_then(|v| v.get("kind"))
+                .and_then(|v| v.as_u64())
+                == Some(28936)
+    });
+    if leave {
+        removable(relay)
+    } else {
+        Ok(())
+    }
 }
 #[tauri::command]
 pub(crate) fn relay_socket_close(
@@ -371,6 +396,28 @@ fn connector() -> Option<tokio_tungstenite::Connector> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn leave_frames_signed_elsewhere_cannot_leave_the_pinned_relay() {
+        let policy = crate::relay_policy::RelayPolicy::parse(Some(
+            r#"{"pinned":"relay.example","allowlist":["other.example"]}"#,
+        ))
+        .unwrap()
+        .unwrap();
+        let removable = |relay: &str| policy.removable(relay);
+        let leave = r#"["EVENT",{"kind":28936,"content":"","tags":[["-"]]}]"#;
+        assert!(super::admit_frame("wss://relay.example", leave, removable)
+            .unwrap_err()
+            .contains("pinned relay"));
+        assert!(super::admit_frame("wss://other.example", leave, removable).is_ok());
+        for frame in [
+            r#"["EVENT",{"kind":9,"content":"hi","tags":[]}]"#,
+            r#"["REQ","s",{"kinds":[28936]}]"#,
+            "not json",
+        ] {
+            assert!(super::admit_frame("wss://relay.example", frame, removable).is_ok());
+        }
+    }
+
     use super::*;
     use crate::federated_identity::testing::{community, reply};
 

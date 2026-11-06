@@ -40,6 +40,8 @@ export type Membership = {
   /** Optional current public metadata; not ownership or membership evidence. */
   publishedName?: string | undefined;
   publishedIcon?: string | undefined;
+  /** Added by a policy build's pin, not joined: never uploaded to the account. */
+  seeded?: true;
 };
 type Saved = {
   profile: PersonalProfile;
@@ -152,10 +154,11 @@ export function createCommunities(
           JSON.stringify({
             profile: next.profile,
             memberships: [...next.memberships, ...unresolvedMemberships].map(
-              ({ id, name, icon }) => ({
+              ({ id, name, icon, seeded }) => ({
                 id,
                 name,
                 ...(icon ? { icon } : {}),
+                ...(seeded ? { seeded } : {}),
               }),
             ),
             selected: next.selected ?? selection,
@@ -299,6 +302,9 @@ export function createCommunities(
                         m.icon.startsWith("https://")
                           ? { icon: m.icon }
                           : {}),
+                        ...("seeded" in m && m.seeded === true
+                          ? { seeded: true as const }
+                          : {}),
                       };
                       try {
                         return [
@@ -350,7 +356,11 @@ export function createCommunities(
         if (configuredRelayPolicy) {
           const pinned = communityDestination(configuredRelayPolicy.pinned);
           if (!saved.memberships.some((m) => m.id === pinned.id)) {
-            saved.memberships.unshift({ id: pinned.id, name: pinned.name });
+            saved.memberships.unshift({
+              id: pinned.id,
+              name: pinned.name,
+              seeded: true,
+            });
             seeded = true;
           }
           // Preserve a deliberate Personal space selection; replace a blocked

@@ -252,6 +252,26 @@ it("keeps observed legacy removals across policy-skipped imports", async () => {
   expect(confirm).not.toHaveBeenCalled();
 });
 
+it("keeps the seeded pin out of account upload after the policy is removed, until joined", async () => {
+  const { stored } = await startup();
+  const relaxed = await startup(undefined, stored, true);
+  const { mergeList, emptySync } = await import("./known-communities");
+  const memberships = relaxed.client.snapshot().memberships;
+  expect(memberships.map((m) => m.id)).toEqual(["https://relay.example"]);
+  expect(mergeList(emptySync(), memberships, [], "alice").state.outbox).toEqual(
+    [],
+  );
+  relaxed.client.joined(
+    { id: "https://relay.example", name: "Relay" },
+    { name: "", picture: "" },
+  );
+  const joined = await startup(undefined, stored, true);
+  expect(
+    mergeList(emptySync(), joined.client.snapshot().memberships, [], "alice")
+      .state.outbox,
+  ).toEqual([{ url: "wss://relay.example", removed: false }]);
+});
+
 it("keeps a saved Personal space choice", async () => {
   const { client, connect } = await startup({
     memberships: [],
