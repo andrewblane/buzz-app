@@ -6,6 +6,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -506,6 +507,7 @@ it("keeps a rejected save's and unreadable YAML's reasons ahead of the archived 
   expect(within(reopened).queryByText(saveReason)).toBeNull();
 });
 
+afterEach(() => vi.restoreAllMocks());
 const webhookDefinition = {
   ...fixtureDefinition,
   yaml: fixtureDefinition.yaml.replace("on: message_posted", "on: webhook"),
@@ -531,17 +533,21 @@ function mountChannel(
       onDelete={() => {}}
     />,
   );
-  // user-event installs its own clipboard stub; observe that one.
+  // user-event installs its own clipboard stub; observe that one. The stub
+  // outlives each test, so afterEach restores the spy.
   const user = userEvent.setup();
   return { fixture, user, copied: vi.spyOn(navigator.clipboard, "writeText") };
 }
 
+const readOnlySecretLine =
+  "Senders include the X-Webhook-Secret header. Only the workflow’s author has the secret and can replace it.";
+
 it.each([
-  ["its author", fixtureViewer],
-  ["another channel member", "22".repeat(32)],
+  { viewer: "its author", owner: fixtureViewer, readOnly: false },
+  { viewer: "another channel member", owner: "22".repeat(32), readOnly: true },
 ])(
-  "shows a saved webhook's URL with Copy to %s, and says the secret was shown once",
-  async (_viewer, owner) => {
+  "shows a saved webhook's URL with Copy to $viewer, and who can replace the secret",
+  async ({ owner, readOnly }) => {
     const { fixture, user, copied } = mountChannel({
       ...webhookDefinition,
       owner,
@@ -552,11 +558,24 @@ it.each([
     const aside = triggerSettings();
     expect(within(aside).getByText("Webhook URL")).toBeVisible();
     expect(within(aside).getByText(webhookUrl)).toBeVisible();
-    expect(
-      within(aside).getByText(/Buzz showed its secret once/),
-    ).toBeVisible();
-    expect(within(aside).getByText(/^Lost it\?/)).toBeVisible();
     expect(within(aside).queryByText(beforeSaveHint)).toBeNull();
+    const shownOnce = within(aside).queryByText(
+      /Buzz shows the secret only once, when it’s issued/,
+    );
+    const lostIt = within(aside).queryByText(/^Lost it\?/);
+    if (readOnly) {
+      expect(within(aside).getByText(readOnlySecretLine)).toBeVisible();
+      expect(shownOnce).toBeNull();
+      expect(lostIt).toBeNull();
+    } else {
+      expect(within(aside).queryByText(readOnlySecretLine)).toBeNull();
+      expect(shownOnce).toBeVisible();
+      expect(lostIt).toHaveTextContent(/Turn off Enabled in configuration/);
+    }
+    // One status line is mounted before anything is copied, so assistive
+    // technology is already watching it.
+    const status = within(aside).getByRole("status");
+    expect(status).toBeEmptyDOMElement();
     // The address is outside the form's disabled fieldset, so Tab reaches Copy
     // URL for read-only viewers too, and Enter copies.
     const copy = within(aside).getByRole("button", { name: "Copy URL" });
@@ -566,25 +585,26 @@ it.each([
     expect(copy).toHaveFocus();
     await user.keyboard("{Enter}");
     expect(copied).toHaveBeenCalledExactlyOnceWith(webhookUrl);
-    expect(await within(aside).findByRole("status")).toHaveTextContent(
-      "URL copied.",
-    );
+    await waitFor(() => expect(status).toHaveTextContent("URL copied."));
+    expect(within(aside).getAllByRole("status")).toEqual([status]);
     expect(fixture.calls.take).toBe(0);
   },
 );
 
 it("reports a failed URL copy with how to recover", async () => {
   const { user, copied } = mountChannel(webhookDefinition);
-  copied.mockRejectedValue(new Error("Denied"));
+  copied.mockRejectedValueOnce(new Error("Denied"));
   await user.click(
     screen.getByRole("button", { name: "Edit trigger: Webhook" }),
   );
   await user.click(
     within(triggerSettings()).getByRole("button", { name: "Copy URL" }),
   );
-  expect(
-    await within(triggerSettings()).findByRole("status"),
-  ).toHaveTextContent("Couldn’t copy the URL. Select it and copy it manually.");
+  await waitFor(() =>
+    expect(within(triggerSettings()).getByRole("status")).toHaveTextContent(
+      "Couldn’t copy the URL. Select it and copy it manually.",
+    ),
+  );
 });
 
 it("shows the relative hook route when the host has no relay HTTP base", async () => {
@@ -660,12 +680,89 @@ it("shows the URL once a save gives the workflow a webhook trigger, never the se
   expect(
     within(triggerSettings()).getByRole("combobox", { name: "Trigger" }),
   ).toBeDisabled();
-  const copy = within(triggerSettings()).getByRole("button", {
-    name: "Copy URL",
-  });
-  expect(copy).toBeEnabled();
-  await user.click(copy);
-  expect(copied).toHaveBeenCalledExactlyOnceWith(webhookUrl);
+  const copy = () =>
+    within(triggerSettings()).getByRole("button", { name: "Copy URL" });
+  expect(copy()).toBeEnabled();
+  await user.click(copy());
+  expect(copied).toHaveBeenLastCalledWith(webhookUrl);
+  // Accepted but not yet read back: the editor stays locked on the saved
+  // definition, whose address can still be copied.
+  const later = "fixture-webhook-secret-later";
+  act(() => fixture.finish("succeeded", false, later));
+  expect(
+    screen.getByText(/Configuration saved; waiting for a readback/),
+  ).toBeVisible();
+  expect(
+    within(triggerSettings()).getByRole("combobox", { name: "Trigger" }),
+  ).toBeDisabled();
+  expect(within(triggerSettings()).getByText(webhookUrl)).toBeVisible();
+  expect(copy()).toBeEnabled();
+  await user.click(copy());
+  expect(copied).toHaveBeenCalledTimes(2);
+  expect(copied).toHaveBeenLastCalledWith(webhookUrl);
   expect(document.body).not.toHaveTextContent(secret);
+  expect(document.body).not.toHaveTextContent(later);
   expect(fixture.calls.take).toBe(0);
+});
+
+it("hides the URL while a step is selected or another trigger is chosen, and shows it again for Webhook", async () => {
+  const { user } = mountChannel(webhookDefinition);
+  await user.click(
+    screen.getByRole("button", { name: "Edit trigger: Webhook" }),
+  );
+  expect(within(triggerSettings()).getByText(webhookUrl)).toBeVisible();
+  await user.click(
+    screen.getByRole("button", { name: "Edit step 1: Send Message" }),
+  );
+  expect(
+    screen.getByRole("complementary", { name: "Step 1 settings" }),
+  ).toBeVisible();
+  expect(screen.queryByText("Webhook URL")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Copy URL" })).toBeNull();
+
+  await user.click(
+    screen.getByRole("button", { name: "Edit trigger: Webhook" }),
+  );
+  await user.click(screen.getByRole("combobox", { name: "Trigger" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Message posted" }),
+  );
+  expect(within(triggerSettings()).queryByText("Webhook URL")).toBeNull();
+  expect(within(triggerSettings()).queryByText(beforeSaveHint)).toBeNull();
+
+  // The saved definition still has the secret, so Webhook shows the address,
+  // not the before-save hint.
+  await user.click(screen.getByRole("combobox", { name: "Trigger" }));
+  await user.click(await screen.findByRole("option", { name: "Webhook" }));
+  expect(within(triggerSettings()).getByText(webhookUrl)).toBeVisible();
+  expect(within(triggerSettings()).queryByText(beforeSaveHint)).toBeNull();
+});
+
+it("shows a saved webhook's URL on the YAML tab when Form mode can't show the definition", async () => {
+  const { user, copied } = mountChannel({
+    ...fixtureDefinition,
+    yaml: `name: Hook reactions
+enabled: true
+trigger:
+  on: webhook
+steps:
+  - id: react
+    action: add_reaction
+    emoji: "👍"
+`,
+  });
+  expect(screen.getByRole("tab", { name: "YAML" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(screen.queryByRole("button", { name: /^Edit trigger/ })).toBeNull();
+  expect(screen.getByText("Webhook URL")).toBeVisible();
+  expect(screen.getByTestId("webhook-address-url")).toHaveTextContent(
+    webhookUrl,
+  );
+  await user.click(screen.getByRole("button", { name: "Copy URL" }));
+  expect(copied).toHaveBeenCalledExactlyOnceWith(webhookUrl);
+  await waitFor(() =>
+    expect(screen.getByRole("status")).toHaveTextContent("URL copied."),
+  );
 });
