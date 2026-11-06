@@ -157,24 +157,3 @@ it("adds your agent from outside the channel in place of Invite", async () => {
   );
   await expect(choice).resolves.toBe("joined");
 });
-
-it("offers to make someone else's Viewing-only agent a member, with no Solo chat", async () => {
-  const choice = open({
-    agents: [{ ...pollen, name: "Morgan's agent", own: false }],
-    solo: false,
-    join: async () => {},
-  });
-  const dialog = await screen.findByRole("dialog", {
-    name: "Morgan's agent can’t reply here",
-  });
-  expect(dialog.textContent).toContain(
-    "Morgan's agent is viewing only in #foo-3. Make it a member so it can reply here.",
-  );
-  expect(
-    screen.queryByRole("button", { name: "Ask in a Solo chat" }),
-  ).toBeNull();
-  await userEvent.click(
-    screen.getByRole("button", { name: "Make member and send" }),
-  );
-  await expect(choice).resolves.toBe("joined");
-});

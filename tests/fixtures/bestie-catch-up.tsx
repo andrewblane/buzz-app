@@ -55,6 +55,8 @@ const outside = new URLSearchParams(location.search).get("guest") === "outside";
 // `guest=cold`: the app starts from Launch's saved membership, as on launch,
 // and the relay answers for Launch's roster only after "Confirm membership".
 const cold = new URLSearchParams(location.search).get("guest") === "cold";
+// `guest=other`: Pollen is Viewing only in Launch, but someone else owns it.
+const other = new URLSearchParams(location.search).get("guest") === "other";
 // `refuse`: the relay refuses role changes, as for a viewer no longer an admin.
 const refuse = new URLSearchParams(location.search).has("refuse");
 let confirmMembership = () => {};
@@ -98,7 +100,7 @@ const ownerSignature = bytesToHex(
         new TextEncoder().encode(`nostr:agent-auth:${bestie.pubkey}:`),
       ),
     ),
-    viewer.secret,
+    (other ? authority : viewer).secret,
   ),
 );
 const events: RelayEvent[] = [
@@ -154,19 +156,25 @@ const events: RelayEvent[] = [
         kind: 0,
         content: JSON.stringify({ name: "Pollen", bot: true }),
         created_at: 1_700_000_000,
-        tags: [["auth", viewer.pubkey, "", ownerSignature]],
+        tags: [
+          ["auth", (other ? authority : viewer).pubkey, "", ownerSignature],
+        ],
       })
     : profile(bestie, { name: "Pollen", bot: true }),
 ];
-const local = localAgentsFixture([
-  {
-    pubkey: bestie.pubkey,
-    name: "Pollen",
-    relayUrl: origin,
-    owner: viewer.pubkey,
-    picture: agentAvatars[1]?.url ?? "",
-  },
-]);
+const local = localAgentsFixture(
+  other
+    ? []
+    : [
+        {
+          pubkey: bestie.pubkey,
+          name: "Pollen",
+          relayUrl: origin,
+          owner: viewer.pubkey,
+          picture: agentAvatars[1]?.url ?? "",
+        },
+      ],
+);
 const launchSaved = events.filter(
   (event) =>
     event.kind >= 39000 &&

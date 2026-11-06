@@ -135,6 +135,20 @@ it("publishes nothing once the send is abandoned", async () => {
   expect((await reads.channel(id))?.viewingOnly).toBe(true);
 });
 
+it("offers nothing for someone else's agent, even to the channel owner", async () => {
+  const { session, summary } = await channel("owner");
+  expect(
+    joinOffer(session, summary, { ...pollen, own: false }),
+  ).toBeUndefined();
+  expect(
+    joinOffer(session, summary, {
+      ...pollen,
+      own: false,
+      reason: "not-in-channel",
+    }),
+  ).toBeUndefined();
+});
+
 it("offers nothing to a viewer who can't change roles", async () => {
   const { session, summary } = await channel("member");
   expect(joinOffer(session, summary, pollen)).toBeUndefined();

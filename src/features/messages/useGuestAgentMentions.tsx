@@ -172,8 +172,9 @@ function describe({ agents, channel, solo, join }: UnheardOffer) {
 const unconfirmed =
   "This change may have taken effect. Open Members to check it before you send again.";
 
-/** How the viewer can let `agent` post in `channel`, or nothing when they
- * can't: a Viewing-only agent becomes a member through the members panel's
+/** How the viewer can let their own `agent` post in `channel`, or nothing
+ * when they can't. Someone else's agent is its owner's call, so it gets
+ * nothing here: a Viewing-only agent becomes a member through the members panel's
  * role change; an agent outside the channel is added like Invite. Each resolves
  * only once the relay's roster shows the change. */
 export function joinOffer(
@@ -184,6 +185,7 @@ export function joinOffer(
   channel: ChannelSummary,
   agent: UnheardAgent,
 ): ((signal: AbortSignal) => Promise<void>) | undefined {
+  if (!agent.own) return undefined;
   if (agent.reason === "not-in-channel")
     return canAddMembers(session, channel)
       ? () => session.memberAdditions.add(channel.id, agent.pubkey)

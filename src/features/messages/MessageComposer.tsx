@@ -2452,10 +2452,10 @@ function Composer({
                 : [];
             },
           );
-          // A draft addressed only to one such agent can make a Viewing-only
-          // agent a member first, when the viewer may, or ask your own agent
-          // in a Solo chat; that offer also adds your agent from outside, in
-          // place of §7's Invite. Anything else keeps today's flow (the
+          // A draft addressed only to your own such agent can make it a
+          // member first, when you may, or ask it in a Solo chat; that offer
+          // also adds it from outside, in place of §7's Invite. Someone
+          // else's agent is its owner's call: it keeps today's flow (the
           // chooser label, then §7 for outside people).
           const [agent] = agentsHere;
           const single =
@@ -2475,7 +2475,7 @@ function Composer({
             );
           const join =
             single &&
-            agent &&
+            agent?.own &&
             !elsewhere &&
             (agent.reason === "viewing-only" || solo)
               ? joinOffer(session, here, agent)

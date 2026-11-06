@@ -275,6 +275,36 @@ test("a refused role change keeps the draft and says why", async ({
   expect(errors.unexplained()).toEqual([]);
 });
 
+test("someone else's Viewing-only agent sends as before, with no dialog", async ({
+  page,
+}, testInfo) => {
+  const errors = watchPageErrors(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/tests/fixtures/bestie-catch-up.html?guest=other");
+  await page
+    .getByRole("button", { name: "Launch channel", exact: true })
+    .click();
+  const composer = page.getByRole("textbox", { name: "Message #launch" });
+  await composer.click();
+  await page.keyboard.type("@Poll");
+  const row = page.getByRole("option", { name: /^Pollen / });
+  await expect(row).toContainText("Viewing only · Can’t reply here");
+  await shot(page, "12-other-chooser", testInfo);
+  await row.click();
+  await page.keyboard.type(" can you take a look?");
+  await page.keyboard.press("Enter");
+  await expect(
+    page
+      .getByRole("tabpanel", { name: "launch" })
+      .locator("[data-message-id]")
+      .filter({ hasText: "can you take a look?" }),
+  ).toHaveCount(1);
+  // Its owner decides whether it joins; the viewer isn't asked.
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await shot(page, "13-other-sent", testInfo);
+  expect(errors.unexplained()).toEqual([]);
+});
+
 test("a cold start labels the Viewing-only agent once the relay confirms membership", async ({
   page,
 }, testInfo) => {
