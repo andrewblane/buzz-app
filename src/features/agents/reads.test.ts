@@ -21,17 +21,19 @@ async function reads(ownerRole: string, agentRole: string) {
   let clock = 100;
   const record = (kind: number, tags: string[][]) =>
     finalizeEvent({ kind, tags, content: "", created_at: clock++ }, relayKey);
-  const events = [
+  const roster = (role: string) =>
+    record(39002, [
+      ["d", id],
+      ["p", owner, "", ownerRole],
+      ["p", agent, "", role],
+    ]);
+  let events = [
     record(39000, [["d", id], ["t", "stream"], ["private"], ["name", "foo-3"]]),
     record(39001, [
       ["d", id],
       ...(ownerRole === "owner" ? [["p", owner, "owner"]] : []),
     ]),
-    record(39002, [
-      ["d", id],
-      ["p", owner, "", ownerRole],
-      ["p", agent, "", agentRole],
-    ]),
+    roster(agentRole),
   ];
   const sessionOwner = createRelaySession({
     viewer: owner,
@@ -51,7 +53,16 @@ async function reads(ownerRole: string, agentRole: string) {
   } as unknown as RelayData;
   const source = ownerReads(relay, agent);
   if (!source) throw new Error("Owner reads unavailable");
-  return source;
+  return Object.assign(Object.create(source) as typeof source, {
+    /** The relay's roster now gives the agent `role`, and the owner rereads it. */
+    async change(role: string) {
+      events = [
+        ...events.filter((event) => event.kind !== 39002),
+        roster(role),
+      ];
+      await session.memberAdministration.refresh(id);
+    },
+  });
 }
 
 it("marks a channel viewing-only by the agent's role, not the owner's", async () => {
@@ -63,4 +74,12 @@ it("doesn't mark the agent viewing-only when only its owner is a guest", async (
   const facts = await (await reads("guest", "member")).channel(id);
   expect(facts).toBeDefined();
   expect(facts?.viewingOnly).toBeUndefined();
+});
+
+it("follows a role change that keeps the agent in the channel", async () => {
+  const source = await reads("owner", "guest");
+  expect((await source.channel(id))?.viewingOnly).toBe(true);
+  // Guest to member: the same members, so only the roles tell them apart.
+  await source.change("bot");
+  expect((await source.channel(id))?.viewingOnly).toBeUndefined();
 });

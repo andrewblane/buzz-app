@@ -395,6 +395,12 @@ export function createChannelStore(
           (old.participants?.length === channel.participants?.length &&
             (old.participants ?? []).every(
               (id, index) => id === channel.participants?.[index],
+            ))) &&
+        // A role change keeps the members but not who is Viewing only.
+        (old.guests === channel.guests ||
+          (old.guests?.length === channel.guests?.length &&
+            (old.guests ?? []).every(
+              (id, index) => id === channel.guests?.[index],
             )))
         ? old
         : Object.freeze({ ...channel, metadataPending: pending, preview });
