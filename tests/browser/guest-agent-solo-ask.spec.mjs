@@ -152,3 +152,34 @@ test("Send here anyway posts in the channel, and an agent outside it still offer
   await shot(page, "6-outside-send-anyway", testInfo);
   expect(errors.unexplained()).toEqual([]);
 });
+
+test("a cold start labels the Viewing-only agent once the relay confirms membership", async ({
+  page,
+}, testInfo) => {
+  const errors = watchPageErrors(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // As on app launch: Launch opens from saved membership before the relay
+  // confirms it, and roles can't be read until then.
+  await page.goto("/tests/fixtures/bestie-catch-up.html?guest=cold");
+  await page
+    .getByRole("button", { name: "Launch channel", exact: true })
+    .click();
+  const composer = page.getByRole("textbox", { name: "Message #launch" });
+  await expect(composer).toBeVisible();
+  await page.getByRole("button", { name: "Confirm membership" }).click();
+  // No members panel: the first mention already knows Pollen is Viewing only.
+  await composer.click();
+  await page.keyboard.type("@Poll");
+  const row = page.getByRole("option", { name: /^Pollen / });
+  await expect(row).toContainText(
+    "Viewing only · Answers in your DM or a Solo chat",
+  );
+  await shot(page, "7-cold-start-chooser", testInfo);
+  await row.click();
+  await page.keyboard.type(" are we still on for Thursday?");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("dialog", { name: "Pollen can’t reply here" }),
+  ).toBeVisible();
+  expect(errors.unexplained()).toEqual([]);
+});

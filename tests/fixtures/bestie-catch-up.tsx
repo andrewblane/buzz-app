@@ -51,6 +51,15 @@ const take = new URLSearchParams(location.search).get("take") ?? "current";
 const guest = new URLSearchParams(location.search).has("guest");
 // `guest=outside`: the same, but Pollen isn't in Launch at all.
 const outside = new URLSearchParams(location.search).get("guest") === "outside";
+// `guest=cold`: the app starts from Launch's saved membership, as on launch,
+// and the relay answers for Launch's roster only after "Confirm membership".
+const cold = new URLSearchParams(location.search).get("guest") === "cold";
+let confirmMembership = () => {};
+const confirmed = cold
+  ? new Promise<void>((resolve) => {
+      confirmMembership = resolve;
+    })
+  : undefined;
 sessionStorage.setItem("buzz.dev.bestie-take", take);
 
 const viewer = keypair(),
@@ -155,6 +164,12 @@ const local = localAgentsFixture([
     picture: agentAvatars[1]?.url ?? "",
   },
 ]);
+const launchSaved = events.filter(
+  (event) =>
+    event.kind >= 39000 &&
+    event.kind <= 39002 &&
+    event.tags.some(([tag, value]) => tag === "d" && value === alpha),
+);
 let live: LiveCallbacks | undefined;
 let liveChannels: readonly string[] = [];
 const owner = createRelaySession(
@@ -175,6 +190,13 @@ const owner = createRelaySession(
       };
     },
     query: async (filters) => {
+      if (
+        confirmed &&
+        launchSaved.some((event) =>
+          filters.some((filter) => matchesEvent(event, filter)),
+        )
+      )
+        await confirmed;
       const found = events.filter((event) =>
         filters.some(
           (filter) =>
@@ -251,8 +273,32 @@ const owner = createRelaySession(
       },
     },
   },
-  { agentChoices: local, outboxStorage: { load: () => [], save() {} } },
+  {
+    agentChoices: local,
+    outboxStorage: { load: () => [], save() {} },
+    ...(cold
+      ? {
+          prepared: true,
+          persistence: {
+            readStartup: async () => ({
+              discovery: {
+                savedAt: Date.now(),
+                relayAuthor: authority.pubkey,
+                events: launchSaved,
+              },
+            }),
+            read: async () => [],
+            write: async () => {},
+            remove: async () => {},
+            retain: async () => {},
+            clear: async () => {},
+            close() {},
+          },
+        }
+      : {}),
+  },
 );
+if (cold) await owner.restore();
 live?.state({ status: "connected", routes: [] });
 setDefaultAgent(owner.session.scope, bestie.pubkey);
 const snapshot = {
@@ -423,6 +469,11 @@ function Fixture() {
               <Button size="xs" onClick={respond}>
                 Deliver fixture response
               </Button>
+              {cold && (
+                <Button size="xs" onClick={confirmMembership}>
+                  Confirm membership
+                </Button>
+              )}
             </div>
             <div className="min-h-0 flex-1">
               <ChannelsPage
