@@ -203,6 +203,8 @@ export type ChannelTimelineProps = {
   /** False: viewing rows marks nothing read; the owner decides what was read. */
   marksRead?: boolean | undefined;
   navigation?: PageNavigation | undefined;
+  /** The reader moved in the history: a scroll gesture, key, or press. */
+  onReaderIntent?: (() => void) | undefined;
   onOpenThread?(
     messageId: string,
     threadRootId: string,
@@ -247,6 +249,7 @@ function Timeline({
   transient = false,
   marksRead = true,
   navigation,
+  onReaderIntent,
   onOpenThread,
   onOpenMediaReview,
   chatPresentation = false,
@@ -1813,6 +1816,7 @@ function Timeline({
     layoutCorrection.current = false;
     intent.current++;
     userScrolled.current = true;
+    onReaderIntent?.();
     if (scroller.current) recordPosition(scroller.current);
     // Retiring a pending restore lets the bottom be caught up. Wake dwell: a
     // wheel or touch at the end cannot scroll, so nothing else would.
