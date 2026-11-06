@@ -153,6 +153,12 @@ import { followUpBehaviorPreference } from "./follow-up-preference";
 import { followUpQueue } from "./follow-up-queue";
 import { followUpMessage } from "./follow-up-message";
 import { QueuedFollowUps } from "./QueuedFollowUps";
+import {
+  useGuestAgentMentions,
+  type UnheardAgent,
+} from "./useGuestAgentMentions";
+import { guestKeys, useChannelGuests } from "../channel-members/guests";
+import { useCatchUp } from "../../bundled/bestie/catch-up-context";
 
 const noChannels: ReturnType<ComposerSession["channels"]["list"]> = {
   status: "idle",
@@ -857,6 +863,15 @@ function Composer({
   const nonmembers = useNonmemberMentions(session, channelId, () => {
     if (permitted.current) input.current?.focus();
   });
+  const unheard = useGuestAgentMentions(() => {
+    if (permitted.current) input.current?.focus();
+  });
+  const catchUp = useCatchUp();
+  // Reads this channel's roles so a send knows who is Viewing only.
+  useChannelGuests(
+    session,
+    soloConversation || ownSoloConversation ? undefined : channelId,
+  );
   const oldAgents = useOldAgentMentions(agents, () => {
     if (permitted.current) input.current?.focus();
   });
@@ -2400,6 +2415,87 @@ function Composer({
           routing && !captured.recipients.length,
         );
       } else if (recipients.length) {
+        // An agent that can't reply here (Viewing only, or not in the channel)
+        // can be asked in a new Solo chat instead of posting here.
+        const here = session.channels
+          .list()
+          .channels.find((item) => item.id === channelId);
+        const relaySession = fullSession(session);
+        if (
+          here?.members &&
+          here.channelType !== "dm" &&
+          here.channelType !== "solo"
+        ) {
+          const guests = guestKeys(session.memberAdministration, channelId);
+          const known = session.profiles.snapshot();
+          const agentsHere = captured.recipients.flatMap(
+            (person): UnheardAgent[] => {
+              const profile = known.get(person.pubkey);
+              if (!profile?.isAgent) return [];
+              const reason = guests.has(person.pubkey)
+                ? "viewing-only"
+                : here.members?.includes(person.pubkey)
+                  ? undefined
+                  : "not-in-channel";
+              return reason
+                ? [
+                    {
+                      pubkey: person.pubkey,
+                      name: person.name,
+                      reason,
+                      own: profile.ownerPubkey === session.viewer,
+                    },
+                  ]
+                : [];
+            },
+          );
+          if (agentsHere.length) {
+            const solo =
+              agentsHere.length === 1 &&
+              !!agentsHere[0]?.own &&
+              captured.recipients.length === 1 &&
+              !capturedAttachments.length &&
+              !!catchUp &&
+              !!relaySession;
+            setSending(true);
+            setError(undefined);
+            const choice = await unheard.prepare(
+              agentsHere,
+              solo,
+              attempt.signal,
+            );
+            if (choice === null) return;
+            const [agent] = agentsHere;
+            if (choice === "solo" && agent && relaySession && catchUp) {
+              const opened = catchUp.ask(relaySession, {
+                agent: { pubkey: agent.pubkey, name: agent.name },
+                question: composerMarkdown(captured),
+                channelId,
+                channelName: here.name,
+                ...(threadRootId ? { threadRootId } : {}),
+              });
+              if (!opened)
+                throw new Error(
+                  "Solo chats are unavailable right now. Your draft is kept.",
+                );
+              // The question moved to the Solo chat; clear it like a send.
+              const handed = {
+                next: mentionDraft(""),
+                revision: savedRevision,
+              };
+              recoveryFor(session).set(recoveryKey, handed);
+              setAccepted(handed);
+              completion.invalidate();
+              valueRef.current = handed.next;
+              updateDraft(handed.next);
+              setPicks({});
+              input.current?.reset(handed.next);
+              setError(undefined);
+              finishDraft(handed);
+              return;
+            }
+          }
+        }
         // An agent only an earlier Buzz runs would not answer; offer it here first.
         const lookup = oldAgents.find(captured.recipients);
         const old = lookup instanceof Promise ? await lookup : lookup;
@@ -2884,6 +2980,7 @@ function Composer({
       {context}
       {active && bringing.dialog}
       {active && nonmembers.dialog}
+      {active && unheard.dialog}
       {active && oldAgents.dialog}
       {active && linkSharing.dialog}
       {!submission && !threadRootId && host && (

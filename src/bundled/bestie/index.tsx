@@ -23,6 +23,7 @@ import { onBestieMade } from "../agents/BestieChoice";
 import { bestieTab, formerBestieTab } from "./BestieTab";
 import { rememberNewBestie, stopFormerCheckIns } from "./former";
 import { AskBestie, AskBestieMenu } from "./AskBestie";
+import { registerCatchUpHost } from "./catch-up-context";
 
 export const inject = [
   "pages",
@@ -46,6 +47,8 @@ export const apply: PluginModule["apply"] = (ctx) => {
       );
     }),
   );
+  // A composer can hand a question to a Solo exchange (see catch-up-context).
+  ctx.effect(() => registerCatchUpHost(ctx, ctx.conversation));
   ctx.conversation.registerMessageAction({
     id: "ask-bestie",
     title: "Catch me up",

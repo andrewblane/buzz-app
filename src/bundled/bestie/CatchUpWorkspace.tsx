@@ -14,7 +14,10 @@ import type { RelayData } from "../../features/relay/service";
 import { splitPartition } from "../../features/relay/partition";
 import type { RegisteredPage } from "../../features/pages/service";
 import {
+  askMessage,
+  catchUpHost,
   CatchUpContext,
+  type CatchUpAsk,
   type CatchUpOpening,
   type CatchUpSource,
 } from "./catch-up-context";
@@ -88,7 +91,10 @@ export function CatchUpProvider({
         ? document.activeElement
         : null;
     const previous = activeSource.current;
+    // Each ask is its own exchange; only catch-ups reopen the same source.
     const opening =
+      !next.ask &&
+      !previous?.ask &&
       previous?.session.scope === next.session.scope &&
       previous.message.channelId === next.message.channelId &&
       (previous.message.threadRootId ?? previous.message.id) ===
@@ -99,7 +105,11 @@ export function CatchUpProvider({
     if (opening !== previous) setChannelId(undefined);
     setSource(opening);
     const scope = splitPartition(next.session.scope);
-    if (scope && (next.message.threadRootId || next.message.replyCount > 0))
+    if (
+      scope &&
+      !next.ask &&
+      (next.message.threadRootId || next.message.replyCount > 0)
+    )
       void next.host.navigation.open({
         version: 1,
         kind: "conversation",
@@ -121,14 +131,37 @@ export function CatchUpProvider({
         : document.querySelector<HTMLElement>("[data-catch-up-launcher]");
     target?.focus({ preventScroll: true });
   }, []);
+  const ask = useCallback(
+    (session: RelaySession, input: CatchUpAsk) => {
+      const registered = catchUpHost();
+      const { connection, enabled } = latest.current;
+      if (
+        !registered ||
+        !enabled ||
+        connection.status !== "ready" ||
+        connection.session !== session
+      )
+        return false;
+      open({
+        session,
+        message: askMessage(session, input),
+        ask: input,
+        ...registered,
+      });
+      return true;
+    },
+    [open],
+  );
   const value = useMemo(
     () => ({
       source: current,
-      visible: take === "current" && !!current && visible,
+      // An ask shows in every prototype placement; catch-ups keep Current panel.
+      visible: (take === "current" || !!current?.ask) && !!current && visible,
       open,
+      ask,
       hide,
     }),
-    [current, visible, open, hide, take],
+    [current, visible, open, ask, hide, take],
   );
   return (
     <CatchUpContext value={value}>
@@ -154,7 +187,8 @@ export function CatchUpProvider({
 export function CatchUpLauncher() {
   const take = useBestieTake();
   const workspace = useContext(WorkspaceContext);
-  if (take !== "current" || !workspace?.source) return null;
+  if (!workspace?.source || (take !== "current" && !workspace.source.ask))
+    return null;
   return workspace.channelId ? (
     <CatchUpUnreadLauncher
       workspace={workspace}

@@ -12,7 +12,8 @@ import { useMentionChoices } from "./use-mention-choices";
 import type { ComposerCompletionProps } from "../../features/conversation/contracts";
 import type { ComposerSession } from "../../features/messages/composer-session";
 import { Avatar } from "../../shared/design-system/ui/Avatar";
-import { outsideMentionDetail } from "./mention-candidates";
+import { guestMentionDetail, outsideMentionDetail } from "./mention-candidates";
+import { useChannelGuests } from "../../features/channel-members/guests";
 import { matchesMentionQuery, pendingMentionQuery } from "./mention-query";
 import { continuedMention, matchingMentions } from "./mention-ranking";
 import { resolveSpaceMention } from "./resolve-space-mention";
@@ -50,6 +51,12 @@ export function MentionCompletion({
     JSON.stringify(["inline", scope, channelId, threadRootId, query.start]),
   );
   const { profiles, agents, channel, list, choices } = model;
+  const guests = useChannelGuests(
+    session,
+    channel && channel.channelType !== "dm" && channel.channelType !== "solo"
+      ? channelId
+      : undefined,
+  );
   const teams = useTeamMentions(
     session,
     channelId,
@@ -174,7 +181,13 @@ export function MentionCompletion({
             [
               fullName !== label ? fullName : undefined,
               memberKeys.has(recipient.pubkey)
-                ? recipient.pubkey
+                ? guests.has(recipient.pubkey)
+                  ? guestMentionDetail(
+                      agentKeys.has(recipient.pubkey),
+                      profiles.get(recipient.pubkey)?.ownerPubkey ===
+                        session.viewer,
+                    )
+                  : recipient.pubkey
                 : inviteAgents
                   ? `${parentAdmission ? "Adds to channel" : "Adds to chat"} · ${recipient.pubkey}`
                   : outsideMentionDetail(channel, elsewhere),
@@ -361,6 +374,7 @@ export function MentionCompletion({
     parentAdmission,
     selected,
     community,
+    guests,
   ]);
   return null;
 }

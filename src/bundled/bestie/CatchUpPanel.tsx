@@ -51,9 +51,18 @@ export function CatchUpPanel({
   const session = connection.session;
   const saved = useSavedAgentState(session, source.session.scope);
   const choices = useAgentChoices(session, true, true);
-  const bestie = choices.selectable.find(
+  const savedBestie = choices.selectable.find(
     (agent) => agent.pubkey === saved.agent,
   );
+  const ask = source.ask;
+  // An ask names its agent; a catch-up uses the saved Bestie.
+  const bestie = ask
+    ? {
+        pubkey: ask.agent.pubkey,
+        name: ask.agent.name,
+        managedName: undefined as string | undefined,
+      }
+    : savedBestie;
   const [request, setRequest] = useState<Request>();
   const [error, setError] = useState<string>();
   const [attempt, retry] = useState(0);
@@ -75,12 +84,19 @@ export function CatchUpPanel({
   const sourceChannel = roster.channels.find(
     (item) => item.id === source.message.channelId,
   );
-  const link = messageCopyLink(source.message, source.session.scope);
+  const link = ask
+    ? ask.threadRootId
+      ? messageCopyLink(source.message, source.session.scope)
+      : `buzz://channel/${ask.channelId}`
+    : messageCopyLink(source.message, source.session.scope);
   const scope = splitPartition(source.session.scope);
   const isThread =
     !!source.message.threadRootId || source.message.replyCount > 0;
-  const requestPrompt = `Catch me up on this ${isThread ? "thread" : "post"}. Summarize what’s happening, decisions, blockers, and the next step.\n\n${link}`;
-  const sourceName = useRef(sourceChannel?.name);
+  const sourceName = useRef(sourceChannel?.name ?? ask?.channelName);
+  const where = `${isThread ? "a thread in " : ""}#${sourceName.current ?? "a channel"}`;
+  const requestPrompt = ask
+    ? `${ask.question}\n\n(Asked from ${where}, where you can’t reply: ${link})`
+    : `Catch me up on this ${isThread ? "thread" : "post"}. Summarize what’s happening, decisions, blockers, and the next step.\n\n${link}`;
   if (sourceChannel?.name) sourceName.current = sourceChannel.name;
   const name =
     request?.agent.name ?? bestie?.managedName ?? bestie?.name ?? "Bestie";
@@ -100,9 +116,7 @@ export function CatchUpPanel({
   useEffect(() => {
     if (
       !connected ||
-      !saved.read ||
-      saved.error ||
-      choices.pending ||
+      (!ask && (!saved.read || saved.error || choices.pending)) ||
       running.current ||
       tried.current === attempt
     )
@@ -111,7 +125,9 @@ export function CatchUpPanel({
     if (submitted.current?.messageId) return;
     if (!bestie) {
       setError(
-        "Your Bestie is unavailable. Choose an agent as your Bestie, then try again.",
+        ask
+          ? `${ask.agent.name} is unavailable. Try again.`
+          : "Your Bestie is unavailable. Choose an agent as your Bestie, then try again.",
       );
       return;
     }
@@ -136,7 +152,7 @@ export function CatchUpPanel({
           };
           const start = session.channelWrites.start(
             channelId,
-            `Catch-up with ${agent.name}`,
+            ask ? `From ${where}` : `Catch-up with ${agent.name}`,
             [agent.pubkey],
           );
           current = { channelId, create: start.create, agent };
@@ -183,6 +199,8 @@ export function CatchUpPanel({
     link,
     requestPrompt,
     started,
+    ask,
+    where,
   ]);
 
   const openSource = () => {
@@ -192,13 +210,13 @@ export function CatchUpPanel({
       kind: "conversation",
       scope,
       channelId: source.message.channelId,
-      messageId: source.message.id,
+      ...(ask && !isThread ? {} : { messageId: source.message.id }),
       ...(isThread
         ? { threadRootId: source.message.threadRootId ?? source.message.id }
         : {}),
     });
   };
-  const feedback = saved.error ?? error;
+  const feedback = (ask ? undefined : saved.error) ?? error;
   return (
     <section
       ref={panel}
@@ -238,8 +256,10 @@ export function CatchUpPanel({
       <div className={`${panelStyles.source} text-body-sm`}>
         <div className={panelStyles.sourceHeading}>
           <span className={panelStyles.sourceLabel}>
-            About {isThread ? "a thread" : "a post"} in{" "}
-            {sourceName.current ?? "the original channel"}
+            {ask
+              ? "Asked from"
+              : `About ${isThread ? "a thread" : "a post"} in`}{" "}
+            {ask ? where : (sourceName.current ?? "the original channel")}
           </span>
           <Button
             variant="link"
@@ -247,7 +267,7 @@ export function CatchUpPanel({
             onClick={openSource}
             disabled={!connected}
           >
-            View {isThread ? "thread" : "post"}
+            View {isThread ? "thread" : ask ? "channel" : "post"}
           </Button>
         </div>
         <p className={panelStyles.sourceExcerpt}>

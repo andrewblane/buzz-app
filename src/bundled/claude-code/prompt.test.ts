@@ -273,3 +273,25 @@ it("always includes the Buzz tools' guidance, and leaves attention's to its tool
   expect(prompt).toContain(BUZZ_PROMPT);
   expect(prompt).not.toContain("## Attention");
 });
+
+it("tells a viewing-only agent its role, and only then", () => {
+  const input = {
+    agent,
+    event: event("1", "@Claude hi", {
+      tags: [
+        ["h", "chan"],
+        ["p", agent],
+      ],
+    }),
+    scope: "thread" as const,
+    context: [],
+    total: 1,
+    label: "@mention",
+    name,
+  };
+  const line = "Your role here: guest (viewing only).";
+  expect(
+    turnPrompt({ ...input, channel: { id: "chan", viewingOnly: true } }),
+  ).toContain(line);
+  expect(turnPrompt({ ...input, channel: { id: "chan" } })).not.toContain(line);
+});
