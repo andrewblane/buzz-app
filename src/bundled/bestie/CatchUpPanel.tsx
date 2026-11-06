@@ -95,7 +95,8 @@ export function CatchUpPanel({
   const sourceName = useRef(sourceChannel?.name ?? ask?.channelName);
   const where = `${isThread ? "a thread in " : ""}#${sourceName.current ?? "a channel"}`;
   const requestPrompt = ask
-    ? `${ask.question}\n\n(Asked from ${where}, where you can’t reply: ${link})`
+    ? // The link renders as the channel or message it names; don't repeat it.
+      `${ask.question}\n\n(${isThread ? `Asked from a thread you can’t reply in: ${link}` : `Asked from ${link}, where you can’t reply.`})`
     : `Catch me up on this ${isThread ? "thread" : "post"}. Summarize what’s happening, decisions, blockers, and the next step.\n\n${link}`;
   if (sourceChannel?.name) sourceName.current = sourceChannel.name;
   const name =
