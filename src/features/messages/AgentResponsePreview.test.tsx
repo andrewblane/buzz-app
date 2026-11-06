@@ -24,11 +24,13 @@ const first = agent("0"),
 function row(
   session: RelaySession,
   [named, ...others]: readonly [Agent, ...Agent[]],
+  stackPrevious = false,
 ) {
   return (
     <AgentResponsePreview
       name={named.name}
       participants={[named, ...others]}
+      stackPrevious={stackPrevious}
       profile={{
         pubkey: named.id,
         session,
@@ -100,6 +102,36 @@ it("keeps a compact continuation's hidden avatar a labelled image, not a hidden 
     ).toBeNull();
     const avatar = screen.getByRole("img", { name: "Agent 0" });
     expect(avatar.parentElement).toHaveClass("sr-only");
+  } finally {
+    delete root.dataset.messageDensity;
+  }
+});
+
+it("keeps a focused avatar shown as its compact row becomes a continuation, then hides it once focus moves on", () => {
+  const { session } = fixture();
+  const root = document.documentElement;
+  root.dataset.messageDensity = "compact";
+  const view = (stackPrevious: boolean) => (
+    <>
+      <button type="button">Elsewhere</button>
+      {row(session, [first], stackPrevious)}
+    </>
+  );
+  try {
+    const { rerender } = render(view(false));
+    const avatar = screen.getByRole("button", { name: "View Agent 0 profile" });
+    act(() => avatar.focus());
+    rerender(view(true));
+    // Hiding it now would leave keyboard focus on an invisible control.
+    expect(avatar).toHaveFocus();
+    expect(avatar.closest(".sr-only")).toBeNull();
+    act(() => screen.getByRole("button", { name: "Elsewhere" }).focus());
+    expect(
+      screen.queryByRole("button", { name: "View Agent 0 profile" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("img", { name: "Agent 0" }).parentElement,
+    ).toHaveClass("sr-only");
   } finally {
     delete root.dataset.messageDensity;
   }
