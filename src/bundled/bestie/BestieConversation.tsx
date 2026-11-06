@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -34,6 +35,7 @@ import type { ConversationExtensions } from "../../features/conversation/contrac
 import type { ConversationHostServices } from "../../features/conversation/ConversationHost";
 import { ForwardMessageProvider } from "../../features/messages/ForwardMessage";
 import { MessageManagementStatus } from "../../features/messages/MessageManagement";
+import { useMessageOpening } from "../../features/messages/use-message-opening";
 import type { Navigation } from "../../features/navigation/controller";
 import type { PageNavigation } from "../../features/navigation/service";
 import { targetKey } from "../../features/navigation/targets";
@@ -59,6 +61,7 @@ import { IconButton } from "../../shared/design-system/ui/IconButton";
 import {
   bestieBaseTarget,
   bestieRoute,
+  bestieMessageRoute,
   bestieThreadTarget,
   bestieDetailRoute,
   bestieDetailTarget,
@@ -135,11 +138,45 @@ export function BestieConversation({
     navigation?.target.kind === "page"
       ? bestieRoute(navigation.target.route?.params)
       : undefined;
+  const exact =
+    navigation?.target.kind === "page"
+      ? bestieMessageRoute(navigation.target.route?.params)
+      : undefined;
   const detail =
     navigation?.target.kind === "page"
       ? bestieDetailRoute(navigation.target.route?.params)
       : undefined;
-  const addressed = routed ?? detail;
+  const addressed = routed ?? exact ?? detail;
+  // A thread visit shows its root in the chat history beside the thread; a
+  // message visit shows that message, or opens its thread when it is a reply
+  // or isn't in history. Each visit seeks and reveals once.
+  const visits = useRef(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new visit asks again for the same message.
+  const visit = useMemo(() => ++visits.current, [navigation?.entryId]);
+  const sought =
+    !preserveNavigation && addressed?.channelId === channel.id
+      ? (routed?.threadRootId ?? exact?.messageId)
+      : undefined;
+  const inTimeline = useMessageOpening(
+    session.channels,
+    channel.id,
+    sought,
+    visit,
+  );
+  const thread =
+    routed ??
+    (exact && inTimeline === false
+      ? { ...exact, threadRootId: exact.messageId }
+      : undefined);
+  const revealKey =
+    sought && inTimeline ? JSON.stringify([sought, visit]) : undefined;
+  const [reveal, setReveal] = useState<{ key: string; signal: AbortSignal }>();
+  useEffect(() => {
+    if (!revealKey) return;
+    const request = new AbortController();
+    setReveal({ key: revealKey, signal: request.signal });
+    return () => request.abort();
+  }, [revealKey]);
   const ownsCurrentVisit = useCallback(
     () =>
       !navigation ||
@@ -165,6 +202,7 @@ export function BestieConversation({
         return false;
       const route =
         bestieRoute(target.route?.params) ??
+        bestieMessageRoute(target.route?.params) ??
         bestieDetailRoute(target.route?.params);
       return !!route && route.channelId !== channel.id;
     }, base);
@@ -225,7 +263,9 @@ export function BestieConversation({
         targetKey(bestieBaseTarget(target)) !== targetKey(base)
       )
         return false;
-      const thread = bestieRoute(target.route?.params);
+      const thread =
+        bestieRoute(target.route?.params) ??
+        bestieMessageRoute(target.route?.params);
       const panel = bestieDetailRoute(target.route?.params);
       return (
         !!(
@@ -295,8 +335,8 @@ export function BestieConversation({
       return true;
     },
     routed:
-      routed?.channelId === channel.id && navigation && !preserveNavigation
-        ? { channelId: channel.id, messageId: routed.messageId, navigation }
+      thread?.channelId === channel.id && navigation && !preserveNavigation
+        ? { channelId: channel.id, messageId: thread.messageId, navigation }
         : undefined,
     onVisitPanel: visitPanel,
     onClosePanel: (entry) =>
@@ -320,16 +360,18 @@ export function BestieConversation({
       !navigation ||
       !ownsCurrentVisit() ||
       (addressed?.channelId && addressed.channelId !== channel.id) ||
+      // A message visit is a thread visit until history says otherwise.
+      (exact && sought && inTimeline === undefined) ||
       appliedVisit.current === navigation.entryId
     )
       return;
     appliedVisit.current = navigation.entryId;
     state.enterVisit(
-      `${navigation.entryId}:${routed ? "thread" : detail ? "detail" : "channel"}`,
-      routed && {
+      `${navigation.entryId}:${thread ? "thread" : detail ? "detail" : "channel"}`,
+      thread && {
         channelId: channel.id,
-        messageId: routed.messageId,
-        rootId: routed.threadRootId,
+        messageId: thread.messageId,
+        rootId: thread.threadRootId,
       },
       !!detail,
       detail && { channelId: channel.id, target: detail.detail },
@@ -350,7 +392,10 @@ export function BestieConversation({
     addressed,
     channel.id,
     state.enterVisit,
-    routed,
+    exact,
+    sought,
+    inTimeline,
+    thread,
     detail,
     host.panels,
     secondary.open,
@@ -607,6 +652,19 @@ export function BestieConversation({
                                 viewer={session.viewer}
                                 cached={!!channel.cached}
                                 revealMessageId={sent}
+                                // Mount the list once, at the message, not while it is sought.
+                                holding={!!sought && inTimeline === undefined}
+                                inlineTarget={
+                                  sought &&
+                                  reveal &&
+                                  reveal.key === revealKey &&
+                                  !reveal.signal.aborted
+                                    ? {
+                                        messageId: sought,
+                                        signal: reveal.signal,
+                                      }
+                                    : undefined
+                                }
                                 marksRead
                                 onOpenThread={openThread}
                               />
