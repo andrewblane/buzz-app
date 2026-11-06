@@ -229,12 +229,15 @@ pub(crate) fn relay_socket_send(
     if data.len() > 1024 * 1024 {
         return Err("Socket frame too large".into());
     }
+    let leave = leave_frame(&data)?;
     let live = sockets
         .0
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let connection = live.get(&id).ok_or("Native socket retired")?;
-    admit_frame(&connection.relay, &data, crate::relay_policy::removable)?;
+    if leave {
+        crate::relay_policy::removable(&connection.relay)?;
+    }
     connection
         .sender
         .try_send(data)
@@ -242,25 +245,17 @@ pub(crate) fn relay_socket_send(
 }
 
 /// A NIP-43 leave names no relay, so one signed for another community could
-/// leave whichever relay receives it: check removal against this socket's.
-fn admit_frame(
-    relay: &str,
-    data: &str,
-    removable: impl Fn(&str) -> Result<(), String>,
-) -> Result<(), String> {
-    let leave = serde_json::from_str::<serde_json::Value>(data).is_ok_and(|frame| {
-        frame.get(0).and_then(|v| v.as_str()) == Some("EVENT")
-            && frame
-                .get(1)
-                .and_then(|v| v.get("kind"))
-                .and_then(|v| v.as_u64())
-                == Some(28936)
-    });
-    if leave {
-        removable(relay)
-    } else {
-        Ok(())
+/// leave whichever relay receives it: the caller checks removal against this
+/// socket's. An EVENT kind the relay would narrow to another value is refused.
+fn leave_frame(data: &str) -> Result<bool, String> {
+    let Ok(frame) = serde_json::from_str::<serde_json::Value>(data) else {
+        return Ok(false);
+    };
+    if frame.get(0).and_then(|v| v.as_str()) != Some("EVENT") {
+        return Ok(false);
     }
+    let event = frame.get(1).ok_or("Invalid event kind")?;
+    Ok(crate::relay::event_kind(event)? == 28936)
 }
 #[tauri::command]
 pub(crate) fn relay_socket_close(
@@ -397,25 +392,47 @@ fn connector() -> Option<tokio_tungstenite::Connector> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn leave_frames_signed_elsewhere_cannot_leave_the_pinned_relay() {
-        let policy = crate::relay_policy::RelayPolicy::parse(Some(
-            r#"{"pinned":"relay.example","allowlist":["other.example"]}"#,
-        ))
-        .unwrap()
-        .unwrap();
-        let removable = |relay: &str| policy.removable(relay);
-        let leave = r#"["EVENT",{"kind":28936,"content":"","tags":[["-"]]}]"#;
-        assert!(super::admit_frame("wss://relay.example", leave, removable)
-            .unwrap_err()
-            .contains("pinned relay"));
-        assert!(super::admit_frame("wss://other.example", leave, removable).is_ok());
+    fn leave_frames_and_their_kind_aliases_are_detected_or_refused() {
+        use nostr_pairing::{EventBuilder, JsonUtil, Keys, Kind, Tag};
+        let leave = EventBuilder::new(Kind::Custom(28936), "")
+            .tags([Tag::parse(["-"]).unwrap()])
+            .sign_with_keys(&Keys::generate())
+            .unwrap()
+            .as_json();
+        assert!(super::leave_frame(&format!(r#"["EVENT",{leave}]"#)).unwrap());
+        for alias in ["94472", "4294996232"] {
+            let aliased = leave.replace(r#""kind":28936"#, &format!(r#""kind":{alias}"#));
+            // The relay's parser narrows the kind back to a validly signed leave.
+            let parsed = nostr_pairing::Event::from_json(&aliased).unwrap();
+            assert_eq!(parsed.kind, Kind::Custom(28936));
+            assert!(parsed.verify().is_ok());
+            assert!(super::leave_frame(&format!(r#"["EVENT",{aliased}]"#)).is_err());
+        }
+        for frame in [
+            r#"["EVENT",{"kind":-1}]"#,
+            r#"["EVENT",{"kind":28936.0}]"#,
+            r#"["EVENT",{"kind":"28936"}]"#,
+            r#"["EVENT"]"#,
+        ] {
+            assert!(super::leave_frame(frame).is_err(), "{frame}");
+        }
         for frame in [
             r#"["EVENT",{"kind":9,"content":"hi","tags":[]}]"#,
             r#"["REQ","s",{"kinds":[28936]}]"#,
             "not json",
         ] {
-            assert!(super::admit_frame("wss://relay.example", frame, removable).is_ok());
+            assert!(!super::leave_frame(frame).unwrap(), "{frame}");
         }
+        let policy = crate::relay_policy::RelayPolicy::parse(Some(
+            r#"{"pinned":"relay.example","allowlist":["other.example"]}"#,
+        ))
+        .unwrap()
+        .unwrap();
+        assert!(policy
+            .removable("wss://relay.example")
+            .unwrap_err()
+            .contains("pinned relay"));
+        assert!(policy.removable("wss://other.example").is_ok());
     }
 
     use super::*;

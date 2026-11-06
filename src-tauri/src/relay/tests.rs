@@ -4702,3 +4702,25 @@ fn huddle_end_requires_one_parent_and_a_distinct_room() {
         assert!(validate_event("https://relay.test", &event).is_err());
     }
 }
+
+#[test]
+fn event_kind_refuses_aliases_the_relay_would_narrow_to_a_leave() {
+    use nostr_pairing::{EventBuilder, JsonUtil, Keys, Kind, Tag};
+    let leave = EventBuilder::new(Kind::Custom(28936), "")
+        .tags([Tag::parse(["-"]).unwrap()])
+        .sign_with_keys(&Keys::generate())
+        .unwrap()
+        .as_json();
+    let kind = |json: &str| event_kind(&serde_json::from_str(json).unwrap());
+    assert_eq!(kind(&leave), Ok(28936));
+    for alias in ["94472", "4294996232"] {
+        let aliased = leave.replace(r#""kind":28936"#, &format!(r#""kind":{alias}"#));
+        let parsed = nostr_pairing::Event::from_json(&aliased).unwrap();
+        assert_eq!(parsed.kind, Kind::Custom(28936));
+        assert!(parsed.verify().is_ok());
+        assert!(kind(&aliased).is_err());
+    }
+    for event in [r#"{"kind":-1}"#, r#"{"kind":1.0}"#, r#"{"kind":"1"}"#, "{}"] {
+        assert!(kind(event).is_err(), "{event}");
+    }
+}

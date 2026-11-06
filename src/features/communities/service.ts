@@ -336,7 +336,17 @@ export function createCommunities(
             // Any stored record, including Personal space or one this reader
             // cannot understand, wins over the seed.
             const { id, name } = communityDestination(openRelay);
-            saved = { ...saved, memberships: [{ id, name }], selected: id };
+            // A default that is the pin is as automatic as the policy seed.
+            const seed =
+              configuredRelayPolicy &&
+              communityDestination(configuredRelayPolicy.pinned).id === id
+                ? { seeded: true as const }
+                : {};
+            saved = {
+              ...saved,
+              memberships: [{ id, name, ...seed }],
+              selected: id,
+            };
             seeded = true;
           }
           if (typeof raw?.selected === "string") {

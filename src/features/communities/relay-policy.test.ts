@@ -95,6 +95,7 @@ async function startup(
   saved?: unknown,
   stored = new Map<string, string>(),
   relaxed = false,
+  openRelay = "",
 ) {
   vi.stubEnv("VITE_BUZZ_RELAY_POLICY", relaxed ? undefined : raw);
   vi.resetModules();
@@ -113,7 +114,7 @@ async function startup(
     root,
     false,
     undefined,
-    "",
+    openRelay,
     undefined,
     Promise.resolve(viewer),
     connect,
@@ -270,6 +271,32 @@ it("keeps the seeded pin out of account upload after the policy is removed, unti
     mergeList(emptySync(), joined.client.snapshot().memberships, [], "alice")
       .state.outbox,
   ).toEqual([{ url: "wss://relay.example", removed: false }]);
+});
+
+it("keeps a default community that is the pin out of account upload", async () => {
+  const { stored } = await startup(
+    undefined,
+    new Map(),
+    false,
+    "wss://relay.example",
+  );
+  const relaxed = await startup(undefined, stored, true);
+  const { mergeList, emptySync } = await import("./known-communities");
+  const memberships = relaxed.client.snapshot().memberships;
+  expect(memberships.map((m) => m.id)).toEqual(["https://relay.example"]);
+  expect(mergeList(emptySync(), memberships, [], "alice").state.outbox).toEqual(
+    [],
+  );
+  const other = await startup(
+    undefined,
+    new Map(),
+    false,
+    "wss://other.example:8443",
+  );
+  expect(
+    mergeList(emptySync(), other.client.snapshot().memberships, [], "alice")
+      .state.outbox,
+  ).toEqual([{ url: "wss://other.example:8443", removed: false }]);
 });
 
 it("keeps a saved Personal space choice", async () => {
