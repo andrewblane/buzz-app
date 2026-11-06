@@ -163,17 +163,7 @@ export function turnPrompt(input: TurnInput) {
   const parts = [
     section(
       "context",
-      [
-        ...lines,
-        `Agent: ${input.agent}`,
-        ...(channel.viewingOnly
-          ? [
-              "Your role here: guest (viewing only). You cannot post in this channel; see Viewing-only Channels.",
-            ]
-          : []),
-        hint,
-        reply,
-      ].join("\n"),
+      [...lines, `Agent: ${input.agent}`, hint, reply].join("\n"),
     ),
   ];
   if (input.project) parts.push(input.project);
