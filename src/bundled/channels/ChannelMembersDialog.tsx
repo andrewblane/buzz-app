@@ -1494,6 +1494,7 @@ export function ChannelMembersDialog({
   if (
     selection &&
     !memberPending &&
+    (selection.expectedRole !== "absent" || memberActions?.canAdd !== false) &&
     (selection.expectedRole !== "absent" ||
       !archiveHides(session.archives, selection.pubkey, session.viewer)) &&
     administration.status === "ready" &&
@@ -1627,7 +1628,12 @@ export function ChannelMembersDialog({
   }, [memberKey, offering]);
   const changeMember = useCallback(
     async (change: MemberChange, signal: AbortSignal) => {
-      if (memberActions && (memberActions.pending || changeInFlight.current))
+      if (
+        memberActions &&
+        (memberActions.pending ||
+          changeInFlight.current ||
+          (change.expectedRole === "absent" && !memberActions.canAdd))
+      )
         return false;
       if (memberActions) {
         changeInFlight.current = signal;
