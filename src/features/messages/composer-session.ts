@@ -47,12 +47,14 @@ export type ComposerSession = Pick<
   directMessages: Pick<RelaySession["directMessages"], "people"> &
     Partial<Pick<RelaySession["directMessages"], "verified">>;
   memberAdditions: Pick<RelaySession["memberAdditions"], "add">;
-  /** Roles from the signed roster, for presentation only (Viewing only). */
+  /** Roles from the signed roster (Viewing only). `run` makes a Viewing-only
+   * agent a member when the viewer asks; the relay decides who may. */
   memberAdministration?:
-    | Pick<
+    | (Pick<
         RelaySession["memberAdministration"],
         "snapshot" | "subscribe" | "refresh"
-      >
+      > &
+        Partial<Pick<RelaySession["memberAdministration"], "run">>)
     | undefined;
   channelWrites: Pick<
     RelaySession["channelWrites"],

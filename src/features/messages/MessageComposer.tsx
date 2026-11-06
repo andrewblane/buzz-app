@@ -154,6 +154,7 @@ import { followUpQueue } from "./follow-up-queue";
 import { followUpMessage } from "./follow-up-message";
 import { QueuedFollowUps } from "./QueuedFollowUps";
 import {
+  joinOffer,
   useGuestAgentMentions,
   type UnheardAgent,
 } from "./useGuestAgentMentions";
@@ -2406,6 +2407,8 @@ function Composer({
       }
       let references: readonly string[] = [];
       let recipients = capturedRecipients.map((item) => item.pubkey);
+      // Outside agents already decided in the can't-reply dialog.
+      let decided: readonly string[] = [];
       let declinedImports: readonly string[] = [];
       if (soloConversation || ownSoloConversation) {
         admission.current = true;
@@ -2449,25 +2452,54 @@ function Composer({
                 : [];
             },
           );
-          // Only your own agent can be asked in a Solo chat; anyone else keeps
-          // today's flow (the chooser label, then §7 for outside people).
+          // A draft addressed only to one such agent can make a Viewing-only
+          // agent a member first, when the viewer may, or ask your own agent
+          // in a Solo chat; that offer also adds your agent from outside, in
+          // place of §7's Invite. Anything else keeps today's flow (the
+          // chooser label, then §7 for outside people).
+          const [agent] = agentsHere;
+          const single =
+            agentsHere.length === 1 && captured.recipients.length === 1;
           const solo =
-            agentsHere.length === 1 &&
-            !!agentsHere[0]?.own &&
-            captured.recipients.length === 1 &&
+            single &&
+            !!agent?.own &&
             !capturedAttachments.length &&
             !!catchUp &&
             !!relaySession;
-          if (solo) {
+          const join =
+            single && agent && (agent.reason === "viewing-only" || solo)
+              ? joinOffer(session, here, agent)
+              : undefined;
+          if (solo || join) {
             setSending(true);
             setError(undefined);
             const choice = await unheard.prepare(
-              agentsHere,
-              solo,
+              {
+                agents: agentsHere,
+                channel: here.name,
+                solo,
+                join,
+                current: () =>
+                  valueRef.current === captured &&
+                  sameAttachmentSelection(
+                    attachments.store.snapshot(),
+                    capturedAttachments,
+                  ) &&
+                  permitted.current,
+              },
               attempt.signal,
             );
             if (choice === null) return;
-            const [agent] = agentsHere;
+            if (agent?.reason === "not-in-channel") {
+              // This dialog settles the outside agent, so §7 doesn't ask
+              // again. Send here anyway names it without notifying it, like
+              // §7's "Do nothing".
+              decided = [agent.pubkey];
+              if (choice === "send") {
+                references = [agent.pubkey];
+                recipients = recipients.filter((key) => key !== agent.pubkey);
+              }
+            }
             if (choice === "solo" && agent && relaySession && catchUp) {
               const opened = catchUp.ask(relaySession, {
                 agent: { pubkey: agent.pubkey, name: agent.name },
@@ -2536,7 +2568,9 @@ function Composer({
           );
           const bring = captured.recipients.flatMap((person) => {
             const agent = elsewhere.get(person.pubkey);
-            return agent && !channel.members?.includes(person.pubkey)
+            return agent &&
+              !channel.members?.includes(person.pubkey) &&
+              !decided.includes(person.pubkey)
               ? [agent]
               : [];
           });
@@ -2554,7 +2588,8 @@ function Composer({
           const missing = captured.recipients.filter(
             (person) =>
               !channel.members?.includes(person.pubkey) &&
-              !added.includes(person.pubkey),
+              !added.includes(person.pubkey) &&
+              !decided.includes(person.pubkey),
           );
           if (missing.length && channel?.channelType === "dm") {
             // Nobody can be added to a DM, so there is no choice to offer:
@@ -2570,7 +2605,7 @@ function Composer({
               current,
             );
             if (decision === null) return;
-            references = decision;
+            references = [...references, ...decision];
             recipients = recipients.filter((key) => !references.includes(key));
           }
         }

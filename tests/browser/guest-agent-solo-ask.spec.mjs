@@ -50,10 +50,13 @@ test("a Viewing-only agent is asked in a Solo chat that links back to the channe
 
   const dialog = page.getByRole("dialog", { name: "Pollen can’t reply here" });
   await expect(dialog).toContainText(
-    "Pollen is viewing only in this channel, so it answers you in your DM.",
+    "Pollen is viewing only in #launch. Make it a member so it can reply here, or ask it in a Solo chat.",
   );
   await expect(
     dialog.getByRole("button", { name: "Send here anyway" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Make member and send" }),
   ).toBeVisible();
   await shot(page, "2-dialog", testInfo);
   await dialog.getByRole("button", { name: "Ask in a Solo chat" }).click();
@@ -111,7 +114,7 @@ test("a thread reply asks in a Solo chat that links back to the thread", async (
   expect(errors.unexplained()).toEqual([]);
 });
 
-test("Send here anyway posts in the channel, and an agent outside it still offers a Solo chat", async ({
+test("Send here anyway posts in the channel, and an agent outside it asks only once", async ({
   page,
 }, testInfo) => {
   const errors = watchPageErrors(page);
@@ -144,12 +147,131 @@ test("Send here anyway posts in the channel, and an agent outside it still offer
   await row.click();
   await page.keyboard.type(" are you around?");
   await page.keyboard.press("Enter");
-  await expect(dialog).toContainText("Pollen isn’t in this channel.");
+  await expect(dialog).toContainText(
+    "Pollen isn’t in #launch. Add it to the channel so it can reply here, or ask it in a Solo chat.",
+  );
   await shot(page, "5-outside-dialog", testInfo);
   await dialog.getByRole("button", { name: "Send here anyway" }).click();
-  // Today's flow for people outside the channel takes over from here.
-  await expect(page.getByRole("dialog")).toBeVisible();
+  // This dialog already asked; the outside-people prompt doesn't follow it.
+  await expect(
+    page
+      .getByRole("tabpanel", { name: "launch" })
+      .locator("[data-message-id]")
+      .filter({ hasText: "are you around?" }),
+  ).toHaveCount(1);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await shot(page, "6-outside-send-anyway", testInfo);
+  expect(errors.unexplained()).toEqual([]);
+});
+
+test("Make member and send lets a Viewing-only agent reply in the channel", async ({
+  page,
+}, testInfo) => {
+  const errors = watchPageErrors(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/tests/fixtures/bestie-catch-up.html?guest");
+  await page
+    .getByRole("button", { name: "Launch channel", exact: true })
+    .click();
+  const composer = page.getByRole("textbox", { name: "Message #launch" });
+  await mention(page, composer, "are we still on for Thursday?");
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Pollen can’t reply here" });
+  await shot(page, "8-make-member-dialog", testInfo);
+  await dialog.getByRole("button", { name: "Make member and send" }).click();
+  await expect(dialog).toBeHidden();
+  // The role change is confirmed first, then the draft posts here, notifying
+  // Pollen, with no other prompt.
+  const sent = page
+    .getByRole("tabpanel", { name: "launch" })
+    .locator("[data-message-id]")
+    .filter({ hasText: "are we still on for Thursday?" });
+  await expect(sent).toHaveCount(1);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(composer).not.toContainText("are we still on for Thursday?");
+  // The chooser follows the new role on its own.
+  await composer.click();
+  await page.keyboard.type("@Poll");
+  const row = page.getByRole("option", { name: /^Pollen / });
+  await expect(row).toBeVisible();
+  await expect(row).not.toContainText("Viewing only");
+  await shot(page, "9-member-chooser", testInfo);
+  await row.click();
+  await page.keyboard.type(" thanks!");
+  await page.keyboard.press("Enter");
+  await expect(
+    page
+      .getByRole("tabpanel", { name: "launch" })
+      .locator("[data-message-id]")
+      .filter({ hasText: "thanks!" }),
+  ).toHaveCount(1);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(errors.unexplained()).toEqual([]);
+});
+
+test("Add to channel and send adds an outside agent with one prompt", async ({
+  page,
+}, testInfo) => {
+  const errors = watchPageErrors(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/tests/fixtures/bestie-catch-up.html?guest=outside");
+  await page
+    .getByRole("button", { name: "Launch channel", exact: true })
+    .click();
+  const composer = page.getByRole("textbox", { name: "Message #launch" });
+  await composer.click();
+  await page.keyboard.type("@Poll");
+  const row = page.getByRole("option", { name: /^Pollen / });
+  await expect(row).toContainText("Not in channel");
+  await row.click();
+  await page.keyboard.type(" are you around?");
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Pollen can’t reply here" });
+  await dialog.getByRole("button", { name: "Add to channel and send" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(
+    page
+      .getByRole("tabpanel", { name: "launch" })
+      .locator("[data-message-id]")
+      .filter({ hasText: "are you around?" }),
+  ).toHaveCount(1);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await composer.click();
+  await page.keyboard.type("@Poll");
+  await expect(
+    page.getByRole("option", { name: /^Pollen / }),
+  ).not.toContainText("Not in channel");
+  await shot(page, "10-added-chooser", testInfo);
+  expect(errors.unexplained()).toEqual([]);
+});
+
+test("a refused role change keeps the draft and says why", async ({
+  page,
+}, testInfo) => {
+  const errors = watchPageErrors(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/tests/fixtures/bestie-catch-up.html?guest&refuse");
+  await page
+    .getByRole("button", { name: "Launch channel", exact: true })
+    .click();
+  const composer = page.getByRole("textbox", { name: "Message #launch" });
+  await mention(page, composer, "are we still on for Thursday?");
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Pollen can’t reply here" });
+  await dialog.getByRole("button", { name: "Make member and send" }).click();
+  await expect(dialog.getByRole("alert")).toContainText(
+    "Only channel owners and admins can change roles. Your draft is kept.",
+  );
+  await shot(page, "11-refused", testInfo);
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(composer).toContainText("are we still on for Thursday?");
+  await expect(
+    page
+      .getByRole("tabpanel", { name: "launch" })
+      .locator("[data-message-id]")
+      .filter({ hasText: "are we still on for Thursday?" }),
+  ).toHaveCount(0);
   expect(errors.unexplained()).toEqual([]);
 });
 

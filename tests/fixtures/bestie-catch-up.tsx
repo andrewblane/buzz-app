@@ -16,6 +16,7 @@ import {
   profile,
 } from "../../src/features/relay/testing";
 import type { RelayEvent } from "../../src/features/relay/events";
+import { PublishRejected } from "../../src/features/relay/outbox";
 import type { LiveCallbacks } from "../../src/features/relay/live";
 import { agentAvatars } from "../../src/features/agents/avatar-packs";
 import { matchesEvent } from "../../src/features/relay/projection";
@@ -54,6 +55,8 @@ const outside = new URLSearchParams(location.search).get("guest") === "outside";
 // `guest=cold`: the app starts from Launch's saved membership, as on launch,
 // and the relay answers for Launch's roster only after "Confirm membership".
 const cold = new URLSearchParams(location.search).get("guest") === "cold";
+// `refuse`: the relay refuses role changes, as for a viewer no longer an admin.
+const refuse = new URLSearchParams(location.search).has("refuse");
 let confirmMembership = () => {};
 const confirmed = cold
   ? new Promise<void>((resolve) => {
@@ -170,6 +173,30 @@ const launchSaved = events.filter(
     event.kind <= 39002 &&
     event.tags.some(([tag, value]) => tag === "d" && value === alpha),
 );
+let rosterClock = 1_700_000_100;
+/** The relay applies a kind 9000 to its signed roster. An agent with an
+ * owner is stored as `bot`, the relay's ordinary role for agents. */
+function grant(event: RelayEvent) {
+  const [, id] = event.tags.find(([tag]) => tag === "h") ?? [];
+  const [, key] = event.tags.find(([tag]) => tag === "p") ?? [];
+  const [, role = "member"] = event.tags.find(([tag]) => tag === "role") ?? [];
+  const at = events.findIndex(
+    (item) =>
+      item.kind === 39002 &&
+      item.tags.some(([tag, value]) => tag === "d" && value === id),
+  );
+  const old = events[at];
+  if (!old || !key) return;
+  events[at] = signed(authority, {
+    kind: 39002,
+    content: "",
+    created_at: rosterClock++,
+    tags: [
+      ...old.tags.filter(([tag, value]) => !(tag === "p" && value === key)),
+      ["p", key, "", role === "member" && key === bestie.pubkey ? "bot" : role],
+    ],
+  });
+}
 let live: LiveCallbacks | undefined;
 let liveChannels: readonly string[] = [];
 const owner = createRelaySession(
@@ -251,10 +278,30 @@ const owner = createRelaySession(
       }
       return found;
     },
+    // The members panel's role change, used by "Make member and send".
+    ...(guest
+      ? {
+          memberAdministration: {
+            sign: async (event) => signed(viewer, event),
+            publish: async (event) => {
+              if (refuse)
+                throw new PublishRejected(
+                  "Only channel owners and admins can change roles.",
+                );
+              grant(event);
+            },
+          },
+        }
+      : {}),
     writer: {
-      kinds: [9, 9007],
+      // Invite and "Add to channel and send" publish a kind 9000 here.
+      kinds: guest ? [9, 9007, 9000] : [9, 9007],
       sign: async (event) => signed(viewer, event),
       publish: async (event) => {
+        if (event.kind === 9000) {
+          grant(event);
+          return;
+        }
         if (event.kind === 9007) {
           const id = event.tags.find(([tag]) => tag === "h")?.[1] ?? "";
           events.push(
