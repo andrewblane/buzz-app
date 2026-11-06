@@ -78,9 +78,19 @@ test("a Viewing-only agent is asked in a Solo chat that links back to the channe
   await page.getByRole("button", { name: "Deliver fixture response" }).click();
   await expect(panel).toContainText("I can’t post in #launch");
   await shot(page, "3-solo-chat", testInfo);
+  // While open, a top-bar launcher (Current panel) names the asked agent.
+  await expect(page.locator("[data-catch-up-launcher]")).toHaveAccessibleName(
+    "Hide Solo chat with Pollen",
+  );
 
   await panel.getByRole("button", { name: "View channel" }).click();
   await expect(composer).toBeVisible();
+  // Closed, the sent ask leaves nothing in the top bar; its Solo chat stays
+  // under Solo in the sidebar.
+  await panel.getByRole("button", { name: "Hide Bestie catch-up" }).click();
+  await expect(panel).toBeHidden();
+  await expect(page.locator("[data-catch-up-launcher]")).toHaveCount(0);
+  await shot(page, "14-top-nav-after-close", testInfo);
   expect(errors.unexplained()).toEqual([]);
 });
 

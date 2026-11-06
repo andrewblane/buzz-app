@@ -74,6 +74,15 @@ export function CatchUpProvider({
       setVisible(false);
     }
   }, [source, valid]);
+  // A sent ask, once its panel closes, is let go: its Solo chat stays under
+  // Solo in the sidebar, and nothing in the top bar reopens it. An ask hidden
+  // before its question is sent stays held so the question still goes out.
+  useEffect(() => {
+    if (!source?.ask || visible || !channelId) return;
+    activeSource.current = undefined;
+    setSource(undefined);
+    setChannelId(undefined);
+  }, [source, visible, channelId]);
   const latest = useRef({ connection, enabled });
   useLayoutEffect(() => {
     latest.current = { connection, enabled };
@@ -187,8 +196,7 @@ export function CatchUpProvider({
 export function CatchUpLauncher() {
   const take = useBestieTake();
   const workspace = useContext(WorkspaceContext);
-  if (!workspace?.source || (take !== "current" && !workspace.source.ask))
-    return null;
+  if (take !== "current" || !workspace?.source) return null;
   return workspace.channelId ? (
     <CatchUpUnreadLauncher
       workspace={workspace}
@@ -223,11 +231,14 @@ function CatchUpToggle({
   unread?: boolean;
   session: RelaySession;
 }) {
+  // An ask's launcher names and shows the agent it opens, not the Bestie.
+  const agent = workspace.source?.ask?.agent;
+  const what = agent ? `Solo chat with ${agent.name}` : "Bestie catch-up";
   const label = workspace.visible
-    ? "Hide Bestie catch-up"
+    ? `Hide ${what}`
     : unread
-      ? "Show Bestie catch-up — unread response"
-      : "Show Bestie catch-up";
+      ? `Show ${what} — unread response`
+      : `Show ${what}`;
   return (
     <IconButton
       variant="chrome"
@@ -236,7 +247,7 @@ function CatchUpToggle({
       aria-expanded={workspace.visible}
       data-catch-up-launcher=""
       onClick={(event) => workspace.toggle(event.currentTarget)}
-      icon={<CatchUpAvatar session={session} />}
+      icon={<CatchUpAvatar session={session} pubkey={agent?.pubkey} />}
     />
   );
 }

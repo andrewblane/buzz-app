@@ -36,7 +36,7 @@ import {
   CatchUpFrame,
   CatchUpLauncher,
 } from "./CatchUpWorkspace";
-import { useCatchUp } from "./catch-up-context";
+import { registerCatchUpHost, useCatchUp } from "./catch-up-context";
 import {
   BestieExperiment,
   BestieTakePicker,
@@ -63,7 +63,11 @@ function gate() {
   });
   return { promise, resolve };
 }
-async function fixture(take?: BestieTake, refuseFirstCreate = false) {
+async function fixture(
+  take?: BestieTake,
+  refuseFirstCreate = false,
+  { asked }: { asked?: string } = {},
+) {
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -74,7 +78,8 @@ async function fixture(take?: BestieTake, refuseFirstCreate = false) {
   );
   const viewer = keypair(),
     authority = keypair(),
-    agent = keypair();
+    agent = keypair(),
+    other = keypair();
   const channelId = crypto.randomUUID();
   const origin = "https://catch-up.example";
   const source = message(viewer, channelId, "Launch decisions", 1_700_000_000);
@@ -99,7 +104,11 @@ async function fixture(take?: BestieTake, refuseFirstCreate = false) {
           ["t", "stream"],
           ["t", "buzz.solo"],
         ]),
-        roster(authority, id, [viewer.pubkey, agent.pubkey]),
+        // The Solo chat's roster holds the agent it was created with.
+        roster(authority, id, [
+          viewer.pubkey,
+          ...(asked ? [other.pubkey] : [agent.pubkey]),
+        ]),
       );
     }
     events.push(event);
@@ -111,6 +120,16 @@ async function fixture(take?: BestieTake, refuseFirstCreate = false) {
       relayUrl: origin,
       owner: viewer.pubkey,
     },
+    ...(asked
+      ? [
+          {
+            pubkey: other.pubkey,
+            name: asked,
+            relayUrl: origin,
+            owner: viewer.pubkey,
+          },
+        ]
+      : []),
   ]);
   const owner = createRelaySession(
     {
@@ -177,6 +196,11 @@ async function fixture(take?: BestieTake, refuseFirstCreate = false) {
       resolve: () => undefined,
     },
   } as unknown as ConversationHostServices;
+  // The conversation host registers itself for composer asks.
+  if (asked)
+    dispose.push(
+      registerCatchUpHost(host, { tools: contribution, inline: contribution }),
+    );
   const rows = foldMessages(channelId, authority.pubkey, [source]);
   const row = rows[0];
   if (!row) throw new Error("Missing source");
@@ -202,6 +226,21 @@ async function fixture(take?: BestieTake, refuseFirstCreate = false) {
         >
           Catch me up
         </button>
+        {asked && (
+          <button
+            type="button"
+            onClick={() =>
+              catchUp?.ask(owner.session, {
+                agent: { pubkey: other.pubkey, name: asked },
+                question: "Is launch still Thursday?",
+                channelId,
+                channelName: "Launch",
+              })
+            }
+          >
+            Ask in a Solo chat
+          </button>
+        )}
         <button type="button" onClick={() => setChannel("Another channel")}>
           Browse another channel
         </button>
@@ -274,6 +313,7 @@ async function fixture(take?: BestieTake, refuseFirstCreate = false) {
     row,
     source,
     agent,
+    other,
     host,
     publish,
     events,
@@ -566,4 +606,64 @@ it("retries a definitively refused creation as one fresh chat while keeping its 
   expect(
     f.publish.mock.calls.find(([event]) => event.kind === 9)?.[0].content,
   ).toContain("Can we still launch?");
+});
+
+async function askAndSend(f: Awaited<ReturnType<typeof fixture>>) {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Ask in a Solo chat" }));
+  await f.createStarted.promise;
+  await act(async () => f.createHeld.resolve());
+  await waitFor(() =>
+    expect(
+      f.publish.mock.calls.filter(([event]) => event.kind === 9),
+    ).toHaveLength(1),
+  );
+  const sent = f.publish.mock.calls.find(([event]) => event.kind === 9)?.[0];
+  expect(sent?.tags).toContainEqual(["p", f.other.pubkey]);
+  return user;
+}
+const launcher = () =>
+  document.querySelector<HTMLElement>("[data-catch-up-launcher]");
+
+it.each(["floating", "top-nav", "current"] as const)(
+  "leaves no launcher behind once a sent ask's panel closes (%s)",
+  async (take) => {
+    const f = await fixture(take, false, { asked: "Clover" });
+    const user = await askAndSend(f);
+    const panel = screen.getByRole("region", { name: "Bestie catch-up" });
+    await user.click(
+      within(panel).getByRole("button", { name: "Hide Bestie catch-up" }),
+    );
+    // The Solo chat stays under Solo in the sidebar; nothing here reopens it.
+    await waitFor(() => expect(launcher()).toBeNull());
+    expect(
+      screen.queryByRole("region", { name: "Bestie catch-up" }),
+    ).not.toBeInTheDocument();
+  },
+);
+
+it("names the asked agent, not the Bestie, on a launcher for an ask", async () => {
+  const f = await fixture("current", false, { asked: "Clover" });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Ask in a Solo chat" }));
+  await f.createStarted.promise;
+  try {
+    const shown = launcher();
+    expect(shown).toHaveAccessibleName("Hide Solo chat with Clover");
+    // Clover's avatar (its initial), not Pollen's.
+    expect(shown).toHaveTextContent(/^C$/);
+    // Hidden before its question is sent, the ask is kept so it still sends.
+    await user.click(
+      screen.getByRole("button", { name: "Hide Solo chat with Clover" }),
+    );
+    expect(launcher()).toHaveAccessibleName("Show Solo chat with Clover");
+  } finally {
+    await act(async () => f.createHeld.resolve());
+  }
+  await waitFor(() =>
+    expect(
+      f.publish.mock.calls.filter(([event]) => event.kind === 9),
+    ).toHaveLength(1),
+  );
+  await waitFor(() => expect(launcher()).toBeNull());
 });
