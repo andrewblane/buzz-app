@@ -40,8 +40,17 @@ import { createCommunities } from "../../src/features/communities/service";
 import { AccountActionsService } from "../../src/features/account-actions/service";
 import { createAppearance } from "../../src/shared/theme/service";
 import { Button } from "../../src/shared/design-system/ui/Button";
+import { registerCatchUpHost } from "../../src/bundled/bestie/catch-up-context";
+import * as mentions from "../../src/bundled/mentions";
+import { schnorr } from "@noble/curves/secp256k1.js";
+import { bytesToHex } from "nostr-tools/utils";
 
 const take = new URLSearchParams(location.search).get("take") ?? "current";
+// `guest`: Launch is private and Pollen, the viewer's own agent, is a Guest
+// (Viewing only) there, so a mention offers "Ask in a Solo chat".
+const guest = new URLSearchParams(location.search).has("guest");
+// `guest=outside`: the same, but Pollen isn't in Launch at all.
+const outside = new URLSearchParams(location.search).get("guest") === "outside";
 sessionStorage.setItem("buzz.dev.bestie-take", take);
 
 const viewer = keypair(),
@@ -69,11 +78,50 @@ const reply = message(
   1_700_000_001,
   [["e", rootMessage.id, "", "reply"]],
 );
+const ownerSignature = bytesToHex(
+  schnorr.sign(
+    new Uint8Array(
+      await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(`nostr:agent-auth:${bestie.pubkey}:`),
+      ),
+    ),
+    viewer.secret,
+  ),
+);
 const events: RelayEvent[] = [
   metadata(authority, dm, "Pollen DM", undefined, [["t", "dm"]]),
   roster(authority, dm, [viewer.pubkey, bestie.pubkey]),
-  metadata(authority, alpha, "Launch", undefined, [["t", "stream"]]),
-  roster(authority, alpha, [viewer.pubkey]),
+  ...(guest
+    ? [
+        metadata(authority, alpha, "launch", undefined, [
+          ["private"],
+          ["t", "stream"],
+        ]),
+        signed(authority, {
+          kind: 39001,
+          content: "",
+          created_at: 1_700_000_000,
+          tags: [
+            ["d", alpha],
+            ["p", viewer.pubkey, "owner"],
+          ],
+        }),
+        signed(authority, {
+          kind: 39002,
+          content: "",
+          created_at: 1_700_000_000,
+          tags: [
+            ["d", alpha],
+            ["p", viewer.pubkey, "", "owner"],
+            ...(outside ? [] : [["p", bestie.pubkey, "", "guest"]]),
+          ],
+        }),
+      ]
+    : [
+        metadata(authority, alpha, "Launch", undefined, [["t", "stream"]]),
+        roster(authority, alpha, [viewer.pubkey]),
+      ]),
   metadata(authority, beta, "Design", undefined, [["t", "stream"]]),
   roster(authority, beta, [viewer.pubkey]),
   rootMessage,
@@ -89,7 +137,14 @@ const events: RelayEvent[] = [
     1_700_000_002,
   ),
   profile(viewer, { name: "You" }),
-  profile(bestie, { name: "Pollen", bot: true }),
+  guest
+    ? signed(bestie, {
+        kind: 0,
+        content: JSON.stringify({ name: "Pollen", bot: true }),
+        created_at: 1_700_000_000,
+        tags: [["auth", viewer.pubkey, "", ownerSignature]],
+      })
+    : profile(bestie, { name: "Pollen", bot: true }),
 ];
 const local = localAgentsFixture([
   {
@@ -124,6 +179,18 @@ const owner = createRelaySession(
         filters.some(
           (filter) =>
             matchesEvent(event, filter) ||
+            // The guest walk's directory search: name prefix, like the relay.
+            (guest &&
+              filter.search !== undefined &&
+              event.kind === 0 &&
+              matchesEvent(event, {
+                ...filter,
+                search: undefined,
+                search_mode: undefined,
+              }) &&
+              String(JSON.parse(event.content).name ?? "")
+                .toLowerCase()
+                .startsWith(filter.search.toLowerCase())) ||
             (filter.include_summaries &&
               event.kind === 39005 &&
               event.tags.some(
@@ -169,11 +236,14 @@ const owner = createRelaySession(
         if (event.kind === 9007) {
           const id = event.tags.find(([tag]) => tag === "h")?.[1] ?? "";
           events.push(
-            metadata(authority, id, "Catch-up", undefined, [
-              ["private"],
-              ["t", "stream"],
-              ["t", "buzz.solo"],
-            ]),
+            metadata(
+              authority,
+              id,
+              (guest && event.tags.find(([tag]) => tag === "name")?.[1]) ||
+                "Catch-up",
+              undefined,
+              [["private"], ["t", "stream"], ["t", "buzz.solo"]],
+            ),
             roster(authority, id, [viewer.pubkey, bestie.pubkey]),
           );
         }
@@ -215,6 +285,8 @@ const host = ctx;
 await ctx
   .extend({ pluginOwner: { id: "buzz.bestie", revision: "fixture" } })
   .plugin((plugin) => {
+    // Production Bestie registers this seam in its apply (bestie/index.tsx).
+    plugin.effect(() => registerCatchUpHost(host, conversation));
     plugin.conversation.registerMessageAction({
       id: "catch-up",
       title: "Catch me up",
@@ -240,6 +312,12 @@ await ctx
     });
   })
   .await();
+// The guest walk needs the real mention chooser (a host-owned feature).
+if (guest)
+  await ctx
+    .extend({ pluginOwner: { id: "buzz.mentions", revision: "fixture" } })
+    .plugin(mentions)
+    .await();
 const shellPages = pages.snapshot().map((page) => ({
   ...page,
   key: page.id === "bestie" ? "buzz.bestie/bestie" : "buzz.channels/channels",
@@ -287,6 +365,7 @@ function Fixture() {
           event.kind === 9 &&
           event.pubkey === viewer.pubkey &&
           (event.content.includes("Source:") ||
+            event.content.includes("(Asked from") ||
             event.content.startsWith("Catch me up")),
       );
     const id = request?.tags.find(([tag]) => tag === "h")?.[1];
@@ -296,7 +375,9 @@ function Fixture() {
     const answer = message(
       bestie,
       id,
-      "## You’re caught up\n\n- **Decision:** aim for Thursday.\n- **Blocker:** final review is still required.\n- **Next step:** check Morgan’s launch checklist.\n\nWant me to dig into the remaining review?",
+      request.content.includes("(Asked from")
+        ? "Thursday still works. Morgan owns the launch checklist, and the final review is the one open item.\n\nI can’t post in #launch, so I’m answering here."
+        : "## You’re caught up\n\n- **Decision:** aim for Thursday.\n- **Blocker:** final review is still required.\n- **Next step:** check Morgan’s launch checklist.\n\nWant me to dig into the remaining review?",
       request.created_at + 1,
     );
     events.push(answer);
