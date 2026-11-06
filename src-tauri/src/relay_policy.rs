@@ -21,7 +21,10 @@ fn host_origin(entry: &serde_json::Value) -> Option<String> {
 /// `*.suffix[:port]`: the suffix must have at least two labels, so `*.com` fails.
 fn wildcard_origin(entry: &str) -> Option<String> {
     let origin = host_origin(&serde_json::Value::from(entry.strip_prefix("*.")?))?;
-    let host = url::Url::parse(&origin).ok()?.host_str()?.to_owned();
+    let url = url::Url::parse(&origin).ok()?;
+    let Some(url::Host::Domain(host)) = url.host() else {
+        return None;
+    };
     host.contains('.').then_some(origin)
 }
 
@@ -128,6 +131,7 @@ mod tests {
             r#"{"pinned":"relay.example","allowlist":["*.example"]}"#,
             r#"{"pinned":"relay.example","allowlist":["a.*.example"]}"#,
             r#"{"pinned":"relay.example","allowlist":["*.*.relay.example"]}"#,
+            r#"{"pinned":"relay.example","allowlist":["*.1.2.3.4"]}"#,
         ] {
             assert!(RelayPolicy::parse(Some(raw)).is_err(), "{raw}");
         }

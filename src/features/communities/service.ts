@@ -373,9 +373,10 @@ export function createCommunities(
             });
             seeded = true;
           }
+          // A fresh install starts on the pin, even over a default community.
           // Preserve a deliberate Personal space selection; replace a blocked
-          // startup destination (or a fresh install) with the pinned relay.
-          if (!saved.selected && (!hadRecord || hadSelection))
+          // startup destination with the pinned relay.
+          if (!hadRecord || (!saved.selected && hadSelection))
             saved.selected = pinned.id;
         }
         presenceActivity.setViewer(viewer);

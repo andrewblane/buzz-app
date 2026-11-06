@@ -96,8 +96,8 @@ such as `[2001:db8::1]:8443`. Subdomains, suffixes and different ports are
 separate relays. An allowlist entry `*.suffix` or `*.suffix:port` permits any
 host exactly one DNS label under `suffix`, on that port, such as
 `*.communities.example.com` for `a.communities.example.com`. It does not permit
-`suffix` itself or deeper subdomains. The suffix needs at least two labels, and
-the pin cannot be a wildcard. Aliases resolve to an origin before
+`suffix` itself or deeper subdomains. The suffix needs to be a DNS name of at least two labels, not an IP literal,
+and the pin cannot be a wildcard. Aliases resolve to an origin before
 policy checking.
 
 After identity restoration the pin is present in the saved community inventory.

@@ -88,10 +88,14 @@ function hostOrigin(entry: unknown): string {
   return relayOrigin(`https://${entry}`);
 }
 
-/** `*.suffix[:port]`: the suffix must have at least two labels, so `*.com` fails. */
+/** `*.suffix[:port]`: the suffix must be a DNS name of at least two labels, so
+ * `*.com` and IP literals such as `*.1.2.3.4` fail. */
 function wildcardOrigin(entry: string): string {
   const origin = hostOrigin(entry.slice(2));
-  if (!new URL(origin).hostname.includes(".")) throw new Error();
+  const { hostname } = new URL(origin);
+  // WHATWG URL parsing leaves an IPv4 host as four decimal parts.
+  if (!hostname.includes(".") || /^(\d+\.){3}\d+$/.test(hostname))
+    throw new Error();
   return origin;
 }
 

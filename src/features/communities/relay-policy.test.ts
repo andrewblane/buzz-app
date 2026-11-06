@@ -31,6 +31,7 @@ it.each([
   '{"pinned":"relay.example","allowlist":["*.example"]}',
   '{"pinned":"relay.example","allowlist":["a.*.example"]}',
   '{"pinned":"relay.example","allowlist":["*.*.relay.example"]}',
+  '{"pinned":"relay.example","allowlist":["*.1.2.3.4"]}',
 ])("fails closed for malformed policy %j", (value) => {
   expect(() => parseRelayPolicy(value)).toThrow("BUZZ_BUILD_RELAY_POLICY");
 });
@@ -271,6 +272,24 @@ it("keeps the seeded pin out of account upload after the policy is removed, unti
     mergeList(emptySync(), joined.client.snapshot().memberships, [], "alice")
       .state.outbox,
   ).toEqual([{ url: "wss://relay.example", removed: false }]);
+});
+
+it("starts a fresh identity on the pin even with an allowed default community", async () => {
+  const { client, connect } = await startup(
+    undefined,
+    new Map(),
+    false,
+    "wss://other.example:8443",
+  );
+  const { memberships, selected } = client.snapshot();
+  expect(selected).toBe("https://relay.example");
+  expect(memberships.map((m) => m.id).sort()).toEqual([
+    "https://other.example:8443",
+    "https://relay.example",
+  ]);
+  expect(connect.mock.calls.map(([id]) => id)).toEqual([
+    "https://relay.example",
+  ]);
 });
 
 it("keeps a default community that is the pin out of account upload", async () => {
