@@ -58,6 +58,8 @@ export type ChannelSummary = Readonly<{
   ttlSeconds?: number;
   /** Exact members from the relay-signed roster; absent means unknown. */
   members?: readonly string[];
+  /** Members the relay-signed roster makes Guests (Viewing only). */
+  guests?: readonly string[];
   /** Relay-published NIP-CL labels. Any channel admin can set them: grouping, never trust. */
   labels?: readonly string[];
   /** Relay-written creator (NIP-CL `P`): the kind:9007 signer. Ownership can move later. */

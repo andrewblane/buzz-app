@@ -305,7 +305,11 @@ export class DiscoveryState {
   // scanned for the (fixed) viewer again on every `get`.
   private readonly parsed = new WeakMap<
     RelayEvent,
-    { members: readonly string[]; viewerRole: ChannelSummary["viewerRole"] }
+    {
+      members: readonly string[];
+      guests: readonly string[];
+      viewerRole: ChannelSummary["viewerRole"];
+    }
   >();
   private parse(roster: RelayEvent) {
     let parsed = this.parsed.get(roster);
@@ -320,6 +324,20 @@ export class DiscoveryState {
             ...new Set(
               roster.tags.flatMap(([name, value]) =>
                 name === "p" && value && /^[0-9a-f]{64}$/.test(value)
+                  ? [value]
+                  : [],
+              ),
+            ),
+          ].sort(),
+        ),
+        guests: Object.freeze(
+          [
+            ...new Set(
+              roster.tags.flatMap(([name, value, , role]) =>
+                name === "p" &&
+                role === "guest" &&
+                value &&
+                /^[0-9a-f]{64}$/.test(value)
                   ? [value]
                   : [],
               ),
@@ -429,6 +447,9 @@ export class DiscoveryState {
           }
         : {}),
       members: roster ? this.parse(roster).members : noMembers,
+      ...(roster && this.parse(roster).guests.length
+        ? { guests: this.parse(roster).guests }
+        : {}),
       ...(this.hidden(id) ? { hidden: true } : {}),
       ...(this.isPrivate(id) ? { private: true } : {}),
       ...(channelType ? { channelType } : {}),

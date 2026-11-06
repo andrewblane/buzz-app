@@ -93,7 +93,8 @@ export function ownerReads(
             ...(summary.name ? { name: summary.name } : {}),
             dm: summary.channelType === "dm",
             members: summary.members ?? [],
-            ...(summary.viewerRole === "guest"
+            // The agent's own role: `viewerRole` is its owner's here.
+            ...(summary.guests?.includes(pubkey)
               ? { viewingOnly: true as const }
               : {}),
             ...(summary.pending ? { starting: true as const } : {}),
