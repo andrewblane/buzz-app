@@ -8,7 +8,11 @@ import {
 } from "react";
 import type { AppServices } from "./services";
 import { communityDestination } from "../features/communities/destination";
-import { targetKey, type OpenTarget } from "../features/navigation/targets";
+import {
+  targetKey,
+  withoutJoin,
+  type OpenTarget,
+} from "../features/navigation/targets";
 import type { PageNavigation } from "../features/navigation/service";
 import type {
   OpenAttempt,
@@ -80,7 +84,16 @@ export function useAppNavigation(
   );
 
   const startup = plugins.configuration.status;
-  const target = state.entry.target;
+  // The join dialog is presentation over a visit; routing sees the visit. A
+  // join for another viewer is not shown, so it covers nothing.
+  const join =
+    state.entry.target.join?.viewer === client.viewer
+      ? state.entry.target.join
+      : undefined;
+  const target = useMemo(
+    () => withoutJoin(state.entry.target),
+    [state.entry.target],
+  );
   const settings = target.kind === "settings";
   const provider = settings ? target.provider : undefined;
   const providerAvailable = useSyncExternalStore(
@@ -302,6 +315,19 @@ export function useAppNavigation(
       previous.owner = owner;
       return;
     }
+    // A join dialog over a retained page: the page keeps its own visit beneath,
+    // so the dialog's visit is acknowledged here, not by the page.
+    if (
+      join &&
+      !settings &&
+      previous &&
+      !previous.presentation.request.signal.aborted &&
+      previous.owner.attempt.entry.id !== owner.attempt.entry.id &&
+      sameVisitBeneath(previous.owner.attempt, owner.attempt)
+    ) {
+      services.navigationHost.complete(owner.attempt, { status: "opened" });
+      return;
+    }
     if (!settings) {
       previous?.presentation.dispose();
       workspace.current = undefined;
@@ -344,12 +370,21 @@ export function useAppNavigation(
     presented.set({ owner, request: next.request });
     if (settings) return next.dispose;
     workspace.current = { owner, presentation: next };
-  }, [services, owner, settings, presented]);
+  }, [services, owner, settings, presented, join]);
   const retained = workspace.current;
+  // Join over a page retained from its own visit: present that page beneath.
+  const covered =
+    settings ||
+    (!!join &&
+      !!retained &&
+      !retained.presentation.request.signal.aborted &&
+      retained.owner.attempt.entry.id !== state.entry.id &&
+      sameVisitBeneath(retained.owner.attempt, state.attempt));
   const sameWorkspaceVisit =
     retained &&
     retained.owner.attempt.entry.id === state.entry.id &&
-    targetKey(retained.owner.attempt.entry.target) === targetKey(target);
+    targetKey(retained.owner.attempt.entry.target) ===
+      targetKey(state.entry.target);
   const retainedRequest =
     retained && !retained.presentation.request.signal.aborted
       ? retained.presentation.request
@@ -360,16 +395,16 @@ export function useAppNavigation(
       : !settings && sameWorkspaceVisit
         ? retainedRequest
         : undefined;
-  const workspacePage = settings
+  const workspacePage = covered
     ? retainedRequest && retained?.owner.page
     : page;
   const workspaceTarget =
-    settings && retainedRequest && retained
-      ? retained.owner.attempt.entry.target
+    covered && retainedRequest && retained
+      ? withoutJoin(retained.owner.attempt.entry.target)
       : target;
   const workspaceRequestFor = (
     presentation: ReturnType<typeof presented.get>,
-  ) => (settings ? retainedRequest : requestFor(presentation));
+  ) => (covered ? retainedRequest : requestFor(presentation));
   useEffect(() => {
     if (state.attempt.signal.aborted) return;
     if (failure) {
@@ -422,7 +457,7 @@ export function useAppNavigation(
   }, [navigation, state, failure, offline, relay.status]);
   const select = (
     key: string,
-    options?: Pick<NavigationOpenOptions, "focus"> & {
+    options?: Pick<NavigationOpenOptions, "focus" | "replace"> & {
       /** Settings only: open at this section. */
       section?: string;
     },
@@ -465,7 +500,12 @@ export function useAppNavigation(
     }
     void navigation.open(
       destination,
-      options?.focus ? { focus: options.focus } : undefined,
+      options?.focus || options?.replace
+        ? {
+            ...(options.focus ? { focus: options.focus } : {}),
+            ...(options.replace ? { replace: true } : {}),
+          }
+        : undefined,
     );
   };
   return {
@@ -497,7 +537,7 @@ export function useAppNavigation(
       selected:
         workspacePage?.key ?? (settings ? "home" : (pageKey ?? target.kind)),
       attempt:
-        settings && retainedRequest && retained
+        covered && retainedRequest && retained
           ? retained.owner.attempt.id
           : state.attempt.id,
     },
@@ -647,4 +687,16 @@ function legacyPageTarget(
       ...scope,
     };
   }
+}
+
+/** Whether a retained page is the visit this join dialog was opened over: a
+ * multi-step traversal can land on a join whose page was never presented. */
+function sameVisitBeneath(
+  retained: { entry: { target: OpenTarget } },
+  join: { entry: { target: OpenTarget } },
+) {
+  return (
+    targetKey(withoutJoin(retained.entry.target)) ===
+    targetKey(withoutJoin(join.entry.target))
+  );
 }
