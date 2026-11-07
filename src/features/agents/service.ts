@@ -5747,7 +5747,7 @@ export class AgentsService extends Service implements Agents {
   /** The communities where `pubkey` is one of the owner's agents a team
    * there can have. */
   private homesOf(pubkey: string) {
-    return [...this.bound].flatMap(([origin, { binding }]) =>
+    const homes = [...this.bound].flatMap(([origin, { binding }]) =>
       this.teamAgents(origin).some(
         (agent) =>
           agent.pubkey === pubkey &&
@@ -5756,6 +5756,17 @@ export class AgentsService extends Service implements Agents {
         ? [origin]
         : [],
     );
+    // A membership the relay policy blocks is never bound, but still keeps a
+    // team spanning it local.
+    const { viewer } = this.communities.snapshot();
+    for (const identity of this.liveRows(pubkey)) {
+      const origin =
+        identity.owner === viewer &&
+        relayBlocked(identity.relay) &&
+        storedOrigin(identity.relay);
+      if (origin && !homes.includes(origin)) homes.push(origin);
+    }
+    return homes;
   }
 
   /** Moves each local team whose members are all the owner's agents in

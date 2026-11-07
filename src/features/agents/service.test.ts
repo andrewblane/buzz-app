@@ -18124,6 +18124,34 @@ describe("synced teams", () => {
       expect(f.saveTeam).not.toHaveBeenCalled();
       expect(f.storage.get(TEAM_MOVES_KEY)).toBeFalsy();
     });
+
+    it("keeps a team local when an agent's other saved community is blocked by the relay policy", async () => {
+      const resolve = destinations.communityDestination;
+      const policy = destinations.parseRelayPolicy(
+        JSON.stringify({ pinned: "relay.example.test", allowlist: [] }),
+      );
+      const gate = vi
+        .spyOn(destinations, "communityDestination")
+        .mockImplementation((value) => resolve(value, undefined, policy));
+      try {
+        const t = await local([{ ...mine, members: [alder] }]);
+        const f = await ready(
+          [here(alder), here(alder, "wss://blocked.example")],
+          t.storage,
+        );
+        await vi.waitFor(() =>
+          expect(f.service.teamSync("local-1")).toEqual({
+            local: "communities",
+          }),
+        );
+        await settle();
+        expect(f.saveTeam).not.toHaveBeenCalled();
+        expect(f.storage.get(TEAM_MOVES_KEY)).toBeFalsy();
+        expect(f.storage.get(teamsKey)).toContain("Mine");
+      } finally {
+        gate.mockRestore();
+      }
+    });
   });
 
   it("imports over an edited local copy with its edits, moving templates before removing it", async () => {
