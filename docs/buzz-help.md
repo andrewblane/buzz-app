@@ -1324,6 +1324,9 @@ tab, asks **Discard changes?** first; **Keep editing** keeps them.
   in. Scroll position isn’t kept, and reloading the window or turning the
   GitHub plugin off and on forgets all of this.
 - Some desktop plugins can upload images you provide to services they declare.
+- In plugins that use Buzz's sharing controls, switching a record to **Private**
+  keeps existing members' access. The confirmation warns about people who joined
+  while it was open; remove them in **People** to end their access.
 - Agents running on this computer can write plugins while the **Plugin
   development** plugin is on (it is by default). It gives them
   `plugin_authoring_guide`, `plugin_status` and `plugin_reload`. The person
