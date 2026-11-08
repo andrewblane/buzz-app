@@ -2515,6 +2515,26 @@ it.each([
   },
 );
 
+it("does not offer plugin additions to a plain member", async () => {
+  const t = await setup("member", "absent");
+  const change = vi.fn(async () => {});
+  pluginPicker(t, { memberActions: { canAdd: true, pending: false, change } });
+  await t.user.type(screen.getByRole("searchbox"), "Morgan");
+  await vi.waitFor(() =>
+    expect(t.session.memberAdministration.snapshot(id).status).toBe("ready"),
+  );
+  expect(screen.getByRole("searchbox")).toHaveAttribute(
+    "placeholder",
+    "Search members",
+  );
+  expect(
+    screen.queryByRole("button", { name: /^Add Morgan/ }),
+  ).not.toBeInTheDocument();
+  expect(change).not.toHaveBeenCalled();
+  expect(t.publish).not.toHaveBeenCalled();
+  expect(t.write).not.toHaveBeenCalled();
+});
+
 it("cannot grant a plugin guest member-management authority", async () => {
   const t = await setup("guest");
   const change = vi.fn(async () => {});

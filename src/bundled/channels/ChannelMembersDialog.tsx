@@ -887,8 +887,6 @@ export function ChannelMembersDialog({
     canShareSoloChat(session, channel) &&
     session.channelWrites.available;
   const canAddPeople = solo ? share.eligible : canAddMembers(session, channel);
-  const canAdd =
-    (canAddPeople || canAddSoloAgents) && (memberActions?.canAdd ?? true);
   const generalAccess =
     channel &&
     (solo ||
@@ -1006,6 +1004,12 @@ export function ChannelMembersDialog({
     memberKey,
     !!channel && !channel.cached,
   );
+  const canAdd =
+    (canAddPeople || canAddSoloAgents) &&
+    (!memberActions ||
+      (memberActions.canAdd &&
+        administration.status === "ready" &&
+        administration.authority.canManage));
   if (
     administration.operation?.change.expectedRole === "absent" &&
     administration.operation.status === "pending"
