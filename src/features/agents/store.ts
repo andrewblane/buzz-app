@@ -165,9 +165,6 @@ export type AgentRecord = Readonly<{
   /** Where its attention is stored: absent for this record, "relay" for its
    * attention channel, whose set `attention` and `skipped` then mirror. */
   attentionStorage?: "relay";
-  /** On the relay: `attention` as it was here when it moved there, which a
-   * move back restores. */
-  attentionBackup?: Readonly<Record<string, AttentionObject>>;
 }>;
 type Stored = { version: 1; agents: Record<string, AgentRecord> };
 
@@ -373,13 +370,7 @@ function readRecord(
     timers,
     ...(record.attentionEnabled === true ? { attentionEnabled: true } : {}),
     ...(record.attentionStorage === "relay"
-      ? {
-          attentionStorage: "relay" as const,
-          ...(record.attentionBackup &&
-            typeof record.attentionBackup === "object" && {
-              attentionBackup: record.attentionBackup,
-            }),
-        }
+      ? { attentionStorage: "relay" as const }
       : {}),
   };
 }
