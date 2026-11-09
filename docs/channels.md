@@ -1556,7 +1556,9 @@ picture or file copied on its own, even with its name or web address, attaches i
 text copied with its own pictures, as TextEdit, Notes, Pages and Mail copy it, pastes its text
 and, in the macOS app, attaches those pictures too; browsers such as Chrome do not give the page
 those pictures, so there only the text pastes. Send waits while the pictures are read, so the
-text cannot go out without them. A message edit pastes only the text and says its pictures
+text cannot go out without them. A picture that cannot be read is counted in the composer's
+"Could not attach" notice, beside the text and the pictures that did attach, with the advice to
+copy it again or attach it as a file. A message edit pastes only the text and says its pictures
 cannot attach, so Save does not wait. The placeholder character such apps leave in the text
 where each picture was is dropped.
 A copied spoiler stays a spoiler whether or not it was revealed, and
