@@ -405,7 +405,6 @@ export class GooseRuntime {
       if (
         !(await fromOwner(trigger.event, agent.owner, {
           agent: agent.pubkey,
-          community: snapshot?.origin,
           authority:
             snapshot?.status === "ready"
               ? snapshot.session.workflowAuthority
