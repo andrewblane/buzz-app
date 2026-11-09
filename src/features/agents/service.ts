@@ -204,10 +204,15 @@ import {
   addWritten,
   agentSender,
   attentionChanges,
+  type AttentionMigration,
+  emptySet,
+  ensureChannel,
   mirrored,
   ownerSender,
   pendingSet,
+  publishAll,
   publishChanges,
+  readOnce,
   relayAttention,
   type RelayAttention,
   type Written,
@@ -284,6 +289,9 @@ export type Agent<Config = unknown> = Readonly<{
   /** Why the attention shown may not be its current attention: on the relay,
    * while this device is still reading it or can't. */
   attentionProblem?: string;
+  /** Where its attention is stored: absent for this device, "relay" for its
+   * community. */
+  attentionStorage?: "relay";
   /** Its type's settings, the same in each of its communities. */
   config: Config;
   /** The synced head each synced side's editor opens; Save revises it. */
@@ -1419,6 +1427,15 @@ export type Agents = {
    * device only while such a plugin is on; with none, it is off for every
    * agent. */
   controlAttention(): void;
+  /** Moves the agent's attention from this device to its community
+   * (Rollout 3): publishes each object, reads the set back and compares
+   * it. The agent switches only when they are the same; otherwise it stays
+   * on this device and the result lists what differs. Its objects here stay
+   * as a backup that `revertAttention` restores. */
+  migrateAttention(agent: AgentKey): Promise<AttentionMigration>;
+  /** Moves the agent's attention back to this device, as it was when it
+   * moved: changes made in the community since then are lost here. */
+  revertAttention(agent: AgentKey): Promise<void>;
   /** Adds a tool to every agent session in the app, beside the Buzz tools.
    * The tool acts as the agent, like the rest of a trusted plugin's code
    * acts as its owner. A session lists
@@ -6582,6 +6599,67 @@ export class AgentsService extends Service implements Agents {
       this.relayAttention.set(key, { relay, binding });
     }
   }
+  async migrateAttention(key: AgentKey): Promise<AttentionMigration> {
+    const identity = this.liveMember(key);
+    const native = this.native;
+    const binding = identity && this.bindingOf(identity);
+    const { session, controller } = binding ?? {};
+    const relayAuthor = session?.relayAuthor;
+    const read = session?.snapshotRead;
+    const artifacts = session?.configArtifactWriter;
+    if (!identity || !native || !binding || !session || !controller)
+      throw new Error("Connect this agent's community to move its attention");
+    if (!relayAuthor || !read || !artifacts)
+      throw new Error("This community can't store attention");
+    let result: AttentionMigration | undefined;
+    await this.change(key, async (saved) => {
+      if (!saved) throw new Error("No such agent on this device");
+      if (saved.attentionStorage === "relay")
+        throw new Error("This agent's attention is already on its community");
+      const skipped = Object.keys(saved.skipped ?? {});
+      if (skipped.length)
+        throw new Error(
+          `Fix or remove its unreadable attention first: ${skipped.join(", ")}`,
+        );
+      const channel = await ensureChannel({
+        agent: identity.pubkey,
+        owner: binding.viewer,
+        relayAuthor,
+        query: (filters) => native.query(identity, filters),
+        publish: (event) => native.publish(identity, event),
+      });
+      const { set, found } = await publishAll(
+        { read, send: ownerSender(artifacts, controller.signal) },
+        () => readOnce((filter) => session.artifacts.sync(filter), channel),
+        saved.attention,
+      );
+      const same =
+        !found.different.length && !found.extra.length && !found.skipped.length;
+      result = { ...found, migrated: same };
+      if (!same) return saved;
+      return {
+        ...mirrored(saved, set),
+        attentionStorage: "relay",
+        attentionBackup: saved.attention,
+      };
+    });
+    return result as AttentionMigration;
+  }
+  async revertAttention(key: AgentKey) {
+    await this.change(key, (saved) => {
+      if (!saved) throw new Error("No such agent on this device");
+      if (saved.attentionStorage !== "relay") return saved;
+      const {
+        attentionStorage: _,
+        attentionBackup: backup,
+        ...rest
+      } = mirrored(saved, {
+        ...emptySet(""),
+        attention: saved.attentionBackup ?? saved.attention,
+      });
+      return { ...rest, skipped: {} };
+    });
+  }
   /** The relay attention an attention change of `key` saves to, and how
    * `writer` signs it there; throws when it can't be saved now. */
   private relayWriter(key: AgentKey, writer: "agent" | "owner") {
@@ -6730,6 +6808,9 @@ export class AgentsService extends Service implements Agents {
         attentionPending: true,
       }),
       ...(attentionProblem && { attentionProblem }),
+      ...(record.attentionStorage && {
+        attentionStorage: record.attentionStorage,
+      }),
       config: editor?.config ?? record.config,
       ...(editor && { configBase: editor.base }),
       ...(editor?.problem && { configProblem: editor.problem }),
@@ -7321,6 +7402,7 @@ export class AgentsService extends Service implements Agents {
             this.attentionPending(identity.key, record) &&
           prior.attentionProblem ===
             this.attentionProblem(identity.key, record) &&
+          prior.attentionStorage === record.attentionStorage &&
           sameConfig(prior, editor?.config ?? record.config, editor?.base) &&
           prior.configProblem === editor?.problem &&
           prior.archiveUnchecked === this.archiveUnchecked(identity.key) &&
