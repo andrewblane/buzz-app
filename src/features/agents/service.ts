@@ -6529,9 +6529,7 @@ export class AgentsService extends Service implements Agents {
       return "This agent's attention is on its community; connect to read it";
     return (
       relay.problem() ??
-      (this.attentionLive.has(key)
-        ? undefined
-        : "Reading this agent's attention from its community")
+      (this.attentionLive.has(key) ? undefined : "Loading from its community…")
     );
   }
   /** Keeps one relay attention for each live agent whose attention is on the
@@ -6620,6 +6618,7 @@ export class AgentsService extends Service implements Agents {
           extra: [],
           skipped: [],
           heads: {},
+          names: {},
         };
         return saved;
       }

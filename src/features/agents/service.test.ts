@@ -12712,7 +12712,10 @@ it("moves an agent's attention to its community only when the set comes back the
     device: { "interest/default": instructions("Here.") },
   });
   // The community holds another object: they differ, so it stays here.
-  await f.seed("interest/there", { type: "interest", instructions: "There." });
+  await f.seed("interest/there", {
+    type: "interest",
+    instructions: "# Q3 launch\nThere.",
+  });
   const refused = await f.service.migrateAttention(bot);
   expect(refused).toEqual({
     migrated: false,
@@ -12720,6 +12723,8 @@ it("moves an agent's attention to its community only when the set comes back the
     extra: ["interest/there"],
     skipped: [],
     heads: { "interest/there": expect.any(String) },
+    // By the name the owner knows it by, for the refusal shown.
+    names: { "interest/there": "Q3 launch" },
   });
   expect(f.service.find(bot)?.attentionStorage).toBeUndefined();
   // Published anyway, as the owner; a second try publishes nothing new.
@@ -12768,7 +12773,7 @@ it("moves an agent's attention to its community only when the set comes back the
 it("refuses to move attention back until its copy here is current and readable", async () => {
   const f = await relayAttentionSetup({ synced: false });
   await expect(f.service.revertAttention(bot)).rejects.toThrow(
-    "Reading this agent's attention from its community",
+    "Loading from its community…",
   );
   expect(f.service.find(bot)?.attentionStorage).toBe("relay");
   await f.seed("interest/bad", { type: "interest", instructions: "" });
@@ -12897,7 +12902,7 @@ it("shows why a relay agent's attention is not current", async () => {
   const f = await relayAttentionSetup({ synced: false });
   await vi.waitFor(() =>
     expect(f.service.find(bot)?.attentionProblem).toBe(
-      "Reading this agent's attention from its community",
+      "Loading from its community…",
     ),
   );
   f.sync();
