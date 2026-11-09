@@ -55,6 +55,7 @@ export function apply(ctx: Context) {
   const sharingPolicy: GeneralAccessPolicy = { subject: "record", allowPublic: false, visibilityDescription: () => "Record access changes." };
   const general: ChannelGeneralAccessProps = { capability: ctx.relay.snapshot().session.channelDetails, channelId: "record", policy: sharingPolicy };
   const picker: ChannelMembersDialogProps = { session: ctx.relay.snapshot().session, channelId: "record", trigger: { current: null }, close() {},
+    nonMemberLabel: "Not in this record",
     memberActions: { canAdd: true, pending: false, async change(change: MemberChange, signal: AbortSignal) { void [change.expectedRole, signal.aborted]; } },
     accessSettings: createElement(ctx.conversation.ui.GeneralAccess, general), shareLink: "buzz://plugin?id=example.plugin" };
   createElement(ctx.conversation.ui.MembersDialog, picker);

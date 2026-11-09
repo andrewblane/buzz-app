@@ -2437,6 +2437,38 @@ function pluginPicker(
   );
 }
 
+it.each([
+  ["default", {}, "Not yet added"],
+  ["custom", { nonMemberLabel: "Not in this record" }, "Not in this record"],
+  ["blank", { nonMemberLabel: "   " }, "Not yet added"],
+] as const)(
+  "labels %s plugin search results without changing additions",
+  async (_name, labels, expected) => {
+    const t = await setup("owner", "absent");
+    const change = vi.fn(async () => {});
+    pluginPicker(t, {
+      ...labels,
+      memberActions: { canAdd: true, pending: false, change },
+    });
+    await t.user.type(screen.getByRole("searchbox"), "Morgan");
+    const results = await screen.findByRole("region", {
+      name: expected,
+      exact: true,
+    });
+    expect(within(results).getByText(expected, { exact: true })).toBeVisible();
+    await t.user.click(
+      await within(results).findByRole("button", {
+        name: /^Add Morgan \(.*\)$/,
+      }),
+    );
+    expect(change).toHaveBeenCalledExactlyOnceWith(
+      { pubkey: t.target.pubkey, expectedRole: "absent", role: "member" },
+      expect.any(AbortSignal),
+    );
+    expect(t.publish).not.toHaveBeenCalled();
+  },
+);
+
 it("routes plugin additions, retains failed input, locks pending work, and copies the plugin link", async () => {
   const t = await setup("owner", "absent");
   let reject!: (reason: Error) => void;

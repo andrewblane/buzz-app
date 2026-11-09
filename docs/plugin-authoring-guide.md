@@ -116,6 +116,7 @@ return h(ctx.conversation.ui.MembersDialog, {
   key: session.scope + ":" + channelId,
   session, channelId, trigger, close,
   title: "Share access",
+  nonMemberLabel: "Not in this record",
   shareLink: "buzz://plugin?id=example.records&record=design",
   memberActions: {
     canAdd: canManageRecord,
@@ -143,8 +144,8 @@ picker only while open. Keep it keyed to session/channel. Addressable openings
 must follow the [navigation contract](navigation-history.md); the component does
 not register a destination. Keep external operations in their existing owner if
 navigation can hide the dialog. The public picker props cover session/channel,
-trigger/close, title/description, member actions, access settings and share link;
-host navigation and visit-lifetime props remain internal.
+trigger/close, title/description, non-member label, member actions, access settings
+and share link; host navigation and visit-lifetime props remain internal.
 
 `memberActions` routes individual additions, role changes and removals through
 the plugin, retaining host role checks; team additions are hidden. Its `canAdd`
@@ -154,6 +155,11 @@ and passes an AbortSignal retired on unmount or session/channel change. The
 callback must confirm writes and refresh signed member roles before resolving;
 uncertain writes need recovery in the plugin's access settings, without resending
 blindly. These UI policies do not replace relay authorization.
+
+`nonMemberLabel` sets both the visible heading and accessible name of search
+results that are not members. With `memberActions`, the default is "Not yet
+added"; built-in channel/chat wording is unchanged. A blank label uses that
+default too.
 
 `accessSettings` replaces built-in General access (`null` hides it). The optional
 GeneralAccess policy supplies a generic subject and visibility-change disclosure;

@@ -582,6 +582,8 @@ export type ChannelMembersDialogProps = {
   trigger: RefObject<HTMLElement | null>;
   title?: string;
   description?: string;
+  /** Heading and accessible name for search results that are not members. */
+  nonMemberLabel?: string;
   /** A feature may retain stricter access policy while reusing the member picker. */
   memberActions?: {
     canAdd: boolean;
@@ -612,6 +614,7 @@ export function ChannelMembersDialog({
   trigger,
   title,
   description,
+  nonMemberLabel,
   memberActions,
   accessSettings,
   shareLink,
@@ -868,6 +871,9 @@ export function ChannelMembersDialog({
     session.channels.get?.(channelId);
   const solo = channel?.channelType === "solo";
   const place = solo ? "chat" : "channel";
+  const nonMemberHeading =
+    nonMemberLabel?.trim() ||
+    (memberActions ? "Not yet added" : `Not in this ${place}`);
   const readOnlyAccess =
     channel?.viewerRole === "guest" ||
     (channel?.readOnly && channel.joinRole === "guest");
@@ -2493,11 +2499,11 @@ export function ChannelMembersDialog({
             {offering && (
               <section
                 className={styles.memberGroup}
-                aria-label={`Not in this ${place}`}
+                aria-label={nonMemberHeading}
                 {...highlight.listProps}
               >
                 <div className="pt-2 px-control-inset">
-                  <InlineHeader title={`Not in this ${place}`} />
+                  <InlineHeader title={nonMemberHeading} />
                 </div>
                 {teams.length > 0 && (
                   <ul aria-label="Teams" aria-busy={refreshing}>
