@@ -3386,6 +3386,9 @@ function Composer({
           }
         }}
         onPasteCapture={(event) => {
+          // A dialog opened from a composer tool portals out of the form but
+          // still bubbles through it in React; its pastes are its own.
+          if (!event.currentTarget.contains(event.target as Node)) return;
           const files = Array.from(event.clipboardData.items)
             .filter((item) => item.kind === "file")
             .map((item) => item.getAsFile())
