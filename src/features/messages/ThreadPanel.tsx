@@ -8,7 +8,6 @@ import {
   useChannelActivitySnapshot,
   useStableRowActivity,
 } from "./activity-presentation";
-import { activityRuns } from "./activity-groups";
 import { DayDivider } from "./MessageTimestamp";
 import { workflowLabel } from "../relay/workflow-attribution";
 import { usePanelTabHost } from "../panels/PanelWorkspace";
@@ -658,25 +657,6 @@ function ThreadMessages({
     [session.unread, channelId, snapshot.root?.id, messageId],
   );
   useSyncExternalStore(subscribeUnread, unreadSnapshot, unreadSnapshot);
-  const [expandedActivity, setExpandedActivity] = useState<ReadonlySet<string>>(
-    new Set(),
-  );
-  const activityVisit = useRef<unknown[]>([]);
-  useLayoutEffect(() => {
-    const request = [messageId, navigation?.signal, revealRequest];
-    if (
-      !messageId ||
-      request.every((part, index) => part === activityVisit.current[index]) ||
-      !snapshot.replies.some((row) => row.id === messageId)
-    )
-      return;
-    activityVisit.current = request;
-    const group = [...tree.children.values()]
-      .flatMap((rows) => activityRuns(rows))
-      .find((group) => group.some((row) => row.id === messageId));
-    const first = group?.[0]?.id;
-    if (first) setExpandedActivity((current) => new Set([...current, first]));
-  }, [messageId, navigation?.signal, revealRequest, snapshot.replies, tree]);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [replyParent, setReplyParent] = useState<string>();
   const resolveName = useChannelIdentityNames(session, channelId);
@@ -718,6 +698,55 @@ function ThreadMessages({
   }, [session.profiles, authors, profileGeneration]);
   const profiles = useRowProfiles(session.profiles, rows);
   const agentPubkeys = useKnownAgentPubkeys(session, profiles);
+  // Each displayed level is projected alone, but a signed claim may name a
+  // request loaded at another level.
+  const loadedRows = useMemo(
+    () =>
+      snapshot.root ? [snapshot.root, ...snapshot.replies] : snapshot.replies,
+    [snapshot.root, snapshot.replies],
+  );
+  // One displayed level's activity grouping, shared by rendering and by the
+  // visit that must expand the group hiding its target: a public failure an
+  // activity run absorbs is hidden with that run.
+  const presentLevel = useCallback(
+    (parent: string | undefined) =>
+      activityPresentation(
+        tree.children.get(parent) ?? [],
+        activitySnapshot,
+        agentPubkeys,
+        parent ?? snapshot.root?.id,
+        // A failure with replies needs its own visible branch controls.
+        (failure) => !tree.children.get(failure.id)?.length,
+        loadedRows,
+      ),
+    [tree, activitySnapshot, agentPubkeys, snapshot.root?.id, loadedRows],
+  );
+  const [expandedActivity, setExpandedActivity] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const activityVisit = useRef<unknown[]>([]);
+  useLayoutEffect(() => {
+    const request = [messageId, navigation?.signal, revealRequest];
+    if (
+      !messageId ||
+      request.every((part, index) => part === activityVisit.current[index]) ||
+      !snapshot.replies.some((row) => row.id === messageId)
+    )
+      return;
+    activityVisit.current = request;
+    const group = [...tree.children.keys()]
+      .flatMap((parent) => presentLevel(parent).groups)
+      .find((group) => group.ids.includes(messageId));
+    const first = group?.ids[0];
+    if (first) setExpandedActivity((current) => new Set([...current, first]));
+  }, [
+    messageId,
+    navigation?.signal,
+    revealRequest,
+    snapshot.replies,
+    tree,
+    presentLevel,
+  ]);
   const scroller = useRef<HTMLElement>(null);
   const positioned = useRef(false);
   const shown = useRef(active);
@@ -1061,13 +1090,6 @@ function ThreadMessages({
   const rootActivity = rootId ? rootPresentation.byRow.get(rootId) : undefined;
   // A stopped note may follow only a reply that is always shown: collapsed
   // branches do not mount their rows.
-  // Each displayed level is projected alone, but a signed claim may name a
-  // request loaded at another level.
-  const loadedRows = useMemo(
-    () =>
-      snapshot.root ? [snapshot.root, ...snapshot.replies] : snapshot.replies,
-    [snapshot.root, snapshot.replies],
-  );
   const rootReplies = useMemo(
     () =>
       activityPresentation(
@@ -1489,15 +1511,7 @@ function ThreadMessages({
     );
     if (parent === undefined && snapshot.root)
       requestRows.set(snapshot.root.id, snapshot.root);
-    const presentation = activityPresentation(
-      chronologicalSiblings,
-      activitySnapshot,
-      agentPubkeys,
-      parent ?? rootId,
-      // A failure with replies needs its own visible branch controls.
-      (failure) => !tree.children.get(failure.id)?.length,
-      loadedRows,
-    );
+    const presentation = presentLevel(parent);
     const groups = presentation.groups.filter((group) =>
       group.ids.every((id) => !tree.children.get(id)?.length),
     );
