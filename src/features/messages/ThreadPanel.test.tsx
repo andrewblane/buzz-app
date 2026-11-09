@@ -2044,9 +2044,14 @@ it("a retained reader reveals its exact selected message, again for each new req
   expect(revealedReply()).toBe(false);
 });
 
-it.each(["route", "reveal request"] as const)(
-  "a %s into the open thread leaves focus in the editor the person typed into while it retargets",
-  async (kind) => {
+it.each([
+  ["route", "after"],
+  ["route", "before"],
+  ["reveal request", "after"],
+  ["reveal request", "before"],
+] as const)(
+  "a %s into the open thread leaves focus in the editor the person typed into while it retargets (focused %s the request)",
+  async (kind, focused) => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
       new DOMRect(0, 0, 500, 500),
     );
@@ -2059,6 +2064,15 @@ it.each(["route", "reveal request"] as const)(
     Object.assign(props, { retainThread: true });
     h.render();
     const editor = screen.getByRole("textbox", { name: "Reply" });
+    // A click into the editor, with the browser's own focus move.
+    const enter = () => {
+      fireEvent.pointerDown(editor);
+      editor.focus();
+      fireEvent.pointerUp(editor);
+      fireEvent.click(editor);
+    };
+    // The person is already writing in the editor as the request arrives.
+    if (focused === "before") act(enter);
     let release!: (value: "selected") => void;
     h.view.retarget.mockImplementation(
       () =>
@@ -2077,13 +2091,11 @@ it.each(["route", "reveal request"] as const)(
     );
     h.rerenderProps();
     expect(h.view.retarget).toHaveBeenCalledOnce();
-    // The editor stays usable during the read: the person clicks into it,
-    // with the browser's own focus move, and types.
+    // The editor stays usable during the read: the person clicks into it and
+    // types, or keeps typing.
     act(() => {
-      fireEvent.pointerDown(editor);
-      editor.focus();
-      fireEvent.pointerUp(editor);
-      fireEvent.click(editor);
+      if (focused === "after") enter();
+      fireEvent.keyDown(editor, { key: "a" });
       fireEvent(
         editor,
         new InputEvent("beforeinput", {
