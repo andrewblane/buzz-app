@@ -575,6 +575,12 @@ it.each([
       expect(lostIt).toHaveTextContent(
         /^Lost it\? Close these settings, turn off Enabled in configuration, change the trigger and save\. /,
       );
+      // Issuing a new secret never needs the workflow on, so the steps keep a
+      // deliberately disabled workflow off and leave enabling to the author.
+      expect(lostIt).toHaveTextContent(
+        /save again to get a new secret\. Leave the workflow off for both saves\. Turn it on later only if you want it to run\.$/,
+      );
+      expect(lostIt).not.toHaveTextContent(/turn Enabled in configuration on/);
       expect(
         within(aside).queryByRole("switch", {
           name: "Enabled in configuration",
@@ -805,9 +811,14 @@ steps:
   expect(address).toHaveTextContent(webhookUrl);
   // The steps point at the switch above the address, not at panels this tab
   // doesn't show.
-  expect(screen.getByText(/^Lost it\?/)).toHaveTextContent(
+  const lostIt = screen.getByText(/^Lost it\?/);
+  expect(lostIt).toHaveTextContent(
     /^Lost it\? Turn off Enabled in configuration above, change the trigger and save\. /,
   );
+  expect(lostIt).toHaveTextContent(
+    /Leave the workflow off for both saves\. Turn it on later only if you want it to run\.$/,
+  );
+  expect(lostIt).not.toHaveTextContent(/turn Enabled in configuration on/);
   expect(
     screen.queryByText(/Close these settings|Workflow settings/),
   ).toBeNull();

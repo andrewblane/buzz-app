@@ -113,7 +113,10 @@ See the [capability contract](../src/features/workflows/types.ts).
   only the author can. The relay keeps the secret across saves that keep the
   Webhook trigger and drops it on a save with any other trigger, so a lost
   secret is replaced in two saves: off with another trigger (the old secret
-  now gets 404), then Webhook again, which issues a new one.
+  now gets 404), then Webhook again, which issues a new one. Issuance depends
+  only on the trigger gaining Webhook with no stored secret, never on
+  `enabled`, so the steps keep the workflow off through both saves and leave
+  enabling as a separate choice.
 - Destructive deletion confirmation, unconfirmed manual run of the saved
   configuration (the editor's Run now is unavailable while the draft has
   unsaved changes), and on-demand run/trace history in

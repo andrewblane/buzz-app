@@ -143,8 +143,8 @@ export function WorkflowWebhookAddress({
               ? "Lost it? Turn off Enabled in configuration above, change the trigger and save."
               : "Lost it? Close these settings, turn off Enabled in configuration, change the trigger and save."}{" "}
             The old secret stops working. Then change the trigger back to
-            Webhook, turn Enabled in configuration on and save to get a new
-            secret.
+            Webhook and save again to get a new secret. Leave the workflow off
+            for both saves. Turn it on later only if you want it to run.
           </p>
         </>
       )}

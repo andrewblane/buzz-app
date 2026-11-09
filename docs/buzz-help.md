@@ -1431,8 +1431,9 @@ channel can copy it. Buzz can’t show the secret again. If it’s lost, the
 workflow’s author closes the trigger’s settings, turns off **Enabled in
 configuration**, changes the trigger and saves, which stops the old secret
 working. On the YAML tab, the switch is above the URL. Then they change the
-trigger back to **Webhook**, turn **Enabled in configuration** on and save, and
-**Webhook ready** shows a new secret.
+trigger back to **Webhook** and save again, with the switch still off, and
+**Webhook ready** shows a new secret. The new secret does not depend on the
+workflow being enabled, so turning it on again is a separate choice.
 
 ## Draft diagnostics
 
