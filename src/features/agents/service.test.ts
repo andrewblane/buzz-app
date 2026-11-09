@@ -12719,6 +12719,7 @@ it("moves an agent's attention to its community only when the set comes back the
     different: [],
     extra: ["interest/there"],
     skipped: [],
+    heads: { "interest/there": expect.any(String) },
   });
   expect(f.service.find(bot)?.attentionStorage).toBeUndefined();
   // Published anyway, as the owner; a second try publishes nothing new.
@@ -12776,9 +12777,14 @@ it("deletes what only the community holds when a move prunes, watches before the
   });
   await expect(
     f.service.migrateAttention(bot, {
-      prune: [...shown.extra, ...shown.skipped],
+      prune: shown.heads,
     }),
-  ).resolves.toEqual({ migrated: true, different: [], extra: [], skipped: [] });
+  ).resolves.toMatchObject({
+    migrated: true,
+    different: [],
+    extra: [],
+    skipped: [],
+  });
   // The first try created the device's Interest; the prune deletes the
   // watch first, then the Interests.
   const tag = (event: RelayEvent | undefined, name: string) =>
@@ -12800,7 +12806,7 @@ it("deletes what only the community holds when a move prunes, watches before the
   ]);
 });
 
-it("prunes only the objects named, so one added after the owner saw the list stays", async () => {
+it("prunes only the objects named, at the heads the owner saw, so one added or changed since stays", async () => {
   const f = await relayAttentionSetup({
     device: {
       "interest/default": {
@@ -12815,22 +12821,26 @@ it("prunes only the objects named, so one added after the owner saw the list sta
   expect(shown.extra).toEqual(["interest/old"]);
   // Another writer adds one while the owner confirms.
   await f.seed("interest/new", { type: "interest", instructions: "New." });
+  // And another changes one the owner saw.
+  await f.seed("interest/old", { type: "interest", instructions: "Edited." });
   await expect(
-    f.service.migrateAttention(bot, { prune: shown.extra }),
-  ).resolves.toEqual({
+    f.service.migrateAttention(bot, { prune: shown.heads }),
+  ).resolves.toMatchObject({
     migrated: false,
     different: [],
-    extra: ["interest/new"],
+    extra: ["interest/new", "interest/old"],
     skipped: [],
   });
   expect(f.service.find(bot)?.attentionStorage).toBeUndefined();
   const live = [...f.heads.values()].filter(
     (event) => event.tags.find((t) => t[0] === "op")?.[1] !== "delete",
   );
-  const d = await attentionD(f.home, "interest/new");
-  expect(
-    live.some((event) => event.tags.some((t) => t[0] === "d" && t[1] === d)),
-  ).toBe(true);
+  for (const slug of ["interest/new", "interest/old"]) {
+    const d = await attentionD(f.home, slug);
+    expect(
+      live.some((event) => event.tags.some((t) => t[0] === "d" && t[1] === d)),
+    ).toBe(true);
+  }
 });
 
 it("refuses to move attention with unreadable objects", async () => {
