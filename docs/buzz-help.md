@@ -650,6 +650,10 @@ for 30 days expires.
 - **Emoji suggestions** appear when you type `:` and an emoji name. If a name
   is shortened with an ellipsis, hover over it or use the arrow keys to select
   it and see the full name in a tooltip.
+- **Reminders**, in the desktop app when the plugin is on: choose **Remind me**
+  in a sent message's ⋯ menu. A confirmation names the due time, and the message
+  shows an alarm mark while the reminder is pending. A reminder's note can't be
+  edited once set.
 - **Reminder counts** show how many reminders are due in a small capsule on the
   app tile's corner. It shows `99+` above 99; its accessible label keeps the
   exact count.
