@@ -9,6 +9,8 @@ export async function notificationLevels(page, menu) {
   await page.keyboard.press("ArrowRight");
   const levels = page.getByRole("menu", { name: /^Notifications for / });
   await expect(levels).toBeVisible();
+  // Focus enters the submenu a frame after it opens; keys sent sooner go to the parent.
+  await expect(levels.getByRole("menuitemradio").first()).toBeFocused();
   return levels;
 }
 
@@ -25,6 +27,9 @@ export async function expectNotificationLevel(page, menu, name) {
   await expect(
     page.getByRole("menu", { name: /^Notifications for / }),
   ).toHaveCount(0);
+  await expect(
+    menu.getByRole("menuitem", { name: "Notifications", exact: true }),
+  ).toBeFocused();
 }
 
 export async function pageChoices(page, query = "") {
