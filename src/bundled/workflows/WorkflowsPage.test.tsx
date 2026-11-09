@@ -1764,6 +1764,7 @@ function navigatedPage(
         savePosition: (key, value) =>
           void positions.set(`${snapshot.entry.id}:${key}`, value),
         forSession: () => request,
+        passThrough: () => () => {},
         resolve: () => false,
         complete: (result) => controller.complete(snapshot.attempt, result),
       };
