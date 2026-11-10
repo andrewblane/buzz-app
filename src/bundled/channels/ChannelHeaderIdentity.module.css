@@ -42,3 +42,13 @@
 .soloHeader {
   flex: none;
 }
+
+/* UI polish prototype: the channel name leads, bold; members follow it. */
+.identity .name {
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  font-weight: 700;
+}
+.identity .avatars {
+  order: 1;
+}

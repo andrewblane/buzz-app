@@ -58,6 +58,7 @@ import {
   type PreparedMarkdown,
 } from "./markdown-preparation";
 import { writeClipboardText } from "../../shared/clipboard";
+import { LinkMessageTextContext } from "../conversation/LinkLabelContext";
 
 type MarkdownNode = {
   type: string;
@@ -823,9 +824,11 @@ function PreparedMessageMarkdown({
   };
 
   const markdown = (
-    <MessageComponentsContext value={components}>
-      <MarkdownBody protectedContent={protectedContent} />
-    </MessageComponentsContext>
+    <LinkMessageTextContext value={row.content}>
+      <MessageComponentsContext value={components}>
+        <MarkdownBody protectedContent={protectedContent} />
+      </MessageComponentsContext>
+    </LinkMessageTextContext>
   );
   return largeEmoji ? markdown : <div className={styles.text}>{markdown}</div>;
 }

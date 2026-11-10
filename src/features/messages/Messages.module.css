@@ -199,7 +199,8 @@
   height: var(--size-control-sm);
 }
 .messageGutter {
-  flex: 0 0 var(--size-control-sm);
+  /* Keeps its 32px avatar when small controls shrink. */
+  flex: 0 0 2rem;
 }
 .messageBody {
   display: flex;
@@ -245,7 +246,7 @@
   min-width: 0;
 }
 .author {
-  font-weight: var(--type-weight-medium);
+  font-weight: 700;
   flex-shrink: 0;
   min-width: 0;
   max-width: 100%;
@@ -268,7 +269,8 @@ html[data-keyboard-navigation] .authorLink:focus-visible {
   outline-offset: 2px;
 }
 .authorAgentIcon {
-  display: inline-block;
+  /* Prototype: the 1em robot reads as a stray symbol beside the owner label. */
+  display: none;
   width: 1em;
   height: 1em;
   margin-inline-end: var(--space-1);
@@ -276,11 +278,14 @@ html[data-keyboard-navigation] .authorLink:focus-visible {
 }
 .authorOwner {
   color: var(--text-subtle);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .text {
   white-space: pre-wrap;
+  --inline-emoji-size: 1.375em;
 }
 .text[data-single-emoji] {
   --inline-emoji-size: var(--size-emoji-display);
@@ -355,7 +360,7 @@ html[data-keyboard-navigation] .authorLink:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  max-width: var(--size-control-sm);
+  max-width: 3.5rem;
   pointer-events: none;
 }
 .reactionGlyph[data-grouped] {
@@ -365,6 +370,7 @@ html[data-keyboard-navigation] .authorLink:focus-visible {
 .reactionCount {
   @apply text-caption;
   font-variant-numeric: tabular-nums;
+  font-weight: var(--type-weight-semibold);
 }
 .reactionItem [data-reaction] {
   color: var(--reaction-ink, var(--text-standard));
@@ -384,8 +390,7 @@ html[data-keyboard-navigation] .authorLink:focus-visible {
     button:enabled:not([aria-disabled="true"]):hover
     .reactionGlyph
     > :not(.reactionCount) {
-    transform: translateY(calc(-1 * var(--space-half)))
-      rotate(clamp(-8deg, var(--reaction-tilt, -6deg), 8deg)) scale(1.5);
+    transform: scale(1.2);
     transition-duration: var(--duration-state);
     transition-timing-function: var(--easing-enter);
   }
@@ -406,7 +411,7 @@ html[data-keyboard-navigation] .authorLink:focus-visible {
   display: inline-block;
   min-width: 0.75rem;
   max-width: var(--compact-control-size, var(--size-control-sm));
-  font-size: var(--text-caption);
+  font-size: 1rem;
   line-height: 1;
   text-align: center;
   overflow: hidden;
@@ -416,13 +421,13 @@ html[data-keyboard-navigation] .authorLink:focus-visible {
 /* Color emoji can paint beyond their font-size line box. Keep that ink clear
    of truncation while retaining bounded labels for long reaction content. */
 .reactionGlyph .reactionNativeEmoji {
-  padding: var(--space-half);
+  padding: 0;
 }
 .reactionFallbackEmoji {
   display: inline-block;
   min-width: 0;
   max-width: var(--compact-control-size, var(--size-control-sm));
-  font-size: var(--text-caption);
+  font-size: 1rem;
   line-height: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -430,14 +435,10 @@ html[data-keyboard-navigation] .authorLink:focus-visible {
 }
 .reactionCustomEmoji {
   display: block;
-  width: 0.75rem;
-  height: 0.75rem;
+  width: auto;
+  max-width: 3rem;
+  height: 1rem;
   object-fit: contain;
-}
-/* Paint 12px artwork at 14px (10.5pt), keeping the capsule's layout box. */
-.reactionGlyph [data-reaction-artwork],
-.reactionGlyph .reactionCustomEmoji {
-  scale: calc(7 / 6);
 }
 .visuallyHidden {
   position: absolute;
@@ -572,7 +573,7 @@ html[data-keyboard-navigation] .authorLink:focus-visible {
   letter-spacing: var(--text-caption--letter-spacing);
 }
 .attachmentImage {
-  --media-preview-radius: 16px;
+  --media-preview-radius: var(--corner-control);
   isolation: isolate;
   cursor: zoom-in;
   /* Reserve geometry even across virtualizer remounts and failed/lazy loads.
@@ -976,8 +977,10 @@ html[data-keyboard-navigation] .attachmentImage:focus-visible {
   .messageBody
   [data-thread-summary] {
   min-height: 0;
-  margin-top: var(--space-half);
-  padding-block: var(--space-half);
+  margin-top: var(--space-1);
+  padding-block: 0;
+  color: var(--blue-11);
+  font-weight: var(--type-weight-semibold);
 }
 .messageBody [data-reply-connector] {
   margin-inline-start: calc(var(--space-4) + var(--space-3));
@@ -1320,7 +1323,7 @@ html[data-keyboard-navigation] .audioSeek:focus-visible {
   outline-offset: 2px;
 }
 .mediaPreview {
-  --media-preview-radius: 16px;
+  --media-preview-radius: var(--corner-control);
   --media-controls-inset: 6px;
   container: media-preview / inline-size;
   position: relative;
@@ -1762,13 +1765,13 @@ button.mediaPreview {
   margin-bottom: 0;
 }
 .text :where(p, ul, ol, blockquote, pre, .codeBlock, table, hr) {
-  margin: var(--space-4) 0;
+  margin: var(--space-2) 0;
 }
 .text > p:has(+ :is(ul, ol)) {
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-1);
 }
 .text > p + :where(ul, ol) {
-  margin-top: var(--space-2);
+  margin-top: var(--space-1);
 }
 .text :where(h1, h2, h3, h4, h5, h6) {
   margin: var(--space-4) 0 var(--space-1h);
@@ -1950,12 +1953,13 @@ html[data-keyboard-navigation] .text pre code:focus-visible {
 }
 .text a:not([data-solo-link]) {
   color: var(--text-link);
-  text-decoration: underline;
+  text-decoration: none;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
 .text a:not([data-solo-link]):hover {
-  text-decoration-thickness: 2px;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
 }
 .imageAlt {
   color: var(--text-subtle);
@@ -2993,10 +2997,10 @@ html[data-keyboard-navigation] .rawDiff:focus-visible {
   --message-side-space: calc(var(--size-control-sm) + var(--space-3));
 }
 .message[data-layout="timeline"] .messageGutter {
-  flex-basis: var(--size-control-sm);
+  flex-basis: 2rem;
 }
 .feed .message[data-layout="continuation"] .messageGutter {
-  flex-basis: var(--size-control-sm);
+  flex-basis: 2rem;
 }
 .text pre {
   text-wrap-style: auto;
@@ -4262,4 +4266,30 @@ html[data-keyboard-navigation] .activityExpansion {
 }
 .activityGroupHeader[data-expanded] > div:last-child {
   flex-shrink: 0;
+}
+
+/* ============================================================
+   UI POLISH PROTOTYPE (experimental)
+   ============================================================ */
+
+/* Cap prose at a readable measure; media and reactions keep their width. */
+.messageBubble > :is(.text, .plainText) {
+  max-width: 90ch;
+}
+
+/* Reply faces: small and separate instead of an overlapping clump. */
+.messageBody [data-thread-summary] [data-size="small"] > [style] {
+  width: 1.125rem;
+  height: 1.125rem;
+  padding: 0;
+  margin-inline-end: 2px;
+}
+
+/* Add-reaction shows on hover, focus, or while picking; hide the whole
+   capsule so its fill doesn't linger as an empty circle. */
+@media (hover: hover) and (pointer: fine) {
+  .message:not(:hover, :focus-within)
+    .inlineReactionTool:not(:has([aria-expanded="true"])) {
+    opacity: 0;
+  }
 }

@@ -8,6 +8,7 @@ import {
   LinkDescriptionContext,
   LinkInteractiveContext,
   LinkLabelContext,
+  LinkMessageTextContext,
 } from "../../features/conversation/LinkLabelContext";
 import { LinkLabel } from "../links/InlineLink";
 import inlineStyles from "../../shared/InlineReference.module.css";
@@ -64,21 +65,33 @@ export function PullLink({ url, states }: { url: string; states: PullStates }) {
   const name =
     reference &&
     `${reference.repository.slice(reference.repository.indexOf("/") + 1)}${reference.label}`;
-  const label = name && state?.title ? `${name} · ${state.title}` : name;
+  // Prototype: only the short reference reads as a link; the title follows it
+  // in plain ink.
+  const label = name;
+  const text = useContext(LinkMessageTextContext)?.toLowerCase();
+  // Skip a title the author already wrote, as agents' review requests do.
+  const title =
+    !authored &&
+    state?.title &&
+    !text?.includes(state.title.toLowerCase()) &&
+    state.title;
   return (
-    <LinkLabel
-      href={url}
-      {...(!authored && label && { label })}
-      icon={
-        <span
-          className={styles.pullState}
-          data-pr-state={shown ?? "unknown"}
-          aria-hidden="true"
-          title={words}
-        >
-          <Icon aria-hidden="true" className={inlineStyles.icon} />
-        </span>
-      }
-    />
+    <>
+      <LinkLabel
+        href={url}
+        {...(!authored && label && { label })}
+        icon={
+          <span
+            className={styles.pullState}
+            data-pr-state={shown ?? "unknown"}
+            aria-hidden="true"
+            title={words}
+          >
+            <Icon aria-hidden="true" className={inlineStyles.icon} />
+          </span>
+        }
+      />
+      {title && <span className={styles.pullLinkTitle}> {title}</span>}
+    </>
   );
 }

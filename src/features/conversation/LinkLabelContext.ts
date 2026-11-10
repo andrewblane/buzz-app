@@ -41,3 +41,9 @@ export type LinkPreview = Readonly<{
 export const LinkPreviewContext = createContext<
   ((preview: LinkPreview | undefined) => void) | undefined
 >(undefined);
+
+/** Prototype: the text of the message a link sits in, so a renderer can skip
+ * repeating what the author already wrote. */
+export const LinkMessageTextContext = createContext<string | undefined>(
+  undefined,
+);

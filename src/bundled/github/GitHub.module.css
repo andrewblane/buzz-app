@@ -418,6 +418,10 @@
 .soloPull {
   color: var(--text-subtle);
 }
+/* UI polish prototype: a pull request title reads as text, not link ink. */
+.pullLinkTitle {
+  color: var(--text-standard);
+}
 .pullState {
   color: var(--message-icon-subtle, var(--icon-subtle));
 }

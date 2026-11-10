@@ -1,6 +1,6 @@
 import { useChannelIdentityNames } from "../identity-names/react";
 import { useMemo, useSyncExternalStore, type ReactNode } from "react";
-import { AtIcon, RobotIcon } from "../../shared/design-system/icons/index";
+import { AtIcon } from "../../shared/design-system/icons/index";
 import type { RelaySession } from "../relay/session";
 import type { ComposerSession } from "./composer-session";
 import type { ChannelList, ChannelSummary, Profile } from "../relay/contracts";
@@ -17,13 +17,14 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 /** A mention chip's contents. The icon stays with the first character, so a
  * chip at a line end never strands its icon; the rest wraps within the message. */
 export function MentionLabel({
-  agent,
+  agent: _agent,
   label,
 }: {
   agent: boolean;
   label: string;
 }) {
-  const Icon = agent ? RobotIcon : AtIcon;
+  // Prototype: the robot glyph is illegible at text size; agents take @ too.
+  const Icon = AtIcon;
   const lead = graphemes.segment(label).containing(0)?.segment ?? "";
   return (
     <>

@@ -149,6 +149,8 @@ export function Avatar({
   const artwork = src ? renderArtwork?.(src) : undefined;
   const initial = Array.from(fallback.trim())[0]?.toUpperCase() || "?";
   const content = fallbackContent ?? initial;
+  // Prototype: each person's placeholder keeps one hue, picked from their name.
+  const hue = fallbackContent ? undefined : placeholderHue(fallback);
   return (
     <span
       className="buzz-avatar-status"
@@ -162,6 +164,7 @@ export function Avatar({
         data-size={size}
         data-avatar-shape={shape}
         data-fallback-surface={fallbackSurface}
+        data-fallback-hue={hue}
         role={alt ? "img" : undefined}
         aria-label={
           alt ? `${alt}${statusBadge ? `, ${statusBadge}` : ""}` : undefined
@@ -188,4 +191,23 @@ export function Avatar({
       )}
     </span>
   );
+}
+
+const placeholderHues = [
+  "blue",
+  "green",
+  "purple",
+  "orange",
+  "cyan",
+  "red",
+  "amber",
+  "iris",
+  "jade",
+  "magenta",
+] as const;
+function placeholderHue(name: string) {
+  let hash = 0;
+  for (const character of name.trim().toLowerCase())
+    hash = (hash * 31 + (character.codePointAt(0) ?? 0)) | 0;
+  return placeholderHues[Math.abs(hash) % placeholderHues.length];
 }
