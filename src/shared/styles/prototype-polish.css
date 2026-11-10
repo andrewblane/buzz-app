@@ -62,10 +62,10 @@ html {
   font-weight: 700;
 }
 
-/* 1. Message text at 15/22. */
+/* Message text at 14/20: Inter's tall x-height reads larger than its size. */
 :root:root:root {
-  --text-message: calc(var(--type-rem) * 0.9375);
-  --text-message--line-height: 1.4666666666666666;
+  --text-message: var(--type-size-14);
+  --text-message--line-height: 1.4285714285714286;
 }
 
 /* 3. A tinted sidebar separates navigation from content. */
