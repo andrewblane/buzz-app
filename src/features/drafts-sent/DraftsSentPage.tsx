@@ -262,6 +262,12 @@ function ScopedPage({
   const setSearch = (value: string) =>
     setSearches((current) => ({ ...current, [view]: value }));
   const scheduled = useScheduledMessages(session.scheduledMessages);
+  const revalidateScheduled = scheduled.revalidate;
+  // A new visit or tab selection must discover schedules made on other devices.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A new visit revalidates even when the selected tab is unchanged.
+  useEffect(() => {
+    if (view === "scheduled") revalidateScheduled();
+  }, [view, requestKey, revalidateScheduled]);
   const [notice, setNotice] = useState<string>();
   const searchInput = useRef<HTMLInputElement>(null);
   const { sent, refresh: refreshSent } = useSent(session, viewer);

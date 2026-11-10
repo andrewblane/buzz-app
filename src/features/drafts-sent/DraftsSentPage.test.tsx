@@ -1132,7 +1132,7 @@ it("searches scheduled text and destinations without changing the total queued c
     screen.getByRole("button", { name: "Clear search scheduled messages" }),
   );
   expect(within(list).getAllByRole("listitem")).toHaveLength(3);
-  expect(service.list).toHaveBeenCalledTimes(1);
+  expect(service.list).toHaveBeenCalledTimes(2);
 });
 
 it("keeps search labels, queries and results scoped to their own tab", async () => {
@@ -1190,4 +1190,98 @@ it("keeps search labels, queries and results scoped to their own tab", async () 
     screen.getByRole("searchbox", { name: "Search scheduled messages" }),
   ).toHaveValue("tomorrow");
   expect(screen.getByText("Tomorrow's update")).toBeVisible();
+});
+
+it("discovers another device's schedule when the Scheduled tab opens after an empty sidebar read", async () => {
+  let rows: import("../relay/scheduled-messages").ScheduledMessage[] = [];
+  const service = {
+    list: vi.fn(async () => rows),
+    subscribe: () => () => {},
+  } as unknown as import("../relay/scheduled-messages").ScheduledMessages;
+  const h = harness(service),
+    Badge = h.page.badge,
+    Page = h.page.component;
+  render(
+    <>
+      <Badge />
+      <Page />
+    </>,
+  );
+  await waitFor(() => expect(service.list).toHaveBeenCalledTimes(1));
+  rows = [
+    {
+      id: "remote",
+      revision: "1",
+      destination: { channelId: "team", name: "launch-room" },
+      content: "Scheduled on another device",
+      sendAt: Date.now() + 86400000,
+      status: "scheduled",
+    },
+  ];
+  fireEvent.click(screen.getByRole("tab", { name: /^Scheduled/ }));
+  expect(await screen.findByText("Scheduled on another device")).toBeVisible();
+  expect(service.list).toHaveBeenCalledTimes(2);
+});
+
+it("keeps mentioned message text read-only and explains the composer recovery path", async () => {
+  const row = {
+    id: "mentioned",
+    revision: "1",
+    destination: { channelId: "team", name: "launch-room" },
+    content: "@Scout please review",
+    sendAt: Date.now() + 86400000,
+    status: "scheduled" as const,
+  };
+  const update = vi.fn();
+  const service = {
+    list: vi.fn(async () => [row]),
+    subscribe: () => () => {},
+    event: () => ({ tags: [["p", scout]] }),
+    update,
+  } as unknown as import("../relay/scheduled-messages").ScheduledMessages;
+  const h = harness(service),
+    Page = h.page.component;
+  render(<Page />);
+  fireEvent.click(screen.getByRole("tab", { name: /^Scheduled/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit message" }));
+  const dialog = screen.getByRole("dialog", { name: "Edit scheduled message" });
+  expect(
+    within(dialog).getByRole("textbox", { name: "Message" }),
+  ).toHaveAttribute("readonly");
+  expect(
+    within(dialog).getByRole("button", { name: "Save changes" }),
+  ).toBeDisabled();
+  expect(
+    within(dialog).getByText(/save it to drafts and use the composer/),
+  ).toBeVisible();
+  expect(update).not.toHaveBeenCalled();
+});
+
+it("shares an in-flight sidebar read when Scheduled opens", async () => {
+  let release!: (
+    rows: import("../relay/scheduled-messages").ScheduledMessage[],
+  ) => void;
+  const service = {
+    list: vi.fn(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    ),
+    subscribe: () => () => {},
+  } as unknown as import("../relay/scheduled-messages").ScheduledMessages;
+  const h = harness(service),
+    Badge = h.page.badge,
+    Page = h.page.component;
+  render(
+    <>
+      <Badge />
+      <Page />
+    </>,
+  );
+  fireEvent.click(screen.getByRole("tab", { name: /^Scheduled/ }));
+  expect(service.list).toHaveBeenCalledTimes(1);
+  await act(async () => release([]));
+  expect(screen.getByText("No scheduled messages")).toBeVisible();
+  expect(service.list).toHaveBeenCalledTimes(1);
 });

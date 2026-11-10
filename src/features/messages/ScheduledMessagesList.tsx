@@ -31,6 +31,7 @@ import styles from "./ScheduledMessages.module.css";
 type Action = {
   item: ScheduledMessage;
   kind: "edit" | "reschedule" | "send" | "delete" | "draft";
+  textReadOnly?: boolean;
 };
 export function ScheduledMessagesList({
   session,
@@ -73,7 +74,16 @@ export function ScheduledMessagesList({
   function choose(item: ScheduledMessage, kind: Action["kind"]) {
     setFailure(undefined);
     setContent(item.content);
-    setAction({ item, kind });
+    try {
+      const textReadOnly =
+        kind === "edit" &&
+        !!service
+          ?.event(item.id, item.revision)
+          .tags.some(([name]) => name === "p");
+      setAction({ item, kind, textReadOnly });
+    } catch {
+      setFailure("This message changed. Refresh before editing it.");
+    }
   }
   async function run(time?: number) {
     if (!action || !service || pending.current) return false;
@@ -108,6 +118,7 @@ export function ScheduledMessagesList({
       setBusy(false);
     }
   }
+  const mentionEdit = action?.textReadOnly;
   return (
     <>
       {(error || (!action && failure)) && (
@@ -258,7 +269,7 @@ export function ScheduledMessagesList({
               </Button>
               <Button
                 variant="prominent"
-                disabled={busy || !content.trim()}
+                disabled={busy || mentionEdit || !content.trim()}
                 onClick={() => void run()}
               >
                 {busy ? "Saving…" : "Save changes"}
@@ -271,9 +282,16 @@ export function ScheduledMessagesList({
               value={content}
               onChange={(event) => setContent(event.target.value)}
               disabled={busy}
+              readOnly={mentionEdit}
               autoFocus
             />
           </Field>
+          {mentionEdit && (
+            <p className="text-body-sm text-muted">
+              To edit a message with mention recipients, save it to drafts and
+              use the composer. You can still reschedule or send it now.
+            </p>
+          )}
           {failure && (
             <p role="alert" className="text-body-sm text-danger">
               {failure}

@@ -61,12 +61,16 @@ it.skipIf(!relay)(
       ),
     );
     expect(await created.text()).toContain("true");
+    const operations: unknown[] = [];
     const lifetime = new AbortController();
     const service = (signal: AbortSignal) =>
       createScheduledMessages(
         {
           sign: async (template) => finalizeEvent(template, key),
-          request: (body) => post("/scheduled-messages", body),
+          request: (body) => {
+            operations.push(structuredClone(body));
+            return post("/scheduled-messages", body);
+          },
         },
         {
           viewer,
@@ -109,6 +113,13 @@ it.skipIf(!relay)(
       }
     }
     expect(delivered).toBe(true);
+    const createReplay = await post(
+      "/scheduled-messages",
+      operations.find(
+        (body) => (body as { action?: string }).action === "create",
+      ),
+    );
+    expect(createReplay.status).toBe(200);
     await next.create({
       ...input,
       content: "Cancel this",
@@ -147,6 +158,17 @@ it.skipIf(!relay)(
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
     expect(rows.find((row) => row.id === edit.id)?.status).toBe("sent");
+    const sendReplay = await post(
+      "/scheduled-messages",
+      operations.find(
+        (body) => (body as { action?: string }).action === "send_now",
+      ),
+    );
+    expect(sendReplay.status).toBe(200);
+    rows = await next.list(nextLifetime.signal);
+    expect(rows.find((row) => row.id === edit.id)?.revision).toBe(
+      String(Number(revised.revision) + 1),
+    );
     const query = await post("/query", [
       { kinds: [9], "#h": [channel], limit: 100 },
     ]);

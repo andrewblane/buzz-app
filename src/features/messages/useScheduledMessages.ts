@@ -44,10 +44,14 @@ function createStore(service: ScheduledMessages) {
     const next = snapshot.items
       .filter((item) => item.status === "scheduled" && item.sendAt > Date.now())
       .sort((a, b) => a.sendAt - b.sendAt)[0];
-    if (!next || !listeners.size) return;
-    const delay = next.sendAt - Date.now() + 3000;
-    // Longer reservations refresh on focus instead of overflowing browser timers.
-    if (delay <= 2_147_483_647) timer = setTimeout(refresh, delay);
+    if (!listeners.size) return;
+    // Other devices do not emit this session's invalidation event. Keep one
+    // jittered long backstop, even for an empty queue.
+    const backstop = 15 * 60_000 * (0.8 + Math.random() * 0.4);
+    const delay = next
+      ? Math.min(next.sendAt - Date.now() + 3000, backstop)
+      : backstop;
+    timer = setTimeout(refresh, delay);
   }
   function refresh() {
     if (!listeners.size) return;
@@ -59,11 +63,13 @@ function createStore(service: ScheduledMessages) {
     void service.list(controller.signal).then(
       (items) => {
         if (controller.signal.aborted) return;
+        request = undefined;
         emit({ items, loading: false });
         planRefresh();
       },
       (cause) => {
         if (controller.signal.aborted) return;
+        request = undefined;
         emit({
           ...snapshot,
           loading: false,
@@ -82,6 +88,10 @@ function createStore(service: ScheduledMessages) {
   return {
     snapshot: () => snapshot,
     refresh,
+    revalidate() {
+      // Opening the page shares an already-running sidebar read.
+      if (!request) refresh();
+    },
     subscribe(listener: () => void) {
       listeners.add(listener);
       if (listeners.size === 1) {
@@ -94,6 +104,7 @@ function createStore(service: ScheduledMessages) {
         listeners.delete(listener);
         if (listeners.size) return;
         request?.abort();
+        request = undefined;
         clearTimeout(timer);
         stop?.();
         window.removeEventListener("focus", focused);
@@ -116,5 +127,9 @@ export function useScheduledMessages(
     store?.subscribe ?? (() => noop),
     store?.snapshot ?? (() => EMPTY),
   );
-  return { ...snapshot, refresh: store?.refresh ?? noop };
+  return {
+    ...snapshot,
+    refresh: store?.refresh ?? noop,
+    revalidate: store?.revalidate ?? noop,
+  };
 }

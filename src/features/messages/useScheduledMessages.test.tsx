@@ -78,9 +78,12 @@ it("shares loading and invalidation between sidebar and page without extra relay
   );
   expect(screen.getByLabelText("page").textContent).toBe("queued");
   expect(h.service.list).toHaveBeenCalledTimes(2);
+  // Hold an in-flight read so unmount proves cancellation of live work.
+  vi.mocked(h.service.list).mockImplementationOnce(() => new Promise(() => {}));
+  act(() => h.change([]));
   mounted.unmount();
   expect(h.listeners.size).toBe(0);
-  expect(vi.mocked(h.service.list).mock.calls[1]?.[0].aborted).toBe(true);
+  expect(vi.mocked(h.service.list).mock.calls[2]?.[0].aborted).toBe(true);
 });
 
 it("never exposes a previous community's queue while the new one loads", async () => {
@@ -158,4 +161,22 @@ it("recovers a failed queue read with the same bounded retry", async () => {
   h.setRows([item("recovered")]);
   await act(async () => vi.advanceTimersByTimeAsync(5000));
   expect(screen.getByLabelText("queue").textContent).toBe("recovered");
+});
+
+it("revalidates an empty queue on the shared long backstop and stops on unmount", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(Math, "random").mockReturnValue(0.5);
+  const h = fixture();
+  const mounted = render(<View service={h.service} name="sidebar" />);
+  await act(async () => {});
+  expect(h.service.list).toHaveBeenCalledTimes(1);
+  h.setRows([item("remote", Date.now() + 86400000)]);
+  await act(async () => vi.advanceTimersByTimeAsync(899999));
+  expect(h.service.list).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(h.service.list).toHaveBeenCalledTimes(2);
+  expect(screen.getByLabelText("sidebar").textContent).toBe("remote");
+  mounted.unmount();
+  await act(async () => vi.advanceTimersByTimeAsync(1800000));
+  expect(h.service.list).toHaveBeenCalledTimes(2);
 });

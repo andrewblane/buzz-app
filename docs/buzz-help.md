@@ -802,6 +802,9 @@ for 30 days expires.
   and **Sent** tabs to switch lists; a relay that supports scheduling also adds
   **Scheduled**. Buzz remembers your choice for this community. A clock and count
   beside **Drafts & sent** show messages waiting for scheduled delivery.
+  Scheduled refreshes when opened and periodically checks for changes from other devices.
+  To change text or recipients on a scheduled message with mentions, save it to
+  drafts and use the composer. Rescheduling and sending now remain available.
   Drafts save automatically as you type—leave a message unfinished, open
   **Drafts & sent → Drafts**, then select it to continue writing.
   Rows lead with the destination and message text. It lists

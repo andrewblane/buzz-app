@@ -37,6 +37,16 @@ export type ScheduledMessages = ReturnType<typeof createScheduledMessages>;
 type Template = Pick<EventTemplate, "kind" | "content" | "tags">;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+class ScheduledRequestError extends Error {
+  constructor(readonly status: number) {
+    super(
+      status === 409
+        ? "This message changed or the queue is full. Refresh before trying again."
+        : "Could not reach scheduled delivery. Refresh to check whether the change was saved.",
+    );
+  }
+}
+
 /** A session owns authorization/lifetime; the relay owns persistence and clocks. */
 export function createScheduledMessages(
   host: ScheduledHost,
@@ -66,12 +76,7 @@ export function createScheduledMessages(
     const live = signal(extra);
     const response = await host.request(body, live);
     live.throwIfAborted();
-    if (!response.ok)
-      throw new Error(
-        response.status === 409
-          ? "This message changed or the queue is full. Refresh before trying again."
-          : "Could not reach scheduled delivery. Refresh to check whether the change was saved.",
-      );
+    if (!response.ok) throw new ScheduledRequestError(response.status);
     const reader = response.body?.getReader();
     if (!reader) throw new Error("Scheduled delivery returned no response.");
     const decoder = new TextDecoder();
@@ -214,8 +219,15 @@ export function createScheduledMessages(
     },
     async update(id: string, revision: string, input: ScheduledInput) {
       const previous = current(id, revision);
-      // Preserve the original attachment, mention and thread bindings. The editor
-      // changes prose/time; only the main composer creates new bindings.
+      if (
+        input.content !== previous.content &&
+        previous.tags.some(([name]) => name === "p")
+      )
+        throw new Error(
+          "To edit a message with mention recipients, save it to drafts and use the composer. You can still reschedule or send it now.",
+        );
+      // Preserve attachment and thread bindings. Mentioned messages may only
+      // change time here; the full composer owns recipient editing.
       const event = await signed(input, {
         kind: 9,
         content: input.content,
@@ -236,18 +248,37 @@ export function createScheduledMessages(
     },
     async sendNow(id: string, revision: string) {
       const previous = current(id, revision);
-      const event = await signApproved({
-        kind: 9,
-        content: previous.content,
-        tags: previous.tags.map((t) => [...t]),
-        created_at: Math.floor(Date.now() / 1000),
-      });
-      await request({
-        action: "send_now",
-        id,
-        revision: Number(revision),
-        event,
-      });
+      const key = JSON.stringify(["send_now", id, revision]);
+      let operation = pending.get(key);
+      if (!operation) {
+        operation = {
+          id,
+          event: await signApproved({
+            kind: 9,
+            content: previous.content,
+            tags: previous.tags.map((t) => [...t]),
+            created_at: Math.floor(Date.now() / 1000),
+          }),
+        };
+        pending.set(key, operation);
+      }
+      try {
+        await request({
+          action: "send_now",
+          id,
+          revision: Number(revision),
+          event: operation.event,
+        });
+      } catch (cause) {
+        if (cause instanceof ScheduledRequestError && cause.status === 400) {
+          pending.delete(key);
+          throw new Error(
+            "The relay rejected this attempt. Try Send now again to create a fresh request.",
+          );
+        }
+        throw cause;
+      }
+      pending.delete(key);
       changed();
     },
   });
