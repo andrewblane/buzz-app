@@ -17,6 +17,10 @@ import {
   webpNeedsPixelTransform,
 } from "./image-metadata";
 
+/** A preparation refusal already written for people, such as the pixel limit;
+ * callers may show its message as is. */
+export class PreparationError extends Error {}
+
 /** Prepare pixels before the byte-exact upload contract; the relay still validates. */
 export async function prepareAttachment(
   file: File,
@@ -57,14 +61,18 @@ export async function prepareAttachment(
         !image.height ||
         image.width * image.height > 25_000_000
       )
-        throw new Error("Choose an image with at most 25 million pixels.");
+        throw new PreparationError(
+          "Choose an image with at most 25 million pixels.",
+        );
       const canvas = document.createElement("canvas");
       canvas.width = image.width;
       canvas.height = image.height;
       try {
         const context = canvas.getContext("2d");
         if (!context)
-          throw new Error("Image preparation is unavailable in this browser.");
+          throw new PreparationError(
+            "Image preparation is unavailable in this browser.",
+          );
         context.drawImage(image, 0, 0);
         // Old Buzz writes lossless WebP; WebKit has no canvas WebP encoder.
         const target = type;
@@ -92,7 +100,10 @@ export async function prepareAttachment(
         else if (blob.type === "image/jpeg")
           output = cleanEncodedJpeg(new Uint8Array(await blob.arrayBuffer()));
         else if (blob.type === target) output = blob;
-        else throw new Error("This browser cannot prepare this image format.");
+        else
+          throw new PreparationError(
+            "This browser cannot prepare this image format.",
+          );
       } finally {
         canvas.width = 0;
         canvas.height = 0;

@@ -203,6 +203,63 @@ it.each([
   },
 );
 
+const bitmap = (width: number, height: number) => async () => ({
+  width,
+  height,
+  close() {},
+});
+it.each([
+  [
+    "the pixel limit",
+    bitmap(5001, 5000),
+    "Choose an image with at most 25 million pixels.",
+  ],
+  [
+    "a browser without a canvas context",
+    bitmap(10, 10),
+    "Image preparation is unavailable in this browser.",
+  ],
+  [
+    "an image the browser cannot decode",
+    async () => {
+      throw Object.assign(new Error("The source image could not be decoded."), {
+        name: "InvalidStateError",
+      });
+    },
+    UPLOAD_FAILED_TEXT,
+  ],
+])(
+  "words a preparation refusal from %s for the tile",
+  async (_name, decode, text) => {
+    vi.stubGlobal("createImageBitmap", decode);
+    const context = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    try {
+      // The fixture supplies no `prepare`, so the draft's own preparation runs.
+      const h = fixture();
+      const draft = renderHook(() =>
+        useAttachmentDraft(h.session, "one", "one"),
+      );
+      const photo = new File(
+        [new Uint8Array([0xff, 0xd8, 0xff, 0xe0])],
+        "photo.jpg",
+        { type: "image/jpeg" },
+      ) as unknown as globalThis.File;
+      act(() => draft.result.current.store.add([photo]));
+      await waitFor(() =>
+        expect(draft.result.current.items[0]?.status).toBe("error"),
+      );
+      expect(draft.result.current.items[0]?.error).toBe(text);
+      expect(draft.result.current.blocked).toBe(true);
+      expect(h.upload).not.toHaveBeenCalled();
+    } finally {
+      context.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
 it("does not mark a cancelled upload as failed", async () => {
   const h = fixture();
   const draft = renderHook(() => useAttachmentDraft(h.session, "one", "one"));

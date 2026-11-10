@@ -8,15 +8,17 @@ import {
   type UploadProgress,
 } from "../relay/attachments";
 import { failureKind } from "../relay/user-copy";
-import { prepareAttachment } from "./prepare-attachment";
+import { PreparationError, prepareAttachment } from "./prepare-attachment";
 
 /** The tile's sentence when nothing more specific is known. */
 export const UPLOAD_FAILED_TEXT = "Upload failed. Retry or remove this file.";
 
 /** Plain-language copy for a failed upload; never the browser's or host's own
- * text. An `UploadError`'s message is already written for people. */
+ * text. An `UploadError`'s or `PreparationError`'s message is already written
+ * for people. */
 function uploadFailureText(error: unknown) {
-  if (error instanceof UploadError) return error.message;
+  if (error instanceof UploadError || error instanceof PreparationError)
+    return error.message;
   const kind = failureKind(error);
   if (kind === "connection")
     return "Upload didn’t finish. Check your connection, then retry.";
