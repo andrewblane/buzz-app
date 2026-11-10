@@ -9,6 +9,7 @@ import type {
 } from "../relay/sidebar-preferences";
 import { keypair, message, metadata, roster, signed } from "../relay/testing";
 import { bindUnreadIndicator, type IndicatorGates } from "./indicator-unread";
+import { NO_BADGE as OFF } from "./indicator";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -118,17 +119,19 @@ function setup(
   };
 }
 const target = { kind: "channel", channelId: "room" } as const;
+const DOT = { unread: true, count: 0 };
+const counted = (count: number) => ({ unread: true, count });
 it("starts clear for unknown evidence; projects arrivals and explicit read clearing without new reads", async () => {
   const h = setup();
   h.grant();
   h.bind();
-  expect(h.project.mock.calls).toEqual([[false]]);
+  expect(h.project.mock.calls).toEqual([[OFF]]);
   expect(h.session.unread.snapshot(target).observedCount).toBeNull();
   const row = message(h.peer, "room", "arrival", 11);
   h.emit([row]);
-  expect(h.project.mock.calls).toEqual([[false], [true]]);
+  expect(h.project.mock.calls).toEqual([[OFF], [DOT]]);
   await h.session.unread.markThrough(target, row.id);
-  expect(h.project.mock.calls).toEqual([[false], [true], [false]]);
+  expect(h.project.mock.calls).toEqual([[OFF], [DOT], [OFF]]);
   expect(h.query).not.toHaveBeenCalled();
 });
 it("restores existing unread at binding startup, including thread-only activity and manual unread", async () => {
@@ -140,27 +143,27 @@ it("restores existing unread at binding startup, including thread-only activity 
   ]);
   h.emit([root, reply]);
   h.bind();
-  expect(h.project).toHaveBeenLastCalledWith(true);
+  expect(h.project).toHaveBeenLastCalledWith(DOT);
   await h.session.unread.markThrough(
     { kind: "thread", channelId: "room", rootId: root.id },
     reply.id,
   );
-  expect(h.project).toHaveBeenLastCalledWith(false);
+  expect(h.project).toHaveBeenLastCalledWith(OFF);
   await h.session.unread.markUnreadLocal(target);
-  expect(h.project).toHaveBeenLastCalledWith(true);
+  expect(h.project).toHaveBeenLastCalledWith(DOT);
   await h.session.unread.markThrough(target, root.id);
-  expect(h.project).toHaveBeenLastCalledWith(false);
+  expect(h.project).toHaveBeenLastCalledWith(OFF);
 });
 it("uses all accessible channels, ignores own/auxiliary traffic, and clears on deletion or access loss", () => {
   const h = setup();
   h.bind();
   h.grant();
   h.emit([message(h.viewer, "room", "own", 11)]);
-  expect(h.project.mock.calls).toEqual([[false]]);
+  expect(h.project.mock.calls).toEqual([[OFF]]);
   h.grant("second");
   const row = message(h.peer, "second", "unread elsewhere", 12);
   h.emit([row]);
-  expect(h.project).toHaveBeenLastCalledWith(true);
+  expect(h.project).toHaveBeenLastCalledWith(DOT);
   h.emit([
     signed(h.peer, {
       kind: 5,
@@ -171,11 +174,11 @@ it("uses all accessible channels, ignores own/auxiliary traffic, and clears on d
       ],
     }),
   ]);
-  expect(h.project).toHaveBeenLastCalledWith(false);
+  expect(h.project).toHaveBeenLastCalledWith(OFF);
   h.emit([message(h.peer, "room", "private", 13)]);
-  expect(h.project).toHaveBeenLastCalledWith(true);
+  expect(h.project).toHaveBeenLastCalledWith(DOT);
   h.emit([roster(h.relay, "room", [], 14)]);
-  expect(h.project).toHaveBeenLastCalledWith(false);
+  expect(h.project).toHaveBeenLastCalledWith(OFF);
 });
 it.each(["personal", "viewer", "disconnected", "membership"])(
   "clears and detaches old evidence on %s transition",
@@ -189,7 +192,7 @@ it.each(["personal", "viewer", "disconnected", "membership"])(
     if (transition === "disconnected") h.relayState.status = "disconnected";
     if (transition === "membership") h.client.memberships = [];
     h.notify();
-    expect(h.project).toHaveBeenLastCalledWith(false);
+    expect(h.project).toHaveBeenLastCalledWith(OFF);
     const calls = h.project.mock.calls.length;
     h.emit([message(h.peer, "room", "retired session", 12)]);
     expect(h.project).toHaveBeenCalledTimes(calls);
@@ -208,13 +211,13 @@ it("retargets an already-open community and ignores the prior session after swit
   h.relayState.viewer = other.viewer.pubkey;
   h.relayState.session = other.session;
   h.notify();
-  expect(h.project).toHaveBeenLastCalledWith(false);
+  expect(h.project).toHaveBeenLastCalledWith(OFF);
   h.emit([message(h.peer, "room", "background community", 12)]);
-  expect(h.project).toHaveBeenLastCalledWith(false);
+  expect(h.project).toHaveBeenLastCalledWith(OFF);
   other.emit([message(other.peer, "room", "selected community", 13)]);
-  expect(h.project).toHaveBeenLastCalledWith(true);
+  expect(h.project).toHaveBeenLastCalledWith(DOT);
   stop();
-  expect(h.project).toHaveBeenLastCalledWith(false);
+  expect(h.project).toHaveBeenLastCalledWith(OFF);
   const calls = h.project.mock.calls.length;
   other.emit([message(other.peer, "room", "after stop", 14)]);
   h.notify();
@@ -243,7 +246,7 @@ it.each(["huddle", "metadataPending"] as const)(
     h.bind();
     h.emit([message(h.peer, "room", "arrival", 11)]);
     expect(h.session.unread.snapshot(target).observedCount).toBe(1);
-    expect(h.project.mock.calls).toEqual([[false]]);
+    expect(h.project.mock.calls).toEqual([[OFF]]);
   },
 );
 
@@ -262,22 +265,78 @@ it("removes muted channel activity from the Dock indicator without marking it re
   h.bind();
   const row = message(h.peer, "room", "arrival", 11);
   h.emit([row]);
-  expect(h.project).toHaveBeenLastCalledWith(true);
+  expect(h.project).toHaveBeenLastCalledWith(DOT);
 
   await h.session.sidebarPreferences.setMute("room", true);
-  expect(h.project).toHaveBeenLastCalledWith(false);
+  expect(h.project).toHaveBeenLastCalledWith(OFF);
   expect(h.session.unread.snapshot(target).observedCount).toBe(1);
 
   await h.session.unread.markThrough(target, row.id);
   h.emit([message(h.peer, "room", "muted arrival", 12)]);
   expect(h.session.unread.snapshot(target).observedCount).toBe(1);
-  expect(h.project).toHaveBeenLastCalledWith(false);
+  expect(h.project).toHaveBeenLastCalledWith(OFF);
 
   await h.session.unread.markUnreadLocal(target);
-  expect(h.project).toHaveBeenLastCalledWith(false);
+  expect(h.project).toHaveBeenLastCalledWith(OFF);
 
   await h.session.sidebarPreferences.setMute("room", false);
-  expect(h.project).toHaveBeenLastCalledWith(true);
+  expect(h.project).toHaveBeenLastCalledWith(DOT);
+});
+
+it("counts only DMs and mentions, with a dot for thread replies, broadcasts and other unread", async () => {
+  const h = setup();
+  h.bind();
+  h.grant();
+  h.emit([message(h.peer, "room", "ordinary", 11)]);
+  expect(h.project).toHaveBeenLastCalledWith(DOT);
+  const mention = message(h.peer, "room", "hi", 12, [["p", h.viewer.pubkey]]);
+  h.emit([mention]);
+  expect(h.project).toHaveBeenLastCalledWith(counted(1));
+  h.grant("direct");
+  h.emit([metadata(h.relay, "direct", "direct", 11, [["t", "dm"]])]);
+  h.emit([message(h.peer, "direct", "dm", 13, [["p", h.viewer.pubkey]])]);
+  expect(h.project).toHaveBeenLastCalledWith(counted(2));
+  await h.session.unread.markThrough(target, mention.id);
+  expect(h.project).toHaveBeenLastCalledWith(counted(1));
+  const root = message(h.viewer, "room", "my thread", 14);
+  h.emit([
+    root,
+    message(h.peer, "room", "reply", 15, [["e", root.id, "", "reply"]]),
+    message(h.peer, "room", "everyone", 16, [
+      ["e", root.id, "", "reply"],
+      ["broadcast", "1"],
+    ]),
+  ]);
+  expect(h.session.unread.snapshot(target).attentionCount).toBe(2);
+  expect(h.project).toHaveBeenLastCalledWith(counted(1));
+  expect(h.query).not.toHaveBeenCalled();
+});
+
+it("counts only mentions from muted channels and nothing from muted DMs", async () => {
+  const h = setup({
+    decode: async () => ({
+      sections: [],
+      assignments: {},
+      starred: [],
+      muted: ["room", "direct"],
+    }),
+    write: async () => ["room", "direct"],
+  });
+  h.grant();
+  h.grant("direct");
+  h.emit([metadata(h.relay, "direct", "direct", 11, [["t", "dm"]])]);
+  await h.session.sidebarPreferences.ensure();
+  h.bind();
+  const root = message(h.viewer, "room", "my thread", 11);
+  h.emit([
+    root,
+    message(h.peer, "room", "ordinary", 12),
+    message(h.peer, "room", "reply", 13, [["e", root.id, "", "reply"]]),
+    message(h.peer, "direct", "muted dm", 14, [["p", h.viewer.pubkey]]),
+  ]);
+  expect(h.project.mock.calls).toEqual([[OFF]]);
+  h.emit([message(h.peer, "room", "hi", 15, [["p", h.viewer.pubkey]])]);
+  expect(h.project).toHaveBeenLastCalledWith(counted(1));
 });
 
 it("follows the sidebar row: opening a channel clears the Dock without reading it", () => {
@@ -285,13 +344,13 @@ it("follows the sidebar row: opening a channel clears the Dock without reading i
   h.grant();
   h.bind();
   h.emit([message(h.peer, "room", "arrival", 11)]);
-  expect(h.project).toHaveBeenLastCalledWith(true);
+  expect(h.project).toHaveBeenLastCalledWith(DOT);
   void h.session.unread.enterChannel("room");
-  expect(h.project).toHaveBeenLastCalledWith(false);
+  expect(h.project).toHaveBeenLastCalledWith(OFF);
   expect(h.session.unread.snapshot(target).observedCount).toBe(1);
   h.session.unread.leaveChannel("room");
   h.emit([message(h.peer, "room", "later", 12)]);
-  expect(h.project).toHaveBeenLastCalledWith(true);
+  expect(h.project).toHaveBeenLastCalledWith(DOT);
 });
 
 it("stays off for coordination between agents and lights for the next message to everyone", () => {
@@ -299,9 +358,9 @@ it("stays off for coordination between agents and lights for the next message to
   h.bind();
   h.grant();
   h.emit([message(h.peer, "room", "Progress", 11, [["audience", "agents"]])]);
-  expect(h.project.mock.calls).toEqual([[false]]);
+  expect(h.project.mock.calls).toEqual([[OFF]]);
   h.emit([message(h.peer, "room", "Done", 12)]);
-  expect(h.project).toHaveBeenLastCalledWith(true);
+  expect(h.project).toHaveBeenLastCalledWith(DOT);
 });
 
 it("counts only conversations the notification gates allow and follows gate changes", () => {
@@ -321,7 +380,7 @@ it("counts only conversations the notification gates allow and follows gate chan
     },
   });
   h.emit([message(h.peer, "room", "held", 11)]);
-  expect(h.project.mock.calls).toEqual([[false]]);
+  expect(h.project.mock.calls).toEqual([[OFF]]);
   expect(seen[0]).toEqual({
     version: 1,
     kind: "conversation",
@@ -330,10 +389,10 @@ it("counts only conversations the notification gates allow and follows gate chan
   });
   allowed = new Set(["room"]);
   for (const listener of gateListeners) listener();
-  expect(h.project).toHaveBeenLastCalledWith(true);
+  expect(h.project).toHaveBeenLastCalledWith(DOT);
   allowed = new Set();
   for (const listener of gateListeners) listener();
-  expect(h.project).toHaveBeenLastCalledWith(false);
+  expect(h.project).toHaveBeenLastCalledWith(OFF);
 });
 
 it("relights the Dock projection for attention arriving during a background visit", async () => {
@@ -342,12 +401,12 @@ it("relights the Dock projection for attention arriving during a background visi
   h.bind();
   h.emit([message(h.peer, "room", "before", 11)]);
   await h.session.unread.enterChannel("room");
-  expect(h.project).toHaveBeenLastCalledWith(false);
+  expect(h.project).toHaveBeenLastCalledWith(OFF);
   h.session.unread.setChannelActive("room", false);
   h.emit([
     message(h.peer, "room", "background mention", 10, [["p", h.viewer.pubkey]]),
   ]);
-  expect(h.project).toHaveBeenLastCalledWith(true);
+  expect(h.project).toHaveBeenLastCalledWith(counted(1));
   h.session.unread.leaveChannel("room");
-  expect(h.project).toHaveBeenLastCalledWith(true);
+  expect(h.project).toHaveBeenLastCalledWith(counted(1));
 });

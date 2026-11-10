@@ -2,6 +2,7 @@ import type { Communities } from "../communities/service";
 import type { RelaySession } from "../relay/session";
 import { communityDestination } from "../communities/destination";
 import type { OpenTarget } from "../navigation/targets";
+import { NO_BADGE, type UnreadBadge } from "./indicator";
 
 /** Notification gates: only conversations they allow light the indicator. */
 export type IndicatorGates = Readonly<{
@@ -9,24 +10,29 @@ export type IndicatorGates = Readonly<{
   subscribe(listener: () => void): () => void;
 }>;
 
-/** A host projection of existing evidence, never a count or a new read owner. */
+/**
+ * A host projection of existing evidence, never a new read owner. The count
+ * is observed unread direct messages and mentions of the viewer; muted
+ * conversations contribute only their mentions. It is not an exact relay total.
+ */
 export function bindUnreadIndicator(
   communities: Communities,
-  project: (unread: boolean) => void,
+  project: (badge: UnreadBadge) => void,
   gates?: IndicatorGates,
 ) {
   let closed = false;
   let session: RelaySession | undefined;
   let identity = "";
-  let previous: boolean | undefined;
+  let previous: UnreadBadge | undefined;
   let stopRoster = () => {};
   let refresh = () => {};
   let stopPreferences = () => {};
   const channels = new Map<string, () => void>();
-  const publish = (unread: boolean) => {
-    if (unread === previous) return;
-    previous = unread;
-    project(unread);
+  const publish = (badge: UnreadBadge) => {
+    if (badge.unread === previous?.unread && badge.count === previous.count)
+      return;
+    previous = badge;
+    project(badge);
   };
   const clear = () => {
     stopRoster();
@@ -51,7 +57,7 @@ export function bindUnreadIndicator(
     clear();
     session = owned;
     identity = next;
-    publish(false);
+    publish(NO_BADGE);
     if (!owned) return;
     const viewer = client.viewer as string;
     const scope = gates && {
@@ -66,22 +72,22 @@ export function bindUnreadIndicator(
         preferences.status !== "ready" &&
         preferences.status !== "unsupported"
       ) {
-        publish(false);
+        publish(NO_BADGE);
         return;
       }
       const muted = new Set(preferences.data?.muted ?? []);
-      publish(
-        [...channels.keys()].some((channelId) => {
-          if (muted.has(channelId)) return false;
-          const snapshot = owned.unread.snapshot({
-            kind: "channel",
-            channelId,
-          });
-          // The dock follows the sidebar rows, which opening a channel quiets.
-          const count = snapshot.row?.observedCount ?? snapshot.observedCount;
-          return snapshot.manual !== "none" || (count ?? 0) > 0;
-        }),
-      );
+      let unread = false;
+      let count = 0;
+      for (const channelId of channels.keys()) {
+        const snapshot = owned.unread.snapshot({ kind: "channel", channelId });
+        count += snapshot.mentionCount ?? 0;
+        if (muted.has(channelId)) continue;
+        count += snapshot.directCount ?? 0;
+        // The dot follows the sidebar rows, which opening a channel quiets.
+        const observed = snapshot.row?.observedCount ?? snapshot.observedCount;
+        unread ||= snapshot.manual !== "none" || (observed ?? 0) > 0;
+      }
+      publish({ unread: unread || count > 0, count });
     };
     stopPreferences = owned.sidebarPreferences.subscribe(changed);
     changed();
@@ -136,6 +142,6 @@ export function bindUnreadIndicator(
     stopGates();
     clear();
     session = undefined;
-    publish(false);
+    publish(NO_BADGE);
   };
 }

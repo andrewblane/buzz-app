@@ -53,6 +53,10 @@ export type UnreadSnapshot = Readonly<{
   /** null means unobserved/denied, never a fabricated zero or an exact relay total. */
   observedCount: number | null;
   attentionCount: number | null;
+  /** Unread direct messages within attentionCount; omitted when none. */
+  directCount?: number;
+  /** Unread mentions of the viewer (never DMs) within attentionCount; omitted when none. */
+  mentionCount?: number;
   coverage: "unknown" | "observed";
   freshness: "unknown" | "observed" | "stale";
   manual: "none" | "local-only" | "remote";
@@ -1112,7 +1116,9 @@ export function createUnread({
     let count = 0,
       attention = 0,
       rowCount = 0,
-      rowAttention = 0;
+      rowAttention = 0,
+      direct = 0,
+      mentions = 0;
     const rowThreads = new Set<string>();
     const dm = isDm(target.channelId);
     indexEvidence();
@@ -1131,6 +1137,9 @@ export function createUnread({
       if (!isUnread(entry, state, dm)) continue;
       count++;
       if (priority(entry, dm)) attention++;
+      const kind = category(entry, dm);
+      if (kind === "direct") direct++;
+      else if (kind === "mention") mentions++;
       if (
         target.kind === "channel" &&
         (!entry.parentId || entry.broadcast) &&
@@ -1179,6 +1188,8 @@ export function createUnread({
         : {}),
       observedCount: evidence ? count : null,
       attentionCount: evidence ? attention : null,
+      ...(evidence && direct ? { directCount: direct } : {}),
+      ...(evidence && mentions ? { mentionCount: mentions } : {}),
       coverage: evidence ? "observed" : "unknown",
       freshness,
       manual,
@@ -1204,6 +1215,8 @@ export function createUnread({
     a.row?.observedCount === b.row?.observedCount &&
     a.row?.attentionCount === b.row?.attentionCount &&
     a.row?.threadCount === b.row?.threadCount &&
+    a.directCount === b.directCount &&
+    a.mentionCount === b.mentionCount &&
     a.coverage === b.coverage &&
     a.freshness === b.freshness &&
     a.manual === b.manual &&
