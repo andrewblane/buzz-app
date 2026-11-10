@@ -246,7 +246,7 @@
   min-width: 0;
 }
 .author {
-  font-weight: 700;
+  font-weight: 900;
   flex-shrink: 0;
   min-width: 0;
   max-width: 100%;
@@ -421,7 +421,7 @@ html[data-keyboard-navigation] .authorLink:focus-visible {
 /* Color emoji can paint beyond their font-size line box. Keep that ink clear
    of truncation while retaining bounded labels for long reaction content. */
 .reactionGlyph .reactionNativeEmoji {
-  padding: 0;
+  padding: var(--space-half);
 }
 .reactionFallbackEmoji {
   display: inline-block;
@@ -3466,7 +3466,7 @@ html[data-keyboard-navigation] .rawDiff:focus-visible {
   pointer-events: auto;
 }
 :where(html[data-message-density="compact"]) .message .author {
-  font-weight: var(--type-weight-medium);
+  font-weight: 900;
 }
 :where(html[data-message-density="compact"])
   .messageBubble

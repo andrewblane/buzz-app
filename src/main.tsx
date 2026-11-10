@@ -9,6 +9,11 @@ import { App } from "./app/App";
 import "@fontsource-variable/inter/wght.css";
 import "@fontsource-variable/inter/wght-italic.css";
 import "@fontsource/jetbrains-mono/400.css";
+// Prototype: Lato for the interface.
+import "@fontsource/lato/400.css";
+import "@fontsource/lato/400-italic.css";
+import "@fontsource/lato/700.css";
+import "@fontsource/lato/900.css";
 import { useKeyboardFocusVisibility } from "./shared/design-system/useKeyboardFocusVisibility";
 import { useRejectUnclaimedDrops } from "./features/messages/use-file-drop";
 import { TooltipProvider } from "./shared/design-system/ui/Tooltip";

@@ -47,7 +47,7 @@
 .identity .name {
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
-  font-weight: 700;
+  font-weight: 900;
 }
 .identity .avatars {
   order: 1;

@@ -48,13 +48,6 @@
   --text-message-link-own: var(--blue-11);
 }
 
-/* `antialiased` drops macOS stem darkening and makes Inter look thin. */
-:root,
-html {
-  -webkit-font-smoothing: auto;
-  -moz-osx-font-smoothing: auto;
-}
-
 /* Pane titles carry the screen's identity. */
 .panel-header-label > h2 {
   font-size: var(--text-label);
@@ -62,10 +55,11 @@ html {
   font-weight: 700;
 }
 
-/* Message text at 14/20: Inter's tall x-height reads larger than its size. */
+/* Message text at 15/22: Lato's small x-height reads smaller than its size. */
 :root:root:root {
-  --text-message: var(--type-size-14);
-  --text-message--line-height: 1.4285714285714286;
+  --text-message: calc(var(--type-rem) * 0.9375);
+  --text-message--line-height: 1.4666666666666666;
+  --text-message--letter-spacing: 0;
 }
 
 /* 3. A tinted sidebar separates navigation from content. */
@@ -76,6 +70,10 @@ html {
 .shell-sidebar > *,
 .shell-sidebar-default > * {
   background: var(--accent-2);
+  /* Sidebar text matches message text. */
+  --text-body: calc(var(--type-rem) * 0.9375);
+  --text-body-sm: calc(var(--type-rem) * 0.9375);
+  font-size: calc(var(--type-rem) * 0.9375);
 }
 
 /* 4. Coloured placeholders instead of grey initials. */
@@ -136,4 +134,15 @@ html {
 /* Thread connectors use the same quiet hairline as other separators. */
 :root:root:root {
   --border-message-thread: var(--border-standard);
+}
+
+/* Lato, a humanist sans, in place of Inter. It ships 400, 700 and 900, so
+   medium resolves to regular and semibold to bold. Inter's negative
+   tracking cramps it, so reading roles use none. */
+:root:root:root {
+  --font-sans: Lato, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --text-body--letter-spacing: 0;
+  --text-body-sm--letter-spacing: 0;
+  --text-body-lg--letter-spacing: 0;
+  --text-caption--letter-spacing: 0;
 }
