@@ -228,6 +228,7 @@ for (const failure of [
 }
 
 test("actual publication retries a failed create, deleting only a draft it left", (t) => {
+  if (process.platform === "win32") return t.skip("POSIX shell fixture");
   const publication = jobs.publish.steps.find(
     (step) => step.name === "Publish desktop release",
   ).run;
