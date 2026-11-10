@@ -39,8 +39,9 @@ export const parseColorModePreference = (
 /** Vertical rhythm of conversation rows; text size stays with the font scale. */
 export type MessageDensity = "default" | "compact";
 export const DENSITY_KEY = "buzz-message-density.v1";
-export const parseMessageDensity = (value: unknown): MessageDensity =>
-  value === "compact" ? "compact" : "default";
+// Prototype: compact is the only density; saved choices all resolve to it.
+export const parseMessageDensity = (_value: unknown): MessageDensity =>
+  "compact";
 
 export interface AppearanceSnapshot {
   readonly preference: ColorModePreference;
@@ -80,7 +81,7 @@ export function createAppearance(
     accentError: null,
     contrast: "low",
     contrastError: null,
-    density: "default",
+    density: "compact",
     densityError: null,
   };
   let disposed = false;

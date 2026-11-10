@@ -32,5 +32,5 @@ const applied = (): MessageDensity =>
 
 /** The applied density, for layout choices CSS cannot make (row order, alignment). */
 export function useMessageDensity(): MessageDensity {
-  return useSyncExternalStore(subscribe, applied, () => "default");
+  return useSyncExternalStore(subscribe, applied, () => "compact");
 }
