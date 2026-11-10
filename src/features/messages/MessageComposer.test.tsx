@@ -16250,3 +16250,206 @@ it("shows an annotator's marks in the composer and retires them with the destina
     expect(h.input().querySelector('[aria-invalid="spelling"]')).toBeNull(),
   );
 });
+
+it("schedules from the main composer and clears only after relay acceptance", async () => {
+  const h = mount();
+  let accept!: () => void;
+  const create = vi.fn(
+    (_input: unknown) =>
+      new Promise<void>((resolve) => {
+        accept = resolve;
+      }),
+  );
+  h.retarget({
+    session: {
+      ...h.session,
+      scheduledMessages: { create } as unknown as NonNullable<
+        RelaySession["scheduledMessages"]
+      >,
+    },
+  });
+  h.fill("Send tomorrow morning");
+  const editor = h.input();
+  fireEvent.click(screen.getByRole("button", { name: "Schedule message" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Custom time" }));
+  if (screen.queryByRole("menuitem", { name: "Custom time" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Custom time" }));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Schedule message",
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Schedule message" }),
+  );
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  expect(create.mock.calls[0]?.[0]).toMatchObject({
+    content: "Send tomorrow morning",
+    destination: { channelId: "channel" },
+  });
+  expect(editor).toHaveValue("Send tomorrow morning");
+  expect(h.messages.send).not.toHaveBeenCalled();
+  await act(async () => accept());
+  await waitFor(() => expect(editor).toHaveValue(""));
+  expect(h.onSend).not.toHaveBeenCalled();
+});
+
+it("keeps a scheduled draft when the relay refuses it", async () => {
+  const h = mount();
+  const create = vi.fn(async () => {
+    throw new Error("Queue unavailable");
+  });
+  h.retarget({
+    session: {
+      ...h.session,
+      scheduledMessages: { create } as unknown as NonNullable<
+        RelaySession["scheduledMessages"]
+      >,
+    },
+  });
+  h.fill("Keep this draft");
+  const editor = h.input();
+  fireEvent.click(screen.getByRole("button", { name: "Schedule message" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Custom time" }));
+  if (screen.queryByRole("menuitem", { name: "Custom time" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Custom time" }));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Schedule message",
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Schedule message" }),
+  );
+  await waitFor(() =>
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Queue unavailable",
+    ),
+  );
+  expect(editor).toHaveValue("Keep this draft");
+  expect(h.messages.send).not.toHaveBeenCalled();
+});
+
+it("keeps a newer draft when an older scheduled save completes", async () => {
+  const h = mount();
+  let accept!: () => void;
+  const create = vi.fn(
+    (_input: unknown) =>
+      new Promise<void>((resolve) => {
+        accept = resolve;
+      }),
+  );
+  h.retarget({
+    session: {
+      ...h.session,
+      scheduledMessages: { create } as unknown as NonNullable<
+        RelaySession["scheduledMessages"]
+      >,
+    },
+  });
+  h.fill("Original draft");
+  const editor = h.input();
+  fireEvent.click(screen.getByRole("button", { name: "Schedule message" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Custom time" }));
+  if (screen.queryByRole("menuitem", { name: "Custom time" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Custom time" }));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Schedule message",
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Schedule message" }),
+  );
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  act(() => {
+    editor.value = "Newer work";
+  });
+  fireEvent.input(editor);
+  await act(async () => accept());
+  await waitFor(() => expect(editor).toHaveValue("Newer work"));
+});
+
+it("refuses scheduling a slash command without executing it or clearing its draft", async () => {
+  const onCommand = vi.fn(async () => true),
+    create = vi.fn(async () => {});
+  const h = mount({ onCommand });
+  h.retarget({
+    session: {
+      ...h.session,
+      scheduledMessages: { create } as unknown as NonNullable<
+        RelaySession["scheduledMessages"]
+      >,
+    },
+  });
+  h.fill("/leave");
+  const editor = h.input();
+  fireEvent.click(screen.getByRole("button", { name: "Schedule message" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Custom time" }));
+  if (screen.queryByRole("menuitem", { name: "Custom time" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Custom time" }));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Schedule message",
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Schedule message" }),
+  );
+  await waitFor(() =>
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Commands cannot be scheduled",
+    ),
+  );
+  expect(editor).toHaveValue("/leave");
+  expect(onCommand).not.toHaveBeenCalled();
+  expect(create).not.toHaveBeenCalled();
+});
+
+it("keeps an attachment added while an older scheduled save is pending", async () => {
+  writeView("scope", "draft:channel", "Original text");
+  const h = mount();
+  let accept!: () => void;
+  const create = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        accept = resolve;
+      }),
+  );
+  const upload = vi.fn(() => new Promise<never>(() => {}));
+  h.retarget({
+    session: {
+      ...h.session,
+      attachments: { upload },
+      scheduledMessages: { create } as unknown as NonNullable<
+        RelaySession["scheduledMessages"]
+      >,
+    },
+  });
+  h.fill("Original text");
+  fireEvent.click(screen.getByRole("button", { name: "Schedule message" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Custom time" }));
+  if (screen.queryByRole("menuitem", { name: "Custom time" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Custom time" }));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Schedule message",
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Schedule message" }),
+  );
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  h.retarget({ channelId: "other" });
+  h.retarget({ channelId: "channel" });
+  // The remounted composer owns the same tab-local attachment store.
+  fireEvent.change(screen.getByLabelText("Choose attachments"), {
+    target: {
+      files: [new File(["new work"], "newer.txt", { type: "text/plain" })],
+    },
+  });
+  await waitFor(() => expect(upload).toHaveBeenCalledOnce());
+  const newerText = h.input().value;
+  await act(async () => accept());
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Schedule message" }),
+    ).toBeNull(),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Remove newer.txt" }),
+    ).toBeVisible(),
+  );
+  expect(h.input()).toHaveValue(newerText);
+});
