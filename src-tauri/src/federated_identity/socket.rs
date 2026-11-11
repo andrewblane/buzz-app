@@ -393,19 +393,19 @@ fn connector() -> Option<tokio_tungstenite::Connector> {
 mod tests {
     #[test]
     fn leave_frames_and_their_kind_aliases_are_detected_or_refused() {
-        use nostr_pairing::{EventBuilder, JsonUtil, Keys, Kind, Tag};
+        use nostr::event::{EventBuilder, FinalizeEvent, Kind, Tag};
+        use nostr::key::Keys;
         let leave = EventBuilder::new(Kind::Custom(28936), "")
             .tags([Tag::parse(["-"]).unwrap()])
-            .sign_with_keys(&Keys::generate())
-            .unwrap()
-            .as_json();
+            .finalize(&Keys::generate())
+            .unwrap();
+        let leave = serde_json::to_string(&leave).unwrap();
         assert!(super::leave_frame(&format!(r#"["EVENT",{leave}]"#)).unwrap());
         for alias in ["94472", "4294996232"] {
             let aliased = leave.replace(r#""kind":28936"#, &format!(r#""kind":{alias}"#));
-            // The relay's parser narrows the kind back to a validly signed leave.
-            let parsed = nostr_pairing::Event::from_json(&aliased).unwrap();
-            assert_eq!(parsed.kind, Kind::Custom(28936));
-            assert!(parsed.verify().is_ok());
+            // A parser that truncates the kind to 16 bits, as nostr 0.44 did, reads
+            // it back as this validly signed leave.
+            assert_eq!(alias.parse::<u64>().unwrap() as u16, 28936);
             assert!(super::leave_frame(&format!(r#"["EVENT",{aliased}]"#)).is_err());
         }
         for frame in [
