@@ -52,9 +52,6 @@ it("calculates the selected preset at save time after a quick choice is edited",
     target: { value: "Design review" },
   });
   await user.click(screen.getByRole("button", { name: "Duration: Today" }));
-  expect(
-    screen.queryByRole("menuitemradio", { name: "Don’t clear" }),
-  ).not.toBeInTheDocument();
   await user.click(
     await screen.findByRole("menuitemradio", { name: "8 hours" }),
   );
@@ -65,6 +62,24 @@ it("calculates the selected preset at save time after a quick choice is edited",
     text: "Design review",
     emoji: "🗣️",
     expiresAt: now / 1000 + 28800,
+  });
+});
+it("saves a new status without an expiration when Don’t clear is chosen", async () => {
+  const user = userEvent.setup();
+  const { save, close } = setup();
+  await user.click(screen.getByRole("button", { name: "Working remotely" }));
+  await user.click(screen.getByRole("button", { name: "Duration: Today" }));
+  await user.click(
+    await screen.findByRole("menuitemradio", { name: "Don’t clear" }),
+  );
+  expect(
+    screen.getByRole("button", { name: "Duration: Don’t clear" }),
+  ).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Save status" }));
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  expect(save).toHaveBeenCalledWith({
+    text: "Working remotely",
+    emoji: "🏠",
   });
 });
 it("prefills and preserves an existing deadline, and validates a custom date before saving", async () => {
