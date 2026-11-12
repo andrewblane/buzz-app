@@ -53,6 +53,11 @@ impl RunLocation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VolumeInfo {
     pub mount_point: PathBuf,
+    /// What is mounted there: a device node for a disk, the original bundle
+    /// for an App Translocation mount.
+    pub mounted_from: PathBuf,
+    /// The filesystem type name, such as `apfs`, `hfs` or `nullfs`.
+    pub fs_type: String,
     pub read_only: bool,
     pub is_root: bool,
 }
@@ -102,6 +107,48 @@ fn is_in_applications_folder(path: &Path, home: Option<&Path>) -> bool {
 fn is_translocated_path(path: &Path) -> bool {
     path.components()
         .any(|component| component.as_os_str() == "AppTranslocation")
+}
+
+/// The bundle that the translocated `bundle_path` is a read-only view of, read
+/// from the volume it runs on. App Translocation mounts the original bundle
+/// with `nullfs` at `…/AppTranslocation/<uuid>` and shows it there as
+/// `d/<the original's file name>`.
+///
+/// `None` unless the volume has exactly that shape, so a bundle that merely
+/// sits under a folder named `AppTranslocation`, or a mount laid out some
+/// other way, names no original.
+fn translocated_original(bundle_path: &Path, volume: &VolumeInfo) -> Option<PathBuf> {
+    let original = &volume.mounted_from;
+    let shown_at = volume.mount_point.join("d").join(original.file_name()?);
+    (volume.fs_type == "nullfs" && original.is_absolute() && bundle_path == shown_at)
+        .then(|| original.clone())
+}
+
+/// The volume to detach once Buzz has moved off it, provided `hdiutil` then
+/// confirms it is an attached disk image: the volume a `DiskImage` copy runs
+/// from, or the one holding the original of a translocated copy when that
+/// original is itself a `DiskImage` copy. `volume_of` looks up the volume a
+/// path is on.
+///
+/// A translocated copy whose original can't be identified, or isn't on such a
+/// volume (a download in `~/Downloads`, say), has nothing to detach.
+fn detach_candidate(
+    location: RunLocation,
+    bundle_path: &Path,
+    home: Option<&Path>,
+    volume: &VolumeInfo,
+    volume_of: impl FnOnce(&Path) -> Option<VolumeInfo>,
+) -> Option<PathBuf> {
+    match location {
+        RunLocation::DiskImage => Some(volume.mount_point.clone()),
+        RunLocation::Translocated => {
+            let original = translocated_original(bundle_path, volume)?;
+            let original_volume = volume_of(&original)?;
+            (classify(&original, home, &original_volume) == RunLocation::DiskImage)
+                .then_some(original_volume.mount_point)
+        }
+        _ => None,
+    }
 }
 
 /// Resolve the running `.app` bundle directory by walking up from the current
@@ -609,7 +656,14 @@ mod macos {
             return;
         }
 
-        match move_to_applications_and_relaunch(&bundle_path, &volume, location) {
+        let detach = detach_candidate(
+            location,
+            &bundle_path,
+            home.as_deref(),
+            &volume,
+            volume_info,
+        );
+        match move_to_applications_and_relaunch(&bundle_path, detach) {
             Ok(()) => {
                 eprintln!("Relaunching Buzz from /Applications");
                 // Tear down as Quit does, so terminals, plugin processes and
@@ -671,6 +725,10 @@ mod macos {
         let is_root = mount_point == Path::new("/");
         Some(VolumeInfo {
             mount_point,
+            mounted_from: c_string_field_to_path(&stat.f_mntfromname),
+            fs_type: c_string_field_to_path(&stat.f_fstypename)
+                .to_string_lossy()
+                .into_owned(),
             read_only,
             is_root,
         })
@@ -746,8 +804,7 @@ mod macos {
 
     fn move_to_applications_and_relaunch(
         bundle_path: &Path,
-        volume: &VolumeInfo,
-        location: RunLocation,
+        detach: Option<PathBuf>,
     ) -> std::io::Result<()> {
         let target = installed_copy_path(bundle_path)
             .ok_or_else(|| std::io::Error::other("app bundle path has no file name"))?;
@@ -791,11 +848,9 @@ mod macos {
         // first, without waiting for it: trashing a running bundle still
         // succeeds, so a copy that is still quitting, or won't quit, never
         // blocks the move.
-        // `DiskImage` means any read-only volume under `/Volumes`, so only
-        // detach the volume when it really is an attached disk image.
-        let detach_mount = matches!(location, RunLocation::DiskImage)
-            .then(|| volume.mount_point.clone())
-            .filter(|mount| is_attached_image(mount));
+        // The candidate is any read-only volume under `/Volumes`, so only
+        // detach it when it really is an attached disk image.
+        let detach_mount = detach.filter(|mount| is_attached_image(mount));
         replace_installed_copy(
             &staging,
             &target,
@@ -927,6 +982,8 @@ mod tests {
     fn volume(mount_point: &str, read_only: bool) -> VolumeInfo {
         VolumeInfo {
             mount_point: PathBuf::from(mount_point),
+            mounted_from: PathBuf::from("/dev/disk9s1"),
+            fs_type: "apfs".to_string(),
             read_only,
             is_root: mount_point == "/",
         }
@@ -1024,6 +1081,207 @@ mod tests {
             &volume("/private/var/folders/ab/cd/T/AppTranslocation/UUID/d", true),
         );
         assert_eq!(location, RunLocation::Translocated);
+    }
+
+    const TRANSLOCATION_MOUNT: &str =
+        "/private/var/folders/ab/cdef/T/AppTranslocation/2AAF5ABB-C3C1-4670-A76A-29A02FE4FA5D";
+
+    /// The volume of a translocated copy of `original`, as `statfs` reports
+    /// it for a real Gatekeeper launch.
+    fn translocation_volume(original: &str) -> VolumeInfo {
+        VolumeInfo {
+            mount_point: PathBuf::from(TRANSLOCATION_MOUNT),
+            mounted_from: PathBuf::from(original),
+            fs_type: "nullfs".to_string(),
+            read_only: true,
+            is_root: false,
+        }
+    }
+
+    fn translocated_bundle() -> PathBuf {
+        Path::new(TRANSLOCATION_MOUNT).join("d/Buzz.app")
+    }
+
+    #[test]
+    fn translocated_original_is_the_bundle_the_translocation_mount_shows() {
+        for original in [
+            "/Volumes/Buzz/Buzz.app",
+            "/Volumes/Buzz 1/Sub Folder/Buzz.app",
+            "/Users/someone/Downloads/Buzz.app",
+        ] {
+            assert_eq!(
+                translocated_original(&translocated_bundle(), &translocation_volume(original)),
+                Some(PathBuf::from(original)),
+            );
+        }
+    }
+
+    #[test]
+    fn translocated_original_is_none_for_a_volume_of_another_shape() {
+        let on_image = translocation_volume("/Volumes/Buzz/Buzz.app");
+        let mount = Path::new(TRANSLOCATION_MOUNT);
+
+        // A bundle on an ordinary volume, under a folder named
+        // `AppTranslocation`, is classified `Translocated` without being so.
+        let folder = Path::new("/Volumes/Buzz/AppTranslocation/d/Buzz.app");
+        let ordinary = VolumeInfo {
+            mount_point: PathBuf::from("/Volumes/Buzz/AppTranslocation"),
+            mounted_from: PathBuf::from("/Volumes/Other/Buzz.app"),
+            ..volume("/Volumes/Buzz", true)
+        };
+        assert_eq!(classify(folder, None, &ordinary), RunLocation::Translocated);
+        assert_eq!(translocated_original(folder, &ordinary), None);
+
+        // The bundle isn't where the mount shows its original.
+        for bundle in [
+            mount.join("Buzz.app"),
+            mount.join("e/Buzz.app"),
+            mount.join("d/Buzz.app/Contents/Helpers/Buzz.app"),
+            PathBuf::from("/private/var/folders/ab/cdef/T/AppTranslocation/OTHER/d/Buzz.app"),
+        ] {
+            assert_eq!(translocated_original(&bundle, &on_image), None);
+        }
+
+        // The mount's source doesn't name this bundle: another name (as a
+        // source cut short would have), no file name, or not a full path.
+        for source in [
+            "/Volumes/Buzz/Other.app",
+            "/Volumes/Buzz/Buz",
+            "/",
+            "Buzz.app",
+        ] {
+            assert_eq!(
+                translocated_original(&translocated_bundle(), &translocation_volume(source)),
+                None,
+                "{source}"
+            );
+        }
+    }
+
+    /// Runs `detach_candidate` for a `Translocated` copy of `original`, whose
+    /// own volume is `original_volume`.
+    fn translocated_detach_candidate(
+        original: &str,
+        original_volume: Option<VolumeInfo>,
+    ) -> Option<PathBuf> {
+        detach_candidate(
+            RunLocation::Translocated,
+            &translocated_bundle(),
+            Some(Path::new("/Users/someone")),
+            &translocation_volume(original),
+            |path| {
+                assert_eq!(path, Path::new(original));
+                original_volume
+            },
+        )
+    }
+
+    #[test]
+    fn detach_candidate_for_a_disk_image_copy_is_its_own_volume() {
+        assert_eq!(
+            detach_candidate(
+                RunLocation::DiskImage,
+                Path::new("/Volumes/Buzz 1/Buzz.app"),
+                None,
+                &volume("/Volumes/Buzz 1", true),
+                |_| unreachable!("only a translocated copy has another volume to look up"),
+            ),
+            Some(PathBuf::from("/Volumes/Buzz 1")),
+        );
+    }
+
+    #[test]
+    fn detach_candidate_for_a_translocated_copy_is_the_disk_image_holding_its_original() {
+        assert_eq!(
+            translocated_detach_candidate(
+                "/Volumes/Buzz 1/Buzz.app",
+                Some(volume("/Volumes/Buzz 1", true)),
+            ),
+            Some(PathBuf::from("/Volumes/Buzz 1")),
+        );
+        assert_eq!(
+            translocated_detach_candidate(
+                "/Volumes/Buzz/Sub Folder/Buzz.app",
+                Some(volume("/Volumes/Buzz", true)),
+            ),
+            Some(PathBuf::from("/Volumes/Buzz")),
+        );
+    }
+
+    #[test]
+    fn detach_candidate_is_none_for_a_translocated_copy_that_is_not_from_a_disk_image() {
+        // A quarantined download, on the writable data volume.
+        assert_eq!(
+            translocated_detach_candidate(
+                "/Users/someone/Downloads/Buzz.app",
+                Some(volume("/System/Volumes/Data", false)),
+            ),
+            None,
+        );
+        // A writable volume, a read-only one outside `/Volumes`, and an
+        // original in an Applications folder: none is a `DiskImage` copy.
+        assert_eq!(
+            translocated_detach_candidate(
+                "/Volumes/Drive/Buzz.app",
+                Some(volume("/Volumes/Drive", false)),
+            ),
+            None,
+        );
+        assert_eq!(
+            translocated_detach_candidate(
+                "/private/mnt/Buzz.app",
+                Some(volume("/private/mnt", true)),
+            ),
+            None,
+        );
+        assert_eq!(
+            translocated_detach_candidate(
+                "/Users/someone/Applications/Buzz.app",
+                Some(volume("/Volumes/Home", true)),
+            ),
+            None,
+        );
+        // The original's volume can't be read.
+        assert_eq!(
+            translocated_detach_candidate("/Volumes/Buzz/Buzz.app", None),
+            None
+        );
+    }
+
+    #[test]
+    fn detach_candidate_is_none_without_an_identified_original_or_a_disk_image() {
+        let never = |_: &Path| -> Option<VolumeInfo> {
+            unreachable!("no original was identified, so there is no volume to look up")
+        };
+        // Classified `Translocated`, but the volume isn't a translocation
+        // mount, even though it is itself a read-only volume under `/Volumes`.
+        assert_eq!(
+            detach_candidate(
+                RunLocation::Translocated,
+                Path::new("/Volumes/Buzz/AppTranslocation/d/Buzz.app"),
+                None,
+                &volume("/Volumes/Buzz", true),
+                never,
+            ),
+            None,
+        );
+        for location in [
+            RunLocation::ReadOnlyVolume,
+            RunLocation::OtherNonInstalled,
+            RunLocation::InstalledInApplications,
+        ] {
+            assert_eq!(
+                detach_candidate(
+                    location,
+                    &translocated_bundle(),
+                    None,
+                    &translocation_volume("/Volumes/Buzz/Buzz.app"),
+                    never,
+                ),
+                None,
+                "{location:?}"
+            );
+        }
     }
 
     #[test]
