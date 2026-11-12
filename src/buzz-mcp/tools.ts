@@ -276,6 +276,11 @@ export const TOOLS: readonly Tool[] = [
     channel: str,
   }),
   tool(
+    "solo_workspace_list",
+    "List your owner's personal Solo workspace IDs and names on this local host.",
+    {},
+  ),
+  tool(
     "channel_create",
     "Create a channel. template: one of your owner's, by name. solo: a private Solo chat, with members added in the create.",
     {
@@ -293,6 +298,11 @@ export const TOOLS: readonly Tool[] = [
       template: str,
       solo: { type: "boolean" },
       members: { ...strs, description: "Solo only: pubkeys or npubs." },
+      workspace: {
+        ...str,
+        description:
+          "Solo only, local host: exact ID from solo_workspace_list. Include your owner in members. Placement only; no workspace defaults.",
+      },
     },
     ["name", "visibility"],
   ),
@@ -591,6 +601,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   },
   async send(tools, args) {
     const { context } = tools;
+    args = ignoreBlankFields(args, ["channel", "reply"]);
     const reply =
       text(args.reply) ??
       (args.channel === undefined ? context.root : undefined);
@@ -722,6 +733,13 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
   async read(tools, args) {
     const { client, context } = tools;
+    args = ignoreBlankFields(args, [
+      "channel",
+      "thread",
+      "message_url",
+      "author",
+      "before_id",
+    ]);
     if (args.message_url !== undefined) {
       if (args.channel !== undefined || args.thread !== undefined)
         throw new Error(
@@ -948,6 +966,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   },
 
   channel_get: (tools, args) => tools.details(target(tools, args)),
+  solo_workspace_list: async ({ client }) => {
+    if (!client.soloWorkspaces)
+      throw new Error("Solo workspaces are unavailable on this host");
+    return JSON.stringify(await client.soloWorkspaces.list());
+  },
   channel_create: (tools, args) => tools.create(args),
   channel_update: (tools, args) => tools.update(target(tools, args), args),
   channel_join: (tools, args) => lifecycle(tools, args, "join"),
@@ -1770,7 +1793,17 @@ class Tools {
       args.template === undefined
         ? undefined
         : await this.template(required(args, "template"));
+    const workspace =
+      args.workspace === undefined ? undefined : required(args, "workspace");
+    if (workspace !== undefined && !solo)
+      throw new Error("workspace is for Solo chats.");
+    if (workspace !== undefined && !this.client.soloWorkspaces)
+      throw new Error("Solo workspaces are unavailable on this host");
     const id = crypto.randomUUID();
+    const file =
+      workspace === undefined
+        ? undefined
+        : await this.client.soloWorkspaces?.prepare(workspace, members, id);
     await this.client.publish({
       kind: 9007,
       content: "",
@@ -1790,13 +1823,29 @@ class Tools {
       !!now && (!solo || soloChannelMetadata(now as RelayEvent));
     const shown = await until(() => this.metadata(id), labeled).catch(unread);
     if (!shown || shown instanceof Error)
-      return `The community accepted channel ${id} but ${shown ? shown.message : "does not show it yet"}${template ? "; the template was not applied" : ""}${role === "guest" ? "; join_role was not set" : ""}${members.length ? "; its members are not confirmed" : ""}.`;
+      return `The community accepted channel ${id} but ${shown ? shown.message : "does not show it yet"}${template ? "; the template was not applied" : ""}${role === "guest" ? "; join_role was not set" : ""}${members.length ? "; its members are not confirmed" : ""}${file ? "; not filed in workspace" : ""}.`;
     const lines = [`created ${id}`];
     if (!labeled(shown))
       lines.push(
         "The community did not keep the Solo label, so it is an ordinary private channel.",
       );
     if (members.length) lines.push(...(await this.joined(id, members)));
+    if (file) {
+      try {
+        const placement = await file(id);
+        lines.push(
+          placement.status === "filed"
+            ? `filed in workspace ${workspace}`
+            : placement.status === "not-filed"
+              ? `created, not filed in workspace: ${placement.error}. Use Move to on this chat; do not create another chat.`
+              : `created; workspace placement unconfirmed and may have completed: ${placement.error}. Inspect or refresh this chat before Move to; do not create another chat.`,
+        );
+      } catch (error) {
+        lines.push(
+          `created; workspace placement unconfirmed and may have completed: ${reason(error)}. Inspect or refresh this chat before Move to; do not create another chat.`,
+        );
+      }
+    }
     if (template) lines.push(...(await this.apply(id, template)));
     // Last, so the template's agents join as members, not guests.
     if (role === "guest")
@@ -2739,7 +2788,8 @@ function joinRoleArg(args: Args) {
 /** A `since` or `before` argument: a Unix time in seconds, inclusive. */
 function unixTime(args: Args, key: string) {
   const value = args[key];
-  if (value === undefined) return undefined;
+  // 0 is left out too: no message is from before 1970.
+  if (value === undefined || value === 0) return undefined;
   // In milliseconds, a time from this century is past the year 5000.
   if (
     !Number.isSafeInteger(value) ||
@@ -2765,6 +2815,15 @@ function checkDetails(name?: string, about?: string, ttl?: number) {
 }
 const text = (value: unknown) =>
   typeof value === "string" && value.trim() ? value.trim() : undefined;
+const isBlank = (value: unknown) => typeof value === "string" && !value.trim();
+/** Some models fill in every optional field, sending "" for each one they
+ * mean to leave out. Reads a blank one of `fields` as left out. */
+function ignoreBlankFields(args: Args, fields: readonly string[]): Args {
+  const checked = { ...args };
+  for (const field of fields)
+    if (isBlank(checked[field])) delete checked[field];
+  return checked;
+}
 const list = (value: unknown) =>
   Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
