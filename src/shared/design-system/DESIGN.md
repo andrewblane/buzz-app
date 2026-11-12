@@ -587,10 +587,10 @@ sidebar uses it. A host whose scroller cannot carry the attribute applies
 `--scroll-fade-always`. ConversationTimeline wraps history in `conversation-history-viewport`: a
 96px opacity falloff with three transparent, progressively blurred layers at the
 top edge. Conversation identity headers float above the history, which scrolls behind
-the avatars and name. A 96px initial history inset scrolls away with the content.
+the avatars and name. A 104px initial history inset scrolls away with the content.
 The header and composer stay sharp; blur increases from 4px to 16px toward the
 top. The layers intercept no pointer input and add no surface fill.
-Conversation headers use an 8px bottom inset. Reduced transparency and forced
+Conversation headers use a 12px bottom inset. Reduced transparency and forced
 colors remove the fade.
 Tab strips keep their own wider horizontal fade.
 
@@ -1353,7 +1353,7 @@ during loading, empty, error, and populated states. Content cards and Settings
 groups are not workspace panes and do not each need chrome.
 
 Workspace pane headers use a compact `PanelHeader`: a left-aligned title,
-16px vertical padding, 20px horizontal insets, and a 40px minimum toolbar row.
+20px vertical padding, 24px horizontal insets, and a 40px minimum toolbar row.
 `PanelHeaderLabel` uses a 24px icon slot. Content-introduction `Header` keeps
 its own larger spacing. Dividers remain optional; model cards retain their
 compact `card` variant.

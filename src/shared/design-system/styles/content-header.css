@@ -6,10 +6,13 @@
     margin-bottom: var(--space-5);
   }
   .buzz-content-header:not([data-inline]) {
-    min-height: calc(var(--size-control-sm) + 2 * var(--space-4));
+    min-height: calc(var(--size-control-sm) + 2 * var(--space-5));
     align-items: center;
-    padding: var(--space-4)
-      var(--content-header-inline-inset, var(--space-panel-inset));
+    padding: var(--space-5)
+      calc(
+        var(--content-header-inline-inset, var(--space-panel-inset)) +
+        var(--space-1)
+      );
     margin-bottom: var(--space-4);
   }
   .buzz-content-header[data-align="end"] {

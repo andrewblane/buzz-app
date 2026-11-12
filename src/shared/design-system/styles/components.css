@@ -1595,7 +1595,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
-    padding: var(--space-4) var(--space-5);
+    padding: var(--space-5) var(--space-6);
   }
 
   /* Keep toolbar geometry while the conversation identity lives in content. */
@@ -1610,7 +1610,7 @@
 
   .panel-header[data-variant="compact"] {
     min-height: var(--size-panel-header);
-    padding: var(--space-4) var(--space-5);
+    padding: var(--space-5) var(--space-6);
   }
 
   .panel-header-title,
@@ -1666,14 +1666,18 @@
 
   /* Chat identity and toolbar controls share a top edge. */
   .panel-header[data-variant="conversation"] {
-    padding-block-end: var(--space-2);
+    padding-block-end: var(--space-3);
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
     align-items: start;
   }
   /* Keep the first message clear at rest; the inset scrolls away with history. */
   :has(> .panel-header[data-history-overlay]) {
-    --history-header-inset: calc(var(--space-16) + var(--space-8));
+    --history-header-inset: calc(
+      var(--space-16) +
+      var(--space-8) +
+      var(--space-2)
+    );
     --history-leading-space: var(--space-16);
   }
   .panel-header[data-history-overlay] {
@@ -1684,7 +1688,7 @@
     z-index: 2;
   }
   .panel-header[data-history-overlay] > * {
-    margin-block-start: var(--space-4);
+    margin-block-start: var(--space-5);
   }
   :where(.conversation-history-viewport > [data-message-scroller])
     > :first-child {
