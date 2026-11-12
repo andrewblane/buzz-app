@@ -32,6 +32,7 @@ import {
   useSyncExternalStore,
   Fragment,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import { Virtualizer, type VirtualizerHandle } from "virtua";
 import { MessageRow, type MessageLinkOrigin } from "./MessageRow";
@@ -180,6 +181,8 @@ export type ChannelTimelineProps = {
   /** A parent keyed by connection generation can preserve its timeline on cache promotion. */
   continuityKey?: string | undefined;
   window: ChannelWindow;
+  /** Local presentation at the known history start, outside message semantics. */
+  intro?: ReactNode;
   launchPending?: boolean | undefined;
   /** Solo chats page history on scroll; retain an explicit button for errors. */
   historyControl?: "button" | "scroll";
@@ -235,6 +238,7 @@ function Timeline({
   queries,
   window,
   launchPending,
+  intro,
   historyControl = "button",
   onOpenLink,
   canOpenLink,
@@ -249,6 +253,8 @@ function Timeline({
   startsThreads = true,
 }: ChannelTimelineProps) {
   useMessageSelectionCopy();
+  const shownIntro =
+    !window.hasMore && !window.historyLimited ? intro : undefined;
   const [initialPosition] = useState(() =>
     transient
       ? null
@@ -1900,7 +1906,9 @@ function Timeline({
         ref={edge}
         className={styles.edge}
         data-history-space={reserveHistorySpace || undefined}
+        data-intro={!!shownIntro || undefined}
       >
+        {shownIntro}
         {edgeError && <span role="alert">{edgeError}</span>}
         {window.historyLimited ? (
           <span>History window limit reached</span>
@@ -2143,6 +2151,7 @@ function Timeline({
         <div className={styles.timelineEnd} aria-hidden="true" />
       </div>
       {!rows.length &&
+        !shownIntro &&
         !window.hasMore &&
         window.status === "ready" &&
         !window.error &&
