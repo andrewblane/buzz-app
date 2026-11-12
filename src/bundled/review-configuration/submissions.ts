@@ -28,6 +28,7 @@ export type Submission = {
   submitter: string;
   device: string;
   threads: Thread[];
+  deleted?: true;
 };
 export type SavedSubmission = {
   value: Submission;
@@ -93,6 +94,7 @@ async function decode(
     value.submitter !== event.pubkey ||
     !HEX.test(value.configRevision) ||
     !UUID.test(value.device) ||
+    (value.deleted !== undefined && value.deleted !== true) ||
     config.lanes.some((lane) => lane.reviewers.length !== 1) ||
     !Array.isArray(value.threads) ||
     value.threads.length !==
@@ -137,10 +139,14 @@ export async function loadSubmissions(
   );
   return {
     rows: results.flatMap((result) =>
-      result.status === "fulfilled" ? [result.value] : [],
+      result.status === "fulfilled" && !result.value.value.deleted
+        ? [result.value]
+        : [],
     ),
     warning: [
-      events.length > 100 ? "Showing the latest 100 submissions." : "",
+      events.length > 100
+        ? "Showing results from the latest 100 saved records, including deleted entries."
+        : "",
       results.some((result) => result.status === "rejected")
         ? "Some saved submissions could not be read."
         : "",
@@ -180,6 +186,54 @@ async function write(
   );
   await writer.publish(event, signal);
   return { value, artifactId, revision: event.id };
+}
+
+/** Remove from the shared list, retaining recovery and thread identity for resubmission. */
+export async function deleteSubmission(
+  session: RelaySession,
+  channel: string,
+  previous: SavedSubmission,
+  signal: AbortSignal,
+) {
+  if (!session.viewer || previous.value.submitter !== session.viewer)
+    throw new Error("Only the original submitter can delete this submission.");
+  const read = session.snapshotRead;
+  if (!read || !navigator.locks)
+    throw new Error("Submission deletion is unavailable.");
+  return navigator.locks.request(
+    `buzz.review.submit:${session.scope}`,
+    { signal },
+    async () => {
+      const events = await read(
+        [
+          {
+            kinds: [ARTIFACT_KIND],
+            "#h": [channel],
+            "#d": [previous.artifactId],
+            artifact: "current",
+            limit: 1,
+          },
+        ],
+        { signal },
+      );
+      const head = events[0];
+      if (!head) throw new Error("Submission is unavailable. Reload the list.");
+      const current = await decode(head, channel);
+      if (current.value.submitter !== session.viewer)
+        throw new Error(
+          "Only the original submitter can delete this submission.",
+        );
+      if (current.revision !== previous.revision)
+        throw new Error("Submission changed. Reload the list before deleting.");
+      await write(
+        session,
+        channel,
+        { ...current.value, deleted: true },
+        current,
+        signal,
+      );
+    },
+  );
 }
 
 /** Device ownership is recovery coordination, never permission. The relay still
@@ -452,6 +506,14 @@ export async function submitReview(
         };
         await eligible(session, value, signal);
         record = await write(session, channel, value, undefined, signal);
+      }
+      if (record.value.deleted && (resume || notifyExisting)) {
+        if (record.value.submitter !== session.viewer)
+          throw new Error(
+            "Only the original submitter can restore this deleted submission.",
+          );
+        const { deleted: _deleted, ...value } = record.value;
+        record = await write(session, channel, value, record, signal);
       }
       onProgress(record);
       // The dedicated Submit action may notify; passive readers never dispatch.

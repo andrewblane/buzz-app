@@ -37,14 +37,22 @@ import {
 } from "./configuration";
 import "./review-configuration.css";
 
+export type ReviewPage = "configuration" | "submit" | "all";
+export const reviewPageTitle = (page: ReviewPage) =>
+  page === "submit"
+    ? "Submit PR"
+    : page === "all"
+      ? "All PRs"
+      : "Review Configuration";
+
 function Frame({
   children,
-  submit = false,
+  page = "configuration",
 }: {
   children: ReactNode;
-  submit?: boolean;
+  page?: ReviewPage;
 }) {
-  const title = submit ? "Submit PR" : "Review Configuration";
+  const title = reviewPageTitle(page);
   return (
     <FullPageSurface aria-label={title}>
       <div className="review-config-page text-body">
@@ -52,7 +60,9 @@ function Frame({
           title={<PanelHeaderLabel title={title} icon={<ListChecksIcon />} />}
         />
         <div className="review-config-scroll">
-          <div className="review-config-content">{children}</div>
+          <div className="review-config-content" data-review-page={page}>
+            {children}
+          </div>
         </div>
       </div>
     </FullPageSurface>
@@ -63,9 +73,9 @@ export function ReviewConfigurationPage({
   relay,
   navigator,
   readPull = publicPullReader,
-  submit = false,
+  page = "configuration",
 }: {
-  submit?: boolean;
+  page?: ReviewPage;
   relay: RelayData;
   navigator?: Navigation;
   readPull?: ReadPull;
@@ -76,8 +86,22 @@ export function ReviewConfigurationPage({
       <ReviewConfigurationCommunity
         key={`${connection.scope}:${connection.generation}`}
         session={connection.session}
-        submit={submit}
+        page={page}
         readPull={readPull}
+        onNavigate={
+          navigator
+            ? async (page) => {
+                const result = await navigator.open({
+                  version: 1,
+                  kind: "page",
+                  pluginId: "buzz.review-configuration",
+                  pageId: page,
+                });
+                if (result.status === "failed")
+                  throw new Error("Could not open review page.");
+              }
+            : undefined
+        }
         onOpenThread={async (channelId, id) => {
           const scope = splitPartition(connection.scope ?? "");
           if (!navigator || !scope)
@@ -96,11 +120,11 @@ export function ReviewConfigurationPage({
       />
     );
   return (
-    <Frame submit={submit}>
+    <Frame page={page}>
       <p>
         {connection.status === "connecting"
           ? "Connecting to your community…"
-          : submit
+          : page !== "configuration"
             ? "Connect to a community to submit PRs."
             : "Connect to a community to configure reviews."}
       </p>
@@ -117,12 +141,14 @@ export function ReviewConfigurationPage({
 export function ReviewConfigurationCommunity({
   session,
   onOpenThread,
+  onNavigate,
   readPull = publicPullReader,
-  submit = false,
+  page = "configuration",
 }: {
   session: RelaySession;
-  submit?: boolean;
+  page?: ReviewPage;
   readPull?: ReadPull;
+  onNavigate?: ((page: ReviewPage) => Promise<void>) | undefined;
   onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
 }) {
   const list = useChannelList(session.channels);
@@ -135,6 +161,18 @@ export function ReviewConfigurationCommunity({
     }
   });
   const [editing, setEditing] = useState(false);
+  const [navigationError, setNavigationError] = useState("");
+  async function navigate(destination: ReviewPage) {
+    try {
+      await onNavigate?.(destination);
+    } catch (reason) {
+      setNavigationError(
+        reason instanceof Error
+          ? reason.message
+          : "Could not open review page.",
+      );
+    }
+  }
   const channels = list.channels.filter(
     (item) =>
       !item.metadataPending &&
@@ -166,8 +204,36 @@ export function ReviewConfigurationCommunity({
     !selected.readOnly &&
     !!session.configArtifactWriter;
   return (
-    <Frame submit={submit}>
-      {submit && channels.length === 1 ? (
+    <Frame page={page}>
+      <div className="review-config-actions">
+        {page !== "configuration" && (
+          <Button
+            disabled={editing || !onNavigate}
+            onClick={() => void navigate("configuration")}
+          >
+            <ArrowLeftIcon /> Back to Review Configuration
+          </Button>
+        )}
+        {page !== "submit" && (
+          <Button
+            variant="prominent"
+            disabled={editing || !onNavigate}
+            onClick={() => void navigate("submit")}
+          >
+            Submit PR
+          </Button>
+        )}
+        {page !== "all" && (
+          <Button
+            disabled={editing || !onNavigate}
+            onClick={() => void navigate("all")}
+          >
+            All PRs
+          </Button>
+        )}
+      </div>
+      {navigationError && <p role="alert">{navigationError}</p>}
+      {page !== "configuration" && channels.length === 1 ? (
         <p className="text-caption text-subtle">
           Review channel: {selected?.name}
         </p>
@@ -202,9 +268,10 @@ export function ReviewConfigurationCommunity({
         </p>
       )}
       {channel &&
-        (submit ? (
+        (page !== "configuration" ? (
           <ReviewSubmissions
-            key={channel}
+            key={`${channel}:${page}`}
+            mode={page}
             session={session}
             channel={channel}
             writable={writable}

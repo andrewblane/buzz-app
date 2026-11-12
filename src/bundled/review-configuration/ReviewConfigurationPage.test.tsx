@@ -483,14 +483,23 @@ it("preserves the remembered channel until pending metadata finishes", async () 
   );
 });
 
-it("keeps submission controls out of configuration and preserves lane drafts", async () => {
+it("opens dedicated pages from configuration and blocks leaving lane drafts", async () => {
   const test = fixture();
-  render(<ReviewConfigurationCommunity session={test.session} />);
+  const onNavigate = vi.fn(async () => {});
+  render(
+    <ReviewConfigurationCommunity
+      session={test.session}
+      onNavigate={onNavigate}
+    />,
+  );
   const user = await openDraft();
   await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
   expect(screen.queryByRole("region", { name: "PR submissions" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Submit PR" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Submit PR" }));
+  expect(onNavigate).toHaveBeenCalledWith("submit");
+  await user.click(screen.getByRole("button", { name: "All PRs" }));
+  expect(onNavigate).toHaveBeenCalledWith("all");
   await user.click(screen.getByRole("button", { name: "Edit General lane" }));
   expect(
     screen.queryByRole("button", { name: "Back to repositories" }),
@@ -498,12 +507,23 @@ it("keeps submission controls out of configuration and preserves lane drafts", a
   const field = screen.getByRole("textbox", { name: "Instructions" });
   await user.clear(field);
   await user.type(field, "Preserve draft");
+  expect(
+    (screen.getByRole("button", { name: "Submit PR" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: "All PRs" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
   expect((field as HTMLTextAreaElement).value).toBe("Preserve draft");
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   await user.click(
     screen.getByRole("button", { name: "Back to repositories" }),
   );
-  expect(screen.queryByRole("button", { name: "Submit PR" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Submit PR" }));
+  expect(onNavigate).toHaveBeenCalledWith("submit");
+  await user.click(screen.getByRole("button", { name: "All PRs" }));
+  expect(onNavigate).toHaveBeenCalledWith("all");
   await user.click(
     screen.getByRole("button", { name: "Open example-org/project" }),
   );
@@ -549,7 +569,7 @@ it("blocks editor entry while a reload can replace the repository", async () => 
 
 it("opens the separate submit page without repository or lane configuration", async () => {
   const test = fixture();
-  render(<ReviewConfigurationCommunity session={test.session} submit />);
+  render(<ReviewConfigurationCommunity session={test.session} page="submit" />);
   await screen.findByRole("textbox", { name: "GitHub PR URL" });
   expect(screen.getByRole("button", { name: "Submit PR" })).toBeTruthy();
   expect(

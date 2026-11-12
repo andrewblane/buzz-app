@@ -14,6 +14,7 @@ import { ReviewSubmissions } from "./ReviewSubmissions";
 import { loadConfigurations, type SavedReviewConfig } from "./configuration";
 import {
   loadSubmissions,
+  deleteSubmission,
   submitReview,
   type SavedSubmission,
 } from "./submissions";
@@ -25,6 +26,7 @@ vi.mock("./configuration", async (original) => ({
 vi.mock("./submissions", async (original) => ({
   ...(await original<typeof import("./submissions")>()),
   loadSubmissions: vi.fn(),
+  deleteSubmission: vi.fn(),
   submitReview: vi.fn(),
 }));
 afterEach(cleanup);
@@ -75,7 +77,10 @@ beforeEach(() => {
     },
   );
 });
-function fixture() {
+function fixture(
+  mode: "submit" | "all" = "submit",
+  viewer = record.value.submitter,
+) {
   const agents = [{ pubkey: "a".repeat(64), name: "UI Reviewer" }];
   const choices = {
     identities: agents,
@@ -84,6 +89,7 @@ function fixture() {
     archives: { status: "ready" },
   };
   const session = {
+    viewer,
     agentChoices: {
       subscribe: () => () => {},
       snapshot: () => choices,
@@ -106,6 +112,7 @@ function fixture() {
   const view = render(
     <ReviewSubmissions
       session={session}
+      mode={mode}
       channel="channel"
       writable
       onEditingChange={editing}
@@ -251,17 +258,109 @@ it("guards repeated clicks and aborts pending work when its page unmounts", asyn
   await act(async () => finish());
 });
 
-it("focuses the URL after selecting a previous PR without dispatching", async () => {
+it("shows all PRs in a table without submission controls, and deletion requires confirmation", async () => {
   vi.mocked(loadSubmissions).mockResolvedValue({ rows: [record], warning: "" });
-  const test = fixture();
+  const test = fixture("all");
+  const table = await screen.findByRole("table");
+  expect(
+    within(table).getByRole("columnheader", { name: "Reviewers & threads" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("textbox")).toBeNull();
   await test.user.click(
-    await screen.findByRole("button", { name: /example-org\/project#42/ }),
+    screen.getByRole("button", { name: "Delete example-org/project#42" }),
   );
-  await test.user.click(screen.getByRole("button", { name: "Use this PR" }));
-  const input = screen.getByRole("textbox", { name: "GitHub PR URL" });
-  expect(document.activeElement).toBe(input);
-  expect((input as HTMLInputElement).value).toBe(
-    "https://github.com/example-org/project/pull/42",
+  expect(deleteSubmission).not.toHaveBeenCalled();
+  await test.user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(screen.getByRole("table")).toBeTruthy();
+  await test.user.click(
+    screen.getByRole("button", { name: "Delete example-org/project#42" }),
+  );
+  await test.user.click(
+    screen.getByRole("button", { name: "Delete submission" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("table")).toBeNull());
+  expect(deleteSubmission).toHaveBeenCalledWith(
+    test.session,
+    "channel",
+    record,
+    expect.any(AbortSignal),
   );
   expect(submitReview).not.toHaveBeenCalled();
+});
+
+it("keeps a row and explains recovery after an uncertain delete", async () => {
+  vi.mocked(loadSubmissions).mockResolvedValue({ rows: [record], warning: "" });
+  vi.mocked(deleteSubmission).mockRejectedValueOnce(
+    new Error("Write timed out"),
+  );
+  const test = fixture("all");
+  await test.user.click(
+    await screen.findByRole("button", {
+      name: "Delete example-org/project#42",
+    }),
+  );
+  await test.user.click(
+    screen.getByRole("button", { name: "Delete submission" }),
+  );
+  expect((await screen.findByRole("alert")).textContent).toContain("reload");
+  expect(screen.getByRole("table", { hidden: true })).toBeTruthy();
+  expect(screen.getByRole("alertdialog")).toBeTruthy();
+});
+
+it("does not allow deleting someone else's submission", async () => {
+  vi.mocked(loadSubmissions).mockResolvedValue({ rows: [record], warning: "" });
+  fixture("all", "other");
+  expect(
+    (
+      (await screen.findByRole("button", {
+        name: "Delete example-org/project#42",
+      })) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+});
+
+it("reload replaces the list so a submission deleted elsewhere disappears", async () => {
+  vi.mocked(loadSubmissions)
+    .mockResolvedValueOnce({ rows: [record], warning: "" })
+    .mockResolvedValue({ rows: [], warning: "" });
+  const test = fixture("all");
+  await screen.findByRole("table");
+  await test.user.click(screen.getByRole("button", { name: "Reload" }));
+  await waitFor(() => expect(screen.queryByRole("table")).toBeNull());
+});
+
+it("guards duplicate deletion and aborts it when leaving the page", async () => {
+  vi.mocked(loadSubmissions).mockResolvedValue({ rows: [record], warning: "" });
+  let finish = () => {};
+  let pending: AbortSignal | undefined;
+  vi.mocked(deleteSubmission).mockImplementationOnce(
+    async (_s, _c, _row, signal) => {
+      pending = signal;
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    },
+  );
+  const test = fixture("all");
+  await test.user.click(
+    await screen.findByRole("button", {
+      name: "Delete example-org/project#42",
+    }),
+  );
+  await test.user.click(
+    screen.getByRole("button", { name: "Delete submission" }),
+  );
+  await waitFor(() => expect(deleteSubmission).toHaveBeenCalledTimes(1));
+  await test.user.click(
+    screen.getByRole("button", { name: "Delete submission" }),
+  );
+  expect(deleteSubmission).toHaveBeenCalledTimes(1);
+  expect(
+    (screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  test.unmount();
+  expect(pending?.aborted).toBe(true);
+  await act(async () => finish());
 });

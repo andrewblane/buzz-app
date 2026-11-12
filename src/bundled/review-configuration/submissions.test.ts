@@ -7,6 +7,7 @@ import type { RelaySession } from "../../features/relay/session";
 import { keypair, signed } from "../../features/relay/testing";
 import {
   loadSubmissions,
+  deleteSubmission,
   pullRequest,
   pullRepository,
   submitReview,
@@ -643,4 +644,53 @@ it("retries a partially delivered notification batch with the same message ident
     ),
   ).toHaveLength(2);
   expect((await test.run()).value.threads).toEqual(first.value.threads);
+});
+
+it("deletes from the shared list and restores the same threads on resubmission after reload", async () => {
+  const f = await fixture();
+  const record = await f.run();
+  await deleteSubmission(
+    f.session,
+    channel,
+    record,
+    new AbortController().signal,
+  );
+  expect(
+    (await loadSubmissions(f.session, channel, new AbortController().signal))
+      .rows,
+  ).toEqual([]);
+  expect(f.messages.size).toBe(2);
+  const restored = await f.run("123", new AbortController().signal, true);
+  expect(restored.value.deleted).toBeUndefined();
+  expect(restored.value.threads).toEqual(record.value.threads);
+  expect(f.messages.size).toBe(2);
+  expect(
+    (await loadSubmissions(f.session, channel, new AbortController().signal))
+      .rows,
+  ).toHaveLength(1);
+});
+
+it("rejects foreign submitters and stale deletion without changing the saved list", async () => {
+  const f = await fixture();
+  const record = await f.run();
+  await expect(
+    deleteSubmission(
+      { ...f.session, viewer: keypair().pubkey },
+      channel,
+      record,
+      new AbortController().signal,
+    ),
+  ).rejects.toThrow("Only the original submitter");
+  await expect(
+    deleteSubmission(
+      f.session,
+      channel,
+      { ...record, revision: "0".repeat(64) },
+      new AbortController().signal,
+    ),
+  ).rejects.toThrow("changed");
+  expect(
+    (await loadSubmissions(f.session, channel, new AbortController().signal))
+      .rows,
+  ).toHaveLength(1);
 });

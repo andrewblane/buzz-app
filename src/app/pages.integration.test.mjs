@@ -135,12 +135,18 @@ test("the app runtime exposes ready bundled pages and removes them on disable", 
       .find((page) => page.key === "buzz.review-configuration/submit");
     assert.ok(submitPr);
     assert.equal(submitPr.title, "Submit PR");
-    assert.equal(submitPr.primary, true);
+    assert.equal(submitPr.primary, false);
     assert.equal(submitPr.placement, "sidebar");
     assert.match(
       renderToStaticMarkup(createElement(submitPr.component)),
       /Connect to a community to submit PRs/,
     );
+    const allPrs = services.pages
+      .snapshot()
+      .find((page) => page.key === "buzz.review-configuration/all");
+    assert.ok(allPrs);
+    assert.equal(allPrs.title, "All PRs");
+    assert.equal(allPrs.primary, false);
     await services.plugins.change("disable", "buzz.review-configuration");
     assert.equal(
       services.pages
