@@ -1,3 +1,5 @@
+import { ActionList } from "./ActionList";
+import { MenuItem } from "./Menu";
 import { SidebarNavigation } from "./SidebarNavigation";
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
@@ -872,4 +874,35 @@ test("tab strips mark the edges that have tabs scrolled past them", () => {
   fireEvent.scroll(list);
   expect(list).toHaveAttribute("data-overflow-start");
   expect(list).not.toHaveAttribute("data-overflow-end");
+});
+
+test("action-list contributions use one button focus order and retain activation/dismissal policy", async () => {
+  const run = vi.fn();
+  const dismiss = vi.fn();
+  render(
+    <ActionList onAction={dismiss}>
+      <Button>Tool</Button>
+      <MenuItem onClick={run}>Open detail</MenuItem>
+      <MenuItem closeOnClick={false} onClick={run}>
+        Save preference
+      </MenuItem>
+      <MenuItem disabled onClick={run}>
+        Unavailable
+      </MenuItem>
+    </ActionList>,
+  );
+  const user = userEvent.setup();
+  await user.tab();
+  expect(screen.getByRole("button", { name: "Tool" })).toHaveFocus();
+  await user.tab();
+  expect(screen.getByRole("button", { name: "Open detail" })).toHaveFocus();
+  await user.keyboard("{Enter}");
+  expect(run).toHaveBeenCalledOnce();
+  expect(dismiss).toHaveBeenCalledOnce();
+  await user.click(screen.getByRole("button", { name: "Save preference" }));
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(dismiss).toHaveBeenCalledOnce();
+  await user.click(screen.getByRole("button", { name: "Unavailable" }));
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole("menuitem")).toBeNull();
 });

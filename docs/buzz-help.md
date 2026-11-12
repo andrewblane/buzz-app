@@ -472,11 +472,15 @@ for 30 days expires.
   share the saved list width. A chat assigned to a sidebar section
   shows that section's rows and title. Expanded Pins and custom-section lists show
   one-line conversation previews, like Team and Activity. Team’s new-message pane and card’s **+** open a centered recipient bar with Team selected above the composer.
-  Choose a person or channel, then write a message. Cmd/Ctrl+N opens the global recipient
+  Choose a person or channel, then write a message. Channel drafts use the normal
+  channel mention rules. Switching Solo/Team keeps the creation draft and files;
+  destination controls stay locked while submitting. Cmd/Ctrl+N opens the global recipient
   search with the Solo/Team choice. Solo’s new-chat pane uses the same agent
   composer, saved draft, and chat settings as **New Solo chat**. Its header centers the selected agent’s avatar and name, with the list toggle on the left. Pointer toggles slide the list in and out;
   keyboard toggles and reduced-motion preferences change it immediately. Selecting a list row keeps it
   open on wide windows; narrow windows show it over the reader and close it after selection.
+  Native Close also dismisses the focused Activity detail, preserving its draft;
+  an open companion tab closes through its own guarded action first.
   Activity’s Close or Escape clears the detail while keeping its draft; explicit
   Close retires that selection’s return path. Back and Forward restore earlier
   selections, drafts, and the list’s open/closed state within the navigation session.

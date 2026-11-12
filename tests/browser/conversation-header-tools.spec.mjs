@@ -26,7 +26,7 @@ test("conversation header opens its tools without moving history", async ({
     name: "Conversation actions",
     exact: true,
   });
-  const actions = page.getByRole("menuitem", {
+  const actions = page.getByRole("button", {
     name: "View channel details",
     exact: true,
   });
@@ -84,10 +84,6 @@ test("conversation header opens its tools without moving history", async ({
     page.getByRole("button", { name: "Toggle channel todos", exact: true }),
   ).toBeFocused();
   await page.keyboard.press("Tab");
-  await expect(
-    page.getByRole("menu", { name: "Channel actions", exact: true }),
-  ).toBeFocused();
-  await page.keyboard.press("ArrowDown");
   await expect(actions).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(trigger).toBeFocused();

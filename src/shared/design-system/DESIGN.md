@@ -364,6 +364,12 @@ Choose by interaction before choosing size. They share a material, not semantics
 | Rich preview of an object | `PreviewCard` | Supplemental content; no essential workflow available only on hover |
 | Editor completion or embedded media picker | Existing feature adapter and shared popup recipe | Preserve editor focus, selection, and keyboard semantics |
 
+When retained tool controls share an overflow with contributed actions, use
+`Popover` and `ActionList onAction` for one native button focus order. Inside
+this composition, shared `MenuItem`s render as button actions and retain their
+activation, disabled, and close-on-click behavior. Outside it, they remain menu
+items with Base UI navigation. Do not override an action menu's Tab handling.
+
 Do not put a form in an action-menu item or simulate selectable values with a set
 of unrelated buttons. Use `MenuNote` for non-action explanatory text and `tone="danger"`
 for a destructive menu action; its icon inherits the danger color and highlighted/pressed

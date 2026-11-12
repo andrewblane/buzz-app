@@ -81,6 +81,7 @@ export function MessagesIndex({
   const contributed = useSyncExternalStore(
     sidebarSections?.subscribe ?? noSubscribe,
     sidebarSections?.snapshot ?? noSections,
+    sidebarSections?.snapshot ?? noSections,
   );
   const membership = useMemo(
     () =>

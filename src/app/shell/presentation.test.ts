@@ -142,7 +142,7 @@ test.each([undefined, "toolbar"] as const)(
 );
 
 test.each([undefined, "dock"] as const)(
-  "bundled Activity is a Messages sidebar row regardless of registered %s placement",
+  "bundled Activity owns its workspace regardless of registered %s placement",
   (placement) => {
     expect(
       pagePlacement({
@@ -150,7 +150,7 @@ test.each([undefined, "dock"] as const)(
         primary: true,
         ...(placement ? { placement } : {}),
       }),
-    ).toBe("sidebar");
+    ).toBe("dock");
   },
 );
 

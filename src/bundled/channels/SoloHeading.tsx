@@ -29,7 +29,6 @@ import {
   MenuIcon,
   MenuItem,
   MenuPopup,
-  InlineMenu,
   MenuRoot,
   MenuSeparator,
   MenuTrigger,
@@ -222,13 +221,7 @@ export function SoloToolbar({
       {/* Archived chats keep their lifecycle actions, including Unarchive. */}
       {canOpenActions &&
         (overflow ? (
-          <InlineMenu
-            open={overflow.open}
-            onClose={overflow.close}
-            label="Chat actions"
-          >
-            {actionItems}
-          </InlineMenu>
+          actionItems
         ) : (
           <MenuRoot key={regions.binding?.incarnation ?? "recovery"}>
             <MenuTrigger

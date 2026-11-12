@@ -194,15 +194,14 @@ test("Messages keeps its list beside conversations and preserves drafts and hist
     name: "New message",
     exact: true,
   });
+  const recipients = newMessage.getByRole("combobox", {
+    name: "Message recipients",
+  });
+  await expect(recipients).toBeVisible();
   await expect(
-    newMessage.getByRole("combobox", { name: "Message recipients" }),
-  ).toHaveCount(0);
-  await expect(
-    newMessage.getByRole("tablist", { name: "Conversation", exact: true }),
-  ).toHaveCount(0);
-  await newMessage
-    .getByRole("textbox", { name: "New message", exact: true })
-    .fill(`@${app.participants[0]}`);
+    newMessage.getByRole("tab", { name: "Team", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await recipients.fill(app.participants[0]);
   await page.getByRole("option", { name: /Alice Fixture/ }).click();
   await expect(
     newMessage.getByText("Inbox DM fixture reply", { exact: true }),
@@ -278,16 +277,27 @@ test("conversation lists default closed for direct opens and open for View more"
   await expect(detail.locator('[data-channel-timeline="alpha"]')).toBeVisible();
   await page.goForward();
   await expect(row).toBeVisible();
-  await rail.getByRole("button", { name: "New", exact: true }).click();
+  await rail.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^New DM/ }).click();
   await expect(
     detail.getByRole("button", { name: "Show Team list", exact: true }),
   ).toBeVisible();
   await expect(
     detail.getByRole("textbox", { name: "New message", exact: true }),
-  ).toBeEditable();
+  ).toBeDisabled();
   await expect(
     page.getByRole("combobox", { name: "Message recipients" }),
-  ).toHaveCount(0);
+  ).toBeVisible();
+  await expect(
+    page.getByRole("tab", { name: "Team", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page
+    .getByRole("combobox", { name: "Message recipients" })
+    .fill(app.participants[0]);
+  await page.getByRole("option", { name: /Alice Fixture/ }).click();
+  await expect(
+    detail.getByRole("textbox", { name: /^Message/ }),
+  ).toBeEditable();
   await page.keyboard.press("ControlOrMeta+n");
   await expect(
     page.getByRole("combobox", { name: "Message recipients" }),

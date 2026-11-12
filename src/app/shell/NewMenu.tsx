@@ -107,7 +107,9 @@ function ReadyNewMenu({
   }, [open]);
   const shortcut = (position: number) => (
     <MenuTrailing>
-      <KeyboardShortcut text={String(position)} label={`Press ${position}`} />
+      <span aria-hidden="true">
+        <KeyboardShortcut text={String(position)} label={`Press ${position}`} />
+      </span>
     </MenuTrailing>
   );
   const menuTrigger = (

@@ -289,9 +289,10 @@ it("restores a bounded recipient and draft when unused profile metadata exceeds 
   const page = t.mount(owner);
   await t.user.click(await screen.findByRole("option", { name }));
   await t.user.type(screen.getByRole("textbox"), "Saved before sending");
-  expect(readView(scope, "direct-message:recipients", [])).toEqual([
-    { pubkey: other.pubkey, name: name.slice(0, 500) },
-  ]);
+  expect(readView(scope, "direct-message:destination:v1", null)).toEqual({
+    kind: "people",
+    people: [{ pubkey: other.pubkey, name: name.slice(0, 500) }],
+  });
   expect(rejected).not.toHaveBeenCalled();
   page.unmount();
   t.mount(owner);

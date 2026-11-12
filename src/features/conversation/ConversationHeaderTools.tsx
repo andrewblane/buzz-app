@@ -104,7 +104,7 @@ export function ConversationHeaderTools({
         <HeaderToolsMenu
           value={{ trigger, finalFocus, open, close: () => setOpen(false) }}
         >
-          <ActionList>{actions}</ActionList>
+          <ActionList onAction={() => setOpen(false)}>{actions}</ActionList>
         </HeaderToolsMenu>
       </PopoverPopup>
     </PopoverRoot>

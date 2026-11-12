@@ -21,7 +21,6 @@ import {
   MenuRoot,
   MenuTrigger,
   MenuPopup,
-  InlineMenu,
   MenuItem,
   MenuIcon,
   MenuNote,
@@ -145,13 +144,7 @@ export function ChannelHeaderMenu({
       </>
     );
     return overflow ? (
-      <InlineMenu
-        open={overflow.open}
-        onClose={overflow.close}
-        label="Channel actions"
-      >
-        {content}
-      </InlineMenu>
+      content
     ) : (
       <MenuPopup
         size="compact"

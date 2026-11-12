@@ -1,3 +1,5 @@
+import { ActionListDismiss } from "./ActionList";
+import { Button } from "./Button";
 import { ContextMenu as BaseContextMenu } from "@base-ui/react/context-menu";
 import { Menu as BaseMenu } from "@base-ui/react/menu";
 import { CheckIcon, CaretRightIcon } from "../icons/index";
@@ -7,7 +9,6 @@ import {
   createContext,
   useContext,
   useState,
-  useRef,
   type ComponentProps,
   type ReactNode,
 } from "react";
@@ -89,46 +90,6 @@ export function ContextMenuTrigger(
 }
 export const MenuGroup = BaseMenu.Group;
 export const MenuList = BaseMenu.List;
-/** An action group inside another anchored surface. The host owns positioning
- * and focus return; Base UI still owns item navigation and activation. */
-export function InlineMenu({
-  label,
-  open,
-  onClose,
-  children,
-}: {
-  label: string;
-  open: boolean;
-  onClose(): void;
-  children: ReactNode;
-}) {
-  const container = useRef<HTMLDivElement>(null);
-  return (
-    <MenuRoot
-      modal={false}
-      open={open}
-      onOpenChange={(next, details) => {
-        if (!next && details.reason !== "focus-out") onClose();
-      }}
-    >
-      <div ref={container}>
-        <BaseMenu.Portal container={container}>
-          <BaseMenu.Positioner
-            anchor={container}
-            style={{ position: "static", transform: "none", width: "100%" }}
-          >
-            <BaseMenu.Popup finalFocus={false}>
-              <BaseMenu.List aria-label={label} tabIndex={0}>
-                {children}
-              </BaseMenu.List>
-            </BaseMenu.Popup>
-          </BaseMenu.Positioner>
-        </BaseMenu.Portal>
-      </div>
-    </MenuRoot>
-  );
-}
-
 export const MenuRadioGroup = BaseMenu.RadioGroup;
 
 export type MenuPosition = Pick<
@@ -219,6 +180,46 @@ type ItemProps = Omit<ComponentProps<typeof BaseMenu.Item>, "className"> & {
 };
 
 export function MenuItem({ tone = "default", ...props }: ItemProps) {
+  const dismiss = useContext(ActionListDismiss);
+  if (dismiss && !props.render) {
+    const {
+      children,
+      closeOnClick = true,
+      onClick,
+      ref,
+      disabled,
+      label: _label,
+      nativeButton: _nativeButton,
+      style,
+      ...control
+    } = props;
+    return (
+      <Button
+        variant={tone === "danger" ? "destructive" : "ghost"}
+        size="sm"
+        nativeButton={false}
+        disabled={disabled}
+        ref={ref}
+        render={
+          // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: Button supplies role, focus, and keyboard activation to this render element.
+          <div
+            {...control}
+            onClick={disabled ? undefined : onClick}
+            style={
+              typeof style === "function"
+                ? style({ disabled: !!disabled, highlighted: false })
+                : style
+            }
+          />
+        }
+        onClick={(event) => {
+          if (closeOnClick && !event.defaultPrevented) dismiss();
+        }}
+      >
+        {children}
+      </Button>
+    );
+  }
   return (
     <BaseMenu.Item {...props} data-tone={tone} className="buzz-menu-item" />
   );
