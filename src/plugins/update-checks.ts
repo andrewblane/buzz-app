@@ -13,6 +13,7 @@ type Authorize = (
 export type UpdateCheck = {
   installedRelease: PluginRelease;
   source: string;
+  discoverySource: string;
   sequence: number;
   checking: boolean;
   release: PluginRelease | undefined;
@@ -21,6 +22,17 @@ export type UpdateCheck = {
 };
 type Snapshot = Readonly<Record<string, UpdateCheck>>;
 const identity = (plugin: PluginInfo) => JSON.stringify(plugin.updateSource);
+const discoveryIdentity = (source: PluginInfo["updateSource"], pinned = true) =>
+  JSON.stringify(
+    source && "repository" in source
+      ? [
+          source.repository,
+          source.reference,
+          source.path,
+          pinned ? source.commit : undefined,
+        ]
+      : source,
+  );
 const installation = (plugin: PluginInfo) =>
   JSON.stringify([
     plugin.revision,
@@ -30,11 +42,14 @@ const installation = (plugin: PluginInfo) =>
 export function pluginUpdateCheck(
   snapshot: Snapshot,
   plugin: PluginInfo | undefined,
+  discoverySource?: PluginInfo["updateSource"],
 ) {
   if (!plugin) return undefined;
   const result = snapshot[plugin.manifest.id];
   return samePluginRelease(result?.installedRelease, plugin) &&
-    result?.source === identity(plugin)
+    result?.source === identity(plugin) &&
+    (discoverySource === undefined ||
+      result.discoverySource === discoveryIdentity(discoverySource))
     ? result
     : undefined;
 }
@@ -139,6 +154,7 @@ export function createPluginUpdateChecks(imports: PluginImports | undefined) {
         publisher: plugin.publisher ?? null,
       },
       source: identity(plugin),
+      discoverySource: discoveryIdentity(source, false),
       sequence: request.sequence,
       checking: true,
       release: previous?.release,
@@ -186,7 +202,7 @@ export function createPluginUpdateChecks(imports: PluginImports | undefined) {
       };
     },
     check,
-    observe(plugin: PluginInfo) {
+    observe(plugin: PluginInfo, source?: PluginInfo["updateSource"]) {
       const started = ++sequence;
       const installed = installation(plugin);
       installations.set(plugin.manifest.id, installed);
@@ -206,6 +222,10 @@ export function createPluginUpdateChecks(imports: PluginImports | undefined) {
             publisher: plugin.publisher ?? null,
           },
           source: identity(plugin),
+          discoverySource: discoveryIdentity(
+            source ?? plugin.updateSource,
+            source !== undefined,
+          ),
           sequence: started,
           checking: false,
           release,

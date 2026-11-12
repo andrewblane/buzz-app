@@ -481,6 +481,58 @@ it("requires the managed commit and removes a candidate when its source changes"
   updates.dispose();
 });
 
+it.each(["commit", "repository", "reference", "path"] as const)(
+  "retires a retained managed candidate when its %s changes offline",
+  async (field) => {
+    const f = fixture();
+    const config = f.get();
+    if (config.status !== "ready") throw new Error("Expected catalog");
+    const source = {
+      id: f.plugin.manifest.id,
+      ...gitUpdateSource(f.plugin),
+      commit: "a".repeat(40),
+      state: "outdated" as const,
+    };
+    const managed = {
+      status: "ready" as const,
+      path: "policy",
+      source: "Example",
+      plugins: [source],
+      problems: [],
+    };
+    f.set({ ...config, managed });
+    let online = true;
+    const updates = createPluginUpdates(f.manager, f.authorize, () => online);
+    try {
+      await updates.check();
+      const token = updates.capability.getSnapshot().candidates[0]?.token;
+      expect(token).toBeDefined();
+      online = false;
+      const changed = {
+        ...source,
+        [field]: field === "commit" ? "b".repeat(40) : `${source[field]}-next`,
+      };
+      f.set({ ...config, managed: { ...managed, plugins: [changed] } });
+      await updates.check();
+      expect(f.checkGit).toHaveBeenCalledTimes(1);
+      expect(updates.snapshot()).toEqual([]);
+      expect(updates.capability.getSnapshot().candidates).toEqual([]);
+      if (!token) throw new Error("Expected the original candidate token");
+      expect(updates.capability.queueUpdates([token])).toBeUndefined();
+      online = true;
+      f.preview.commit = changed.commit;
+      f.preview.candidates = [
+        { ...f.candidate, path: changed.path, revision: "next" },
+      ];
+      await updates.check(true);
+      expect(updates.snapshot()[0]?.candidate?.revision).toBe("next");
+      expect(updates.snapshot()[0]?.source[field]).toBe(changed[field]);
+    } finally {
+      updates.dispose();
+    }
+  },
+);
+
 it("discards late discovery after disposal or removal and prevents overlapping checks", async () => {
   const f = fixture();
   let resolve!: (preview: ImportPreview) => void;

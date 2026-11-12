@@ -466,7 +466,7 @@ export function createPluginUpdates(
       for (const plugin of configuration.catalog.plugins) {
         const id = plugin.manifest.id;
         const source = pluginUpdateSource(plugins, id);
-        const result = pluginUpdateCheck(results, plugin);
+        const result = pluginUpdateCheck(results, plugin, source);
         if (
           !source ||
           !result ||
@@ -502,7 +502,7 @@ export function createPluginUpdates(
           }),
         };
       if (!current(update)) return [];
-      const result = pluginUpdateCheck(results, plugin);
+      const result = pluginUpdateCheck(results, plugin, update.source);
       if (!result || result.checking) return [update];
       if (result.error) {
         if (result.error === update.error) return [update];
@@ -660,7 +660,7 @@ export function createPluginUpdates(
     const batch = configuration.catalog.plugins.flatMap((plugin) => {
       const source = pluginUpdateSource(plugins, plugin.manifest.id);
       return source
-        ? [{ plugin, source, observe: checks.observe(plugin) }]
+        ? [{ plugin, source, observe: checks.observe(plugin, source) }]
         : [];
     });
     checking = true;
