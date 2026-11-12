@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useAgentChoices } from "../../features/agents/use-choices";
 import type { RelaySession } from "../../features/relay/session";
 import { AlertDialog } from "../../shared/design-system/ui/AlertDialog";
+import { TrashIcon } from "../../shared/design-system/icons";
+import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { Button } from "../../shared/design-system/ui/Button";
 import { Field } from "../../shared/design-system/ui/Field";
 import { InlineHeader } from "../../shared/design-system/ui/Header";
@@ -278,7 +280,9 @@ export function ReviewSubmissions({
                 <td>{threads(row)}</td>
                 {deletable && (
                   <td>
-                    <Button
+                    <IconButton
+                      icon={<TrashIcon />}
+                      title="Delete submission"
                       size="sm"
                       disabled={
                         busy ||
@@ -292,9 +296,7 @@ export function ReviewSubmissions({
                         setRemoving(row);
                       }}
                       aria-label={`Delete ${row.value.config.repository}#${row.value.pr}`}
-                    >
-                      Delete
-                    </Button>
+                    />
                     {row.value.submitter !== session.viewer && (
                       <p className="text-caption text-subtle">
                         Only the submitter can delete.

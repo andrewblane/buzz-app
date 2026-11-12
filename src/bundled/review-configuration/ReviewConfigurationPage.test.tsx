@@ -658,7 +658,7 @@ it("returns focus to the lane region after removing the edited lane", async () =
   ).toEqual(["General"]);
 });
 
-it("expands the PR list on the home page without opening another page", async () => {
+it("opens the PR table from the home page action", async () => {
   const test = fixture();
   const onNavigate = vi.fn(async () => {});
   render(
@@ -670,16 +670,8 @@ it("expands the PR list on the home page without opening another page", async ()
   const user = userEvent.setup();
   await screen.findByRole("button", { name: "Register repository" });
   expect(screen.queryByRole("region", { name: "All PRs" })).toBeNull();
-  const disclosure = screen.getByRole("button", { name: "Pull requests" });
-  await user.click(disclosure);
-  await screen.findByText(
-    "No submissions in the list. Use Submit PR to start a review.",
-  );
-  expect(onNavigate).not.toHaveBeenCalled();
-  await user.click(disclosure);
-  await waitFor(() =>
-    expect(disclosure.getAttribute("aria-expanded")).toBe("false"),
-  );
+  await user.click(screen.getByRole("button", { name: "Pull requests" }));
+  expect(onNavigate).toHaveBeenCalledWith("all");
   await user.click(screen.getByRole("button", { name: "Submit PR" }));
   expect(onNavigate).toHaveBeenCalledWith("submit");
 });

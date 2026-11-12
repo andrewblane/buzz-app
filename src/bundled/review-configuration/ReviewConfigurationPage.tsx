@@ -16,7 +16,6 @@ import {
 } from "../../shared/design-system/icons";
 import { NavigationItem } from "../../shared/design-system/ui/NavigationItem";
 import { Button } from "../../shared/design-system/ui/Button";
-import { Accordion } from "../../shared/design-system/ui/Accordion";
 import { Field } from "../../shared/design-system/ui/Field";
 import { FullPageSurface } from "../../shared/design-system/ui/FullPageSurface";
 import { InlineHeader } from "../../shared/design-system/ui/Header";
@@ -277,7 +276,7 @@ export function ReviewConfigurationCommunity({
             onEditingChange={setEditing}
             channelSelector={channelSelector}
             onSubmit={onNavigate ? () => void navigate("submit") : undefined}
-            onOpenThread={onOpenThread}
+            onShowPulls={onNavigate ? () => void navigate("all") : undefined}
           />
         ))}
     </Frame>
@@ -291,19 +290,17 @@ function ChannelConfiguration({
   onEditingChange,
   channelSelector,
   onSubmit,
-  onOpenThread,
+  onShowPulls,
 }: {
   channelSelector: ReactNode;
   onSubmit?: (() => void) | undefined;
-  onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
+  onShowPulls?: (() => void) | undefined;
   session: RelaySession;
   channel: string;
   writable: boolean;
   onEditingChange: (editing: boolean) => void;
 }) {
   const choices = useAgentChoices(session, true, true);
-  const [reviewsBusy, setReviewsBusy] = useState(false);
-  const [expanded, setExpanded] = useState<string[]>([]);
   const [laneId, setLaneId] = useState<string>();
   const [rows, setRows] = useState<SavedReviewConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -318,9 +315,9 @@ function ChannelConfiguration({
   const editorTrigger = useRef<HTMLElement | null>(null);
   const lanesRegion = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    onEditingChange(editor !== undefined || reviewsBusy);
+    onEditingChange(editor !== undefined);
     return () => onEditingChange(false);
-  }, [editor, reviewsBusy, onEditingChange]);
+  }, [editor, onEditingChange]);
   useEffect(() => {
     if (editor === undefined) {
       const trigger = editorTrigger.current;
@@ -391,9 +388,7 @@ function ChannelConfiguration({
           <div className="review-config-actions">
             <Button
               ref={editorTrigger}
-              disabled={
-                loading || !!error || !writable || remaining <= 0 || reviewsBusy
-              }
+              disabled={loading || !!error || !writable || remaining <= 0}
               onClick={(event) => {
                 editorTrigger.current = event.currentTarget;
                 setNotice("");
@@ -402,8 +397,11 @@ function ChannelConfiguration({
             >
               Register repository
             </Button>
-            <Button disabled={reviewsBusy || !onSubmit} onClick={onSubmit}>
+            <Button disabled={!onSubmit} onClick={onSubmit}>
               Submit PR
+            </Button>
+            <Button disabled={!onShowPulls} onClick={onShowPulls}>
+              Pull requests
             </Button>
           </div>
           {channelSelector}
@@ -411,7 +409,7 @@ function ChannelConfiguration({
             title="Repositories"
             actions={
               <Button
-                disabled={loading || reviewsBusy}
+                disabled={loading}
                 onClick={() => setReload((value) => value + 1)}
               >
                 Reload
@@ -427,7 +425,6 @@ function ChannelConfiguration({
               {rows.map((row) => (
                 <NavigationItem
                   key={row.artifactId}
-                  disabled={reviewsBusy}
                   aria-label={`Open ${row.config.repository}`}
                   multiline
                   label={
@@ -454,29 +451,6 @@ function ChannelConfiguration({
             </p>
           )}
           {warning && <p role="alert">{warning}</p>}
-          <Accordion
-            variant="settings"
-            value={expanded}
-            onValueChange={(next) => {
-              if (!reviewsBusy) setExpanded(next);
-            }}
-            items={[
-              {
-                value: "Pull requests",
-                title: "Pull requests",
-                content: (
-                  <ReviewSubmissions
-                    session={session}
-                    channel={channel}
-                    mode="all"
-                    writable={writable}
-                    onEditingChange={setReviewsBusy}
-                    onOpenThread={onOpenThread}
-                  />
-                ),
-              },
-            ]}
-          />
         </>
       ) : (
         <>

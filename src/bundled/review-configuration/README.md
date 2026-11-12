@@ -6,14 +6,14 @@ Choose a channel, register a GitHub repository, add named lanes, reviewer agents
 and save. Open a repository row to manage its lanes. Saved cards show agents,
 instructions, and routing rules. **Edit lane** opens one lane; **Save lane** persists
 it before another can be added. **Back to lanes** cancels edits; **Back to repositories**
-returns to the list. The main page has matching **Register repository** and **Submit PR** actions above the **Repositories** section and an expandable **Pull requests** table.
+returns to the list. The main page has matching **Register repository**, **Submit PR**, and **Pull requests** actions above the **Repositories** section.
 
 The **Submit PR** page has a full GitHub PR URL field and one
 Submit button. It finds the saved repository in the selected channel, loads current
 PR metadata, and assigns the first configured reviewer per matching lane. Missing
 configuration, unavailable reviewers, and zero matching lanes produce an error
 without starting threads. Results show assigned reviewers and thread buttons.
-The **Pull requests** section shows previous submissions in a bordered table with delivery status, reviewer identities, and thread links. The submitter can confirm **Delete** to remove a submission from the shared list. This preserves its thread mapping and does not stop active reviews, delete conversations, or close the GitHub PR. Submitting that URL again restores the saved assignment and threads.
+The separate **Pull requests** page shows previous submissions in a bordered table with delivery status, reviewer identities, and thread links. The submitter can confirm **Delete** to remove a submission from the shared list. This preserves its thread mapping and does not stop active reviews, delete conversations, or close the GitHub PR. Submitting that URL again restores the saved assignment and threads.
 
 Submitting an already-delivered PR sends a reviewer mention in each saved lane
 thread. It preserves the saved reviewers and instructions and creates no new
@@ -21,7 +21,7 @@ threads or review rounds. Incomplete original submissions resume delivery from
 the original browser profile instead. These actions run only on Submit; opening
 the page or a thread never dispatches messages.
 
-All three pages use the shell's page navigation. Only Review Configuration appears in the sidebar; Submit PR has a Back button returning to it. The existing All PRs route remains available for saved navigation. Repository and lane editing
+All three pages use the shell's page navigation. Only Review Configuration appears in the sidebar; Submit PR has a Back button returning to it. Pull requests opens the existing All PRs page with Back navigation. Repository and lane editing
 remain local sections; reloading returns Configuration to its repository list.
 The channel selection is remembered per identity/community; one eligible channel
 is selected automatically. Submit results can be recovered from the Pull requests table
