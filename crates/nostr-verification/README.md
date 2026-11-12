@@ -52,7 +52,8 @@ cargo test -p buzz-nostr-verification --locked
 ```
 
 Tests cover the official 15 BIP-340 vectors with 32-byte messages, native-verifier
-equivalence, mixed authors, every invalid position in a batch, malformed input,
+equivalence with seeded mutations and permutations, mixed authors and vector
+batches, every invalid position in a batch, malformed input,
 duplicates, chunk boundaries, and cancelling signature errors. The Tauri command
 test exercises both a successful batch and failed-batch fallback through the real
 async command. Existing frontend tests own event-body hashing, proof-cache
@@ -62,4 +63,4 @@ The CSV fixture is the upstream `bitcoin/bips` file
 `bip-0340/test-vectors.csv`, retrieved November 11, 2026, under its CC0-1.0 option.
 Upstream SHA-256: `34c9d1d9c3a88d524bc80778540dc43f8306ec249a7485293063c376db851c2d`.
 The vendored copy normalizes line endings to LF.
-Its later variable-message-length vectors do not apply to Nostr's 32-byte IDs.
+Its four variable-message-length vectors are rejected by the Nostr-only API.

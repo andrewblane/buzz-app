@@ -49,22 +49,22 @@ fn batch(claims: &[SignatureClaim]) -> bool {
 fn bip340_vectors_match_both_verifiers() {
     // Official bitcoin/bips bip-0340/test-vectors.csv, retrieved 2026-11-11.
     // BIP-340 code/vectors are BSD-2-Clause OR MIT OR CC0-1.0. Nostr signs
-    // 32-byte IDs; the later variable-message-length vectors are out of scope.
+    // 32-byte IDs; valid signatures over other message lengths must be rejected.
     let mut tested = 0;
+    let neighbors = corpus(24, 1);
     for row in include_str!("../tests/bip340.csv").lines().skip(1) {
         let fields: Vec<_> = row.splitn(8, ',').collect();
-        if fields[4].len() != 64 {
-            continue;
-        }
-        let expected = fields[6] == "TRUE";
+        let expected = fields[4].len() == 64 && fields[6] == "TRUE";
         let claim = SignatureClaim {
             id: fields[4].into(),
             pubkey: fields[2].into(),
             sig: fields[5].into(),
         };
-        let claims = vec![claim; 12];
+        let claims = vec![claim.clone(); 12];
         assert!(should_batch(&claims));
-        assert_eq!(batch(&claims), expected, "batch vector {}", fields[0]);
+        if fields[4].len() == 64 {
+            assert_eq!(batch(&claims), expected, "batch vector {}", fields[0]);
+        }
         assert_eq!(
             native(&claims),
             vec![expected; 12],
@@ -72,9 +72,85 @@ fn bip340_vectors_match_both_verifiers() {
             fields[0]
         );
         assert_eq!(verify(&claims), vec![expected; 12], "vector {}", fields[0]);
+        let mut mixed = neighbors.clone();
+        mixed[7] = claim;
+        let mut verdicts = vec![true; mixed.len()];
+        verdicts[7] = expected;
+        assert!(should_batch(&mixed));
+        assert_eq!(verify(&mixed), verdicts, "mixed vector {}", fields[0]);
         tested += 1;
     }
-    assert_eq!(tested, 15);
+    assert_eq!(tested, 19);
+}
+
+#[test]
+fn seeded_mutations_and_permutations_match_individual_verification() {
+    let mut rng = ChaCha20Rng::seed_from_u64(0xb1_0340);
+    let secp = Secp256k1::signing_only();
+    // Exercise both sides of batch selection and the 512-claim chunk boundary.
+    for (count, authors) in [
+        (11, 1),
+        (12, 1),
+        (12, 2),
+        (31, 3),
+        (32, 4),
+        (32, 5),
+        (64, 8),
+        (511, 4),
+        (512, 4),
+        (513, 4),
+    ] {
+        let keys: Vec<_> = (0..authors)
+            .map(|_| {
+                let mut secret = [0; 32];
+                rng.fill_bytes(&mut secret);
+                secp256k1::Keypair::from_secret_key(
+                    &secp,
+                    &secp256k1::SecretKey::from_byte_array(secret).unwrap(),
+                )
+            })
+            .collect();
+        let good: Vec<_> = (0..count)
+            .map(|_| {
+                let key = &keys[rng.next_u32() as usize % keys.len()];
+                let mut id = [0; 32];
+                rng.fill_bytes(&mut id);
+                SignatureClaim {
+                    id: hex::encode(id),
+                    pubkey: key.x_only_public_key().0.to_string(),
+                    sig: secp.sign_schnorr_no_aux_rand(&id, key).to_string(),
+                }
+            })
+            .collect();
+        assert_eq!(verify(&good), vec![true; count]);
+        for field in 0..4 {
+            let mut claims = good.clone();
+            let index = rng.next_u32() as usize % count;
+            let target = match field {
+                0 => &mut claims[index].id,
+                1 => &mut claims[index].pubkey,
+                _ => &mut claims[index].sig,
+            };
+            if field == 3 {
+                target.push('é');
+            } else {
+                let mut bytes = hex::decode(&*target).unwrap();
+                let byte = rng.next_u32() as usize % bytes.len();
+                bytes[byte] ^= 1 << (rng.next_u32() % 8);
+                *target = hex::encode(bytes);
+            }
+            for i in (1..count).rev() {
+                claims.swap(i, rng.next_u32() as usize % (i + 1));
+            }
+            let expected = native(&claims);
+            assert_eq!(expected.iter().filter(|valid| !**valid).count(), 1);
+            assert_eq!(
+                verify(&claims),
+                expected,
+                "count={count}, authors={authors}, field={field}"
+            );
+        }
+    }
 }
 
 #[test]
