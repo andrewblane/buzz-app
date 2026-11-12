@@ -610,8 +610,9 @@ it.each(["standalone", "grouped"] as const)(
       });
       unrelated.started();
       render(<Preview />);
-      const text = () => screen.getByText(unlinked.content);
-      expect(text()).not.toHaveAttribute("data-active");
+      const active = () =>
+        screen.getByText(unlinked.content).closest("[data-active]");
+      expect(active()).toBeNull();
       act(() => unrelated.finish({ ok: true }));
       let current: ReturnType<typeof f.local.begin>;
       act(() => {
@@ -625,9 +626,9 @@ it.each(["standalone", "grouped"] as const)(
         });
         current.started();
       });
-      expect(text()).toHaveAttribute("data-active", "true");
+      expect(active()).not.toBeNull();
       act(() => current.finish({ ok: true }));
-      expect(text()).not.toHaveAttribute("data-active");
+      expect(active()).toBeNull();
     } finally {
       owner.dispose();
       f.dispose();
