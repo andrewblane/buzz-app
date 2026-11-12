@@ -26,7 +26,9 @@ use std::path::{Path, PathBuf};
 pub enum RunLocation {
     /// Already inside an Applications directory — never prompt.
     InstalledInApplications,
-    /// Running from a mounted disk image (read-only volume under `/Volumes`).
+    /// Running from a read-only volume under `/Volumes`: nearly always a
+    /// mounted disk image, but a read-only drive or network share lands here
+    /// too, so the volume is only detached once `hdiutil` confirms it is one.
     DiskImage,
     /// Running from a Gatekeeper App Translocation location (a randomized
     /// read-only path under `/private/var/folders/.../AppTranslocation/...`).
@@ -487,6 +489,38 @@ fn relaunch_script(pid: u32, target: &Path, detach_mount: Option<&Path>) -> Stri
     script
 }
 
+/// The mount points of the attached disk images, read from the output of
+/// `hdiutil info -plist`: `images[].system-entities[].mount-point`. An image
+/// lists every device it provides, and only one holding a mounted filesystem
+/// has a mount point. Anything that doesn't have that shape is skipped.
+#[cfg(target_os = "macos")]
+fn image_mount_points(info: &plist::Value) -> Vec<PathBuf> {
+    fn items<'a>(value: &'a plist::Value, key: &str) -> &'a [plist::Value] {
+        value
+            .as_dictionary()
+            .and_then(|dict| dict.get(key))
+            .and_then(plist::Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+    items(info, "images")
+        .iter()
+        .flat_map(|image| items(image, "system-entities"))
+        .filter_map(|entity| entity.as_dictionary()?.get("mount-point")?.as_string())
+        .map(PathBuf::from)
+        .collect()
+}
+
+/// Whether `mount` is where one of the disk images in `info`, the output of
+/// `hdiutil info -plist`, is mounted. A read-only drive or network share
+/// under `/Volumes` isn't, and must not be detached.
+#[cfg(target_os = "macos")]
+fn is_image_mount_point(info: &plist::Value, mount: &Path) -> bool {
+    image_mount_points(info)
+        .iter()
+        .any(|image_mount| image_mount == mount)
+}
+
 #[cfg(target_os = "macos")]
 mod macos {
     use super::*;
@@ -757,8 +791,11 @@ mod macos {
         // first, without waiting for it: trashing a running bundle still
         // succeeds, so a copy that is still quitting, or won't quit, never
         // blocks the move.
-        let detach_mount =
-            matches!(location, RunLocation::DiskImage).then(|| volume.mount_point.clone());
+        // `DiskImage` means any read-only volume under `/Volumes`, so only
+        // detach the volume when it really is an attached disk image.
+        let detach_mount = matches!(location, RunLocation::DiskImage)
+            .then(|| volume.mount_point.clone())
+            .filter(|mount| is_attached_image(mount));
         replace_installed_copy(
             &staging,
             &target,
@@ -854,6 +891,21 @@ mod macos {
                 app.processIdentifier()
             );
         }
+    }
+
+    /// Whether `mount` is the mount point of a disk image that is attached
+    /// now, according to `hdiutil info`. `false` whenever that can't be
+    /// established, so a failure here means the volume is left mounted.
+    fn is_attached_image(mount: &Path) -> bool {
+        let Ok(output) = Command::new("/usr/bin/hdiutil")
+            .args(["info", "-plist"])
+            .output()
+        else {
+            return false;
+        };
+        output.status.success()
+            && plist::Value::from_reader(std::io::Cursor::new(output.stdout))
+                .is_ok_and(|info| is_image_mount_point(&info, mount))
     }
 
     /// Spawn a detached shell that waits for this process to exit, launches the
@@ -1732,5 +1784,157 @@ mod tests {
              /usr/bin/open -n '/Applications/Buzz'\\''s.app'; \
              /bin/sleep 1; /usr/bin/hdiutil detach '/Volumes/Buzz 1' >/dev/null 2>&1"
         );
+    }
+
+    /// `hdiutil info -plist` with three images attached, cut down to the keys
+    /// that matter: an HFS+ image, whose partition is the mounted entity; an
+    /// APFS image, whose mounted entity is the synthesized volume; and an
+    /// image attached without mounting it.
+    #[cfg(target_os = "macos")]
+    const HDIUTIL_INFO: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>framework</key>
+    <string>710</string>
+    <key>images</key>
+    <array>
+        <dict>
+            <key>image-path</key>
+            <string>/Users/example/Downloads/Buzz.dmg</string>
+            <key>system-entities</key>
+            <array>
+                <dict>
+                    <key>content-hint</key>
+                    <string>GUID_partition_scheme</string>
+                    <key>dev-entry</key>
+                    <string>/dev/disk8</string>
+                </dict>
+                <dict>
+                    <key>content-hint</key>
+                    <string>48465300-0000-11AA-AA11-00306543ECAC</string>
+                    <key>dev-entry</key>
+                    <string>/dev/disk8s1</string>
+                    <key>mount-point</key>
+                    <string>/Volumes/Buzz</string>
+                </dict>
+            </array>
+        </dict>
+        <dict>
+            <key>image-path</key>
+            <string>/Users/example/Downloads/Buzz (1).dmg</string>
+            <key>system-entities</key>
+            <array>
+                <dict>
+                    <key>content-hint</key>
+                    <string>GUID_partition_scheme</string>
+                    <key>dev-entry</key>
+                    <string>/dev/disk9</string>
+                </dict>
+                <dict>
+                    <key>content-hint</key>
+                    <string>7C3457EF-0000-11AA-AA11-00306543ECAC</string>
+                    <key>dev-entry</key>
+                    <string>/dev/disk9s1</string>
+                </dict>
+                <dict>
+                    <key>content-hint</key>
+                    <string>EF57347C-0000-11AA-AA11-00306543ECAC</string>
+                    <key>dev-entry</key>
+                    <string>/dev/disk10</string>
+                </dict>
+                <dict>
+                    <key>content-hint</key>
+                    <string>41504653-0000-11AA-AA11-00306543ECAC</string>
+                    <key>dev-entry</key>
+                    <string>/dev/disk10s1</string>
+                    <key>mount-point</key>
+                    <string>/Volumes/Buzz 1</string>
+                </dict>
+            </array>
+        </dict>
+        <dict>
+            <key>image-path</key>
+            <string>/Users/example/Downloads/Other.dmg</string>
+            <key>system-entities</key>
+            <array>
+                <dict>
+                    <key>content-hint</key>
+                    <string>GUID_partition_scheme</string>
+                    <key>dev-entry</key>
+                    <string>/dev/disk11</string>
+                </dict>
+                <dict>
+                    <key>content-hint</key>
+                    <string>48465300-0000-11AA-AA11-00306543ECAC</string>
+                    <key>dev-entry</key>
+                    <string>/dev/disk11s1</string>
+                </dict>
+            </array>
+        </dict>
+    </array>
+    <key>revision</key>
+    <string>710</string>
+    <key>vendor</key>
+    <string>Apple</string>
+</dict>
+</plist>
+"#;
+
+    #[cfg(target_os = "macos")]
+    fn plist_value(xml: &str) -> plist::Value {
+        plist::Value::from_reader(std::io::Cursor::new(xml.as_bytes())).expect("parse plist")
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn image_mount_points_lists_the_mounted_entity_of_each_image() {
+        assert_eq!(
+            image_mount_points(&plist_value(HDIUTIL_INFO)),
+            [
+                PathBuf::from("/Volumes/Buzz"),
+                PathBuf::from("/Volumes/Buzz 1")
+            ]
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn image_mount_points_is_empty_for_output_of_another_shape() {
+        // No images attached, and values of the wrong type at each level.
+        for xml in [
+            "<plist><dict><key>images</key><array/></dict></plist>",
+            "<plist><dict><key>vendor</key><string>Apple</string></dict></plist>",
+            "<plist><string>images</string></plist>",
+            "<plist><dict><key>images</key><string>/Volumes/Buzz</string></dict></plist>",
+            "<plist><dict><key>images</key><array><string>/Volumes/Buzz</string>\
+             <dict><key>system-entities</key><string>/Volumes/Buzz</string></dict>\
+             <dict><key>system-entities</key><array><string>/Volumes/Buzz</string>\
+             <dict><key>mount-point</key><true/></dict></array></dict></array></dict></plist>",
+        ] {
+            assert_eq!(
+                image_mount_points(&plist_value(xml)),
+                Vec::<PathBuf>::new(),
+                "{xml}"
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn only_the_mount_point_of_an_attached_image_is_an_image_mount_point() {
+        let info = plist_value(HDIUTIL_INFO);
+        assert!(is_image_mount_point(&info, Path::new("/Volumes/Buzz")));
+        assert!(is_image_mount_point(&info, Path::new("/Volumes/Buzz 1")));
+        // A read-only drive or share under `/Volumes` is classified as
+        // `DiskImage` too, but no attached image is mounted there.
+        assert!(!is_image_mount_point(&info, Path::new("/Volumes/NTFS")));
+        // Only a whole mount point matches.
+        assert!(!is_image_mount_point(&info, Path::new("/Volumes")));
+        assert!(!is_image_mount_point(
+            &info,
+            Path::new("/Volumes/Buzz/Buzz.app")
+        ));
+        assert!(!is_image_mount_point(&info, Path::new("/dev/disk8s1")));
     }
 }
