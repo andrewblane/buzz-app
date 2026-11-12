@@ -2542,6 +2542,67 @@ it.each(["auto", "contain", "none"])(
   },
 );
 
+it("a small upward scroll survives activity height changes without new messages", async () => {
+  const h = mount(true);
+  await frame();
+  const region = screen.getByRole("region", {
+    name: "Channel message history",
+  });
+  region.scrollTop = 1400;
+  fireEvent.scroll(region);
+  fireEvent.wheel(region, { deltaY: -20 });
+  region.scrollTop -= 20;
+  fireEvent.scroll(region);
+  act(() => {
+    for (const resize of resizes) resize();
+  });
+  expect(region.scrollTop).toBe(1380);
+  h.unmount();
+});
+
+it("returning to the bottom resumes following activity", async () => {
+  const h = mount(true);
+  await frame();
+  const region = screen.getByRole("region", {
+    name: "Channel message history",
+  });
+  region.scrollTop = 1400;
+  fireEvent.scroll(region);
+  fireEvent.wheel(region, { deltaY: -20 });
+  region.scrollTop -= 20;
+  fireEvent.scroll(region);
+  fireEvent.wheel(region, { deltaY: 20 });
+  region.scrollTop = 1400;
+  fireEvent.scroll(region);
+  region.scrollTop = 1400;
+  act(() => {
+    for (const resize of resizes) resize();
+  });
+  expect(region.scrollTop).toBe(2000);
+  h.unmount();
+});
+
+it("a small upward scroll stops following new activity", async () => {
+  const h = mount(true);
+  await frame();
+  const region = screen.getByRole("region", {
+    name: "Channel message history",
+  });
+  region.scrollTop = 1400;
+  fireEvent.scroll(region);
+  fireEvent.wheel(region, { deltaY: -20 });
+  region.scrollTop -= 20;
+  fireEvent.scroll(region);
+  scroll.toIndex.mockClear();
+  h.promote();
+  await frame();
+  await h.measured();
+  await frame();
+  expect(scroll.toIndex).not.toHaveBeenCalled();
+  h.unmount();
+  expect(readView("scope", "scroll:c", null)).toMatchObject({ bottom: false });
+});
+
 it("a finished near-bottom wheel does not taint a later layout-only shrink", async () => {
   const h = mount(true);
   await frame();

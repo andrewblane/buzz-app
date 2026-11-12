@@ -880,6 +880,14 @@ function Timeline({
       // Keep observed upward movement until scrollend or a newer intent, even
       // when its first event has not left the near-bottom threshold yet.
       if (movedUp) upwardGesture.current = "moving";
+      // A deliberate upward movement leaves follow immediately, even within
+      // the near-bottom affordance. Rejoin only on reaching the actual end.
+      if (
+        movedUp ||
+        (!follow.current &&
+          element.scrollHeight - element.clientHeight - element.scrollTop > 1)
+      )
+        position.bottom = false;
       if (follow.current && !movedUp && (previous || !userScrolled.current))
         position.bottom = true;
       // Restoration can scroll before Virtua measures rows beneath the anchor,

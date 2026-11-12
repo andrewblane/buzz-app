@@ -14,6 +14,61 @@ test.use({
   developmentReact: true,
 });
 
+test.describe("small scroll while agent activity changes", () => {
+  test.use({ historyCounts: { alpha: 40, beta: 1 } });
+  test("keeps reading position when the activity tail appears", async ({
+    page,
+    app,
+  }) => {
+    const key = generateSecretKey();
+    await page.route("**/agent-library", (route) =>
+      route.fulfill({
+        json: {
+          definitions: [],
+          identities: [{ pubkey: getPublicKey(key), name: "Working agent" }],
+        },
+      }),
+    );
+    await open(page, app);
+    await expect
+      .poll(() => app.relay.hasRoute("primary", "observer"))
+      .toBe(true);
+    app.serveProfile(key, { name: "Working agent", is_agent: true });
+    await end(page);
+    const history = page.getByRole("region", {
+      name: "Channel message history",
+    });
+    await history.hover();
+    await wheel(page, -20, history);
+    const before = await history.evaluate((el) => ({
+      top: el.scrollTop,
+      gap: el.scrollHeight - el.clientHeight - el.scrollTop,
+    }));
+    expect(before.gap).toBeGreaterThan(0);
+    expect(before.gap).toBeLessThan(80);
+    const count = app.histories.get("primary/alpha").length;
+    app.observer(
+      {
+        kind: "turn_started",
+        seq: 1,
+        timestamp: new Date().toISOString(),
+        channelId: "alpha",
+        sessionId: "scroll",
+        turnId: "scroll",
+        payload: {},
+      },
+      key,
+    );
+    await expect(
+      history.locator("[data-agent-response-preview]"),
+    ).toBeVisible();
+    await settle(page, history);
+    const after = await history.evaluate((el) => el.scrollTop);
+    expect(Math.abs(after - before.top)).toBeLessThan(2);
+    expect(app.histories.get("primary/alpha")).toHaveLength(count);
+  });
+});
+
 // Native focus and virtual-list scroll anchoring need the real conversation.
 test("removing a reaction from a tall message preserves the reading position", async ({
   page,
