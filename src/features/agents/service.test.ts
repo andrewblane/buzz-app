@@ -2117,6 +2117,43 @@ it("retains reply correlation when publication has an uncertain outcome", async 
   expect(activity.reader.work()[0]).not.toHaveProperty("publishing");
 });
 
+it("publishes an unconfirmed event the relay already holds", async () => {
+  const { service, run, emit, activity, native } = await setup();
+  await service.create({ type: "example/echo", name: "Echo" });
+  const id = "d".repeat(64);
+  native.publish.mockRejectedValueOnce(
+    new Error(
+      `Agent event ${id} unconfirmed; it may or may not have been accepted`,
+    ),
+  );
+  native.query.mockResolvedValue([event(id, { tags: [["h", channel]] })]);
+  run.mockImplementationOnce(async ({ agent }) => {
+    await expect(
+      agent.publish({ kind: 9, content: "hi", tags: [["h", channel]] }),
+    ).resolves.toMatchObject({ id });
+  });
+  emit({
+    events: [
+      event("landed-request", {
+        tags: [
+          ["h", channel],
+          ["p", bot],
+        ],
+      }),
+    ],
+    channelId: channel,
+  });
+  await vi.waitFor(() =>
+    expect(activity.reader.work()[0]).toMatchObject({
+      state: "done",
+      replyMessages: [{ id, acknowledgedAt: expect.any(Number) }],
+    }),
+  );
+  expect(native.query).toHaveBeenCalledWith(member(bot), [
+    { ids: [id], limit: 1 },
+  ]);
+});
+
 it("does not make ordinary work Solo when it publishes into a Solo chat", async () => {
   const { service, run, emit, session, activity } = await setup();
   await service.create({ type: "example/echo", name: "Echo" });

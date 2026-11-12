@@ -3435,7 +3435,20 @@ export class AgentRunners {
       lifetime.throwIfAborted();
     }
     check?.();
-    return this.require().publish(runner.member, event);
+    const native = this.require();
+    try {
+      return await native.publish(runner.member, event);
+    } catch (error) {
+      // A lost receipt leaves the event's fate unknown; the relay knows it.
+      const id = unconfirmedAgentEvent(error);
+      const [landed] = id
+        ? await native
+            .query(runner.member, [{ ids: [id], limit: 1 }])
+            .catch(() => [])
+        : [];
+      if (landed) return landed;
+      throw error;
+    }
   }
 }
 
