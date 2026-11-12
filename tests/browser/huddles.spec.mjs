@@ -431,15 +431,25 @@ test("capsule and companion presentation share mute and leave", async ({
     });
     // A spring can briefly cross its final size before overshooting, and
     // Motion can put a sub-pixel transform back on a settled avatar for a
-    // frame or two. Measure in the frame that shows no avatar transform, not
-    // a later one; a separate poll could pass and the snapshot still land on
-    // such a frame.
+    // frame or two. The self bubble's own CSS transition to its new position
+    // can also still be running: the wait above is one-shot, and a transition
+    // that starts after it exits is never awaited. Measure in the frame that
+    // shows no running finite animation and no avatar transform, not a later
+    // one; a separate poll could pass and the snapshot still land on such a
+    // frame.
     let geometry;
     await expect
       .poll(
         async () => {
           geometry = await roster.evaluate((el) => {
             if (
+              el
+                .getAnimations({ subtree: true })
+                .some(
+                  (animation) =>
+                    animation.playState === "running" &&
+                    animation.effect?.getComputedTiming().endTime !== Infinity,
+                ) ||
               [...el.querySelectorAll("[data-huddle-avatar]")].some(
                 (avatar) => getComputedStyle(avatar).transform !== "none",
               )
@@ -475,7 +485,10 @@ test("capsule and companion presentation share mute and leave", async ({
           });
           return geometry !== null;
         },
-        { message: "every huddle avatar settles with no transform" },
+        {
+          message:
+            "every huddle animation settles and no avatar keeps a transform",
+        },
       )
       .toBe(true);
     const portraits = [geometry.self, ...geometry.peers];
