@@ -2,7 +2,9 @@ import { ActivityNavigationProvider } from "./ActivityNavigation";
 import { PageNavigation } from "./PageNavigation";
 import { AppDock } from "./AppDock";
 import { RailNavigation } from "./RailNavigation";
-import { SectionListColumn } from "./SectionListColumn";
+import { ListColumn } from "./ListColumn";
+import { SidePanelPresence } from "../../features/panels/side-panel-presence";
+import { useListSection } from "./list-section";
 import { routedSection, useListColumn } from "./list-column";
 import { navigationOwner, orderPages, pagePlacement } from "./presentation";
 import {
@@ -182,6 +184,40 @@ function AppShellContent({
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const listColumn = useListColumn(searchServices?.navigation);
   const resetList = listColumn.reset;
+  const listSection = useListSection(
+    connection.session,
+    connection.viewer ? connection.scope : undefined,
+    searchServices?.navigation,
+    searchServices?.sidebarSections,
+    listColumn.list,
+  );
+  const [listSlot, setListSlot] = useState<HTMLDivElement | null>(null);
+  // Open side panels report themselves; the layout does not search for them.
+  const [sidePanels, setSidePanels] = useState(0);
+  const sidePanelPresence = useMemo(
+    () => ({
+      opened() {
+        setSidePanels((count) => count + 1);
+        return () => setSidePanels((count) => count - 1);
+      },
+    }),
+    [],
+  );
+  // Beside a conversation, an open side panel takes the sidebar's room: the
+  // sidebar collapses to its rail, and returns when the panel closes.
+  const besideConversation = !!listSection && sidePanels > 0;
+  const collapsedForPanel = useRef(false);
+  useEffect(() => {
+    if (besideConversation) {
+      setSidebarOpen((open) => {
+        if (open) collapsedForPanel.current = true;
+        return false;
+      });
+    } else if (collapsedForPanel.current) {
+      collapsedForPanel.current = false;
+      setSidebarOpen(true);
+    }
+  }, [besideConversation]);
   const hostNavigation = searchServices?.navigation;
   // The sidebar opens destinations directly; only a section address lists.
   const railNavigator = useMemo(
@@ -379,6 +415,8 @@ function AppShellContent({
           scope={shellScope}
           sidebarSections={searchServices.sidebarSections}
           navigator={railNavigator}
+          listNavigator={searchServices.navigation}
+          list={listSection && { section: listSection.section, slot: listSlot }}
           pages={pages}
           selected={selected}
           onSelect={onSelect}
@@ -446,7 +484,11 @@ function AppShellContent({
               title={toggleLabel}
               onClick={() => {
                 if (narrow) setNavigationOpen((open) => !open);
-                else setSidebarOpen((open) => !open);
+                else {
+                  // A person's choice outlasts the panel that collapsed it.
+                  collapsedForPanel.current = false;
+                  setSidebarOpen((open) => !open);
+                }
               }}
               icon={<SidebarIcon aria-hidden="true" size={16} />}
             />
@@ -473,6 +515,10 @@ function AppShellContent({
         data-feed-layout={activityPage || undefined}
         data-rail-open={visibleRail || undefined}
         data-rail-compact={compactRail || undefined}
+        data-side-panel={sidePanels > 0 || undefined}
+        data-list-column={
+          listSection ? (listColumn.list.open ? "open" : "closed") : undefined
+        }
       >
         {dock}
         <div
@@ -522,53 +568,52 @@ function AppShellContent({
                   tabIndex={-1}
                   className="min-h-0 min-w-0 flex-1"
                 >
-                  <Panel as="div" joined>
-                    <ConversationDetailPane value={detailPane.value}>
-                      <PanelFrame
-                        scope={connection.scope}
-                        companion={detailPane.companion ?? companion}
-                      >
-                        <div
-                          id={`shell-page-${owner}`}
-                          className={
-                            fillsWorkspace
-                              ? "buzz-tabs-panel h-full min-h-0"
-                              : "buzz-tabs-panel h-full min-h-0 overflow-y-auto px-2 pt-10 pb-8 sm:px-4 sm:pt-14 sm:pb-10"
-                          }
+                  <SidePanelPresence value={sidePanelPresence}>
+                    <Panel as="div" joined>
+                      <ConversationDetailPane value={detailPane.value}>
+                        <PanelFrame
+                          scope={connection.scope}
+                          companion={detailPane.companion ?? companion}
                         >
                           <div
+                            id={`shell-page-${owner}`}
                             className={
                               fillsWorkspace
-                                ? "h-full min-h-0"
-                                : "mx-auto w-full max-w-4xl"
+                                ? "buzz-tabs-panel h-full min-h-0"
+                                : "buzz-tabs-panel h-full min-h-0 overflow-y-auto px-2 pt-10 pb-8 sm:px-4 sm:pt-14 sm:pb-10"
                             }
                           >
-                            <OpenCommunitySwitcher value={openSwitcher}>
-                              {shellScope && searchServices?.navigation ? (
-                                <SectionListColumn
-                                  key={connection.scope}
-                                  session={connection.session}
-                                  scope={shellScope}
-                                  navigator={searchServices.navigation}
-                                  pages={pages}
-                                  onSelect={onSelect}
-                                  sidebarSections={
-                                    searchServices.sidebarSections
-                                  }
-                                  list={listColumn.list}
+                            <div
+                              className={
+                                fillsWorkspace
+                                  ? "h-full min-h-0"
+                                  : "mx-auto w-full max-w-4xl"
+                              }
+                            >
+                              <OpenCommunitySwitcher value={openSwitcher}>
+                                <ListColumn
+                                  scope={connection.scope ?? "disconnected"}
+                                  list={listSection && listColumn.list}
                                   setOpen={listColumn.setOpen}
+                                  title={listSection?.title ?? ""}
+                                  label={listSection?.label}
+                                  fill={!!listSection?.fill}
+                                  content={
+                                    <div
+                                      ref={setListSlot}
+                                      className="flex min-h-0 min-w-0 flex-col"
+                                    />
+                                  }
                                 >
                                   {children}
-                                </SectionListColumn>
-                              ) : (
-                                children
-                              )}
-                            </OpenCommunitySwitcher>
+                                </ListColumn>
+                              </OpenCommunitySwitcher>
+                            </div>
                           </div>
-                        </div>
-                      </PanelFrame>
-                    </ConversationDetailPane>
-                  </Panel>
+                        </PanelFrame>
+                      </ConversationDetailPane>
+                    </Panel>
+                  </SidePanelPresence>
                 </main>
               </div>
             </Panel>

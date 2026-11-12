@@ -364,20 +364,20 @@
     max-width: var(--size-conversation-frame);
   }
   /* Split workspaces use the available canvas; readers retain their own measure. */
-  .shell-workspace:has([data-panel-dock]:not([hidden], [data-closing])),
-  .shell-workspace:has([data-detail-workspace]) {
+  .shell-workspace[data-side-panel],
+  .shell-workspace[data-list-column] {
     --shell-balance-gutter: 0rem;
   }
-  .shell-body:has([data-detail-workspace]) > div,
-  .shell-body:has([data-panel-dock]:not([hidden], [data-closing])) > div {
+  .shell-workspace[data-side-panel] .shell-body > div,
+  .shell-workspace[data-list-column] .shell-body > div {
     max-width: none;
   }
   /* Collection headers and rows own equal insets at both pane edges. */
-  .shell-body:has([data-detail-workspace]) {
+  .shell-workspace[data-list-column] .shell-body {
     padding-inline: 0;
   }
   /* A full-width reader owns its edge insets, just as it does beside the list. */
-  .shell-body:has([data-detail-workspace] > [data-list-open="false"]) {
+  .shell-workspace[data-list-column="closed"] .shell-body {
     grid-template-columns: minmax(0, 1fr);
     padding-inline: 0;
   }
@@ -559,7 +559,7 @@
      and their focus rings, so their ink and fills keep the pairing they were
      designed for. Resize grips sit on the joined pane surface, which is
      already opaque. */
-  .shell-background:has(> .shell-backdrop) .shell-header > * {
+  .shell-backdrop ~ .shell-header > * {
     border-radius: var(--radius-pill);
     background: var(--surface-window-underlay);
     box-shadow: 0 0 0 var(--space-2) var(--surface-window-underlay);

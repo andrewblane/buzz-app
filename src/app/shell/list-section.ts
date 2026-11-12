@@ -1,57 +1,40 @@
-import { useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import type { RelaySession } from "../../features/relay/session";
 import { useChannelRoster } from "../../features/relay/react";
 import type { Navigation } from "../../features/navigation/controller";
-import type { NavigationScope } from "../../features/navigation/targets";
-import type { RegisteredPage } from "../../features/pages/service";
 import type { SidebarSections } from "../../features/channel-navigation/sidebar-sections-service";
 import { soloDraft } from "../../features/channel-navigation/routes";
-import { ListColumn } from "./ListColumn";
 import {
   listsConversations,
   routedSection,
-  type ListColumn as ListColumnState,
+  type ListColumn,
 } from "./list-column";
-import { RailNavigation } from "./RailNavigation";
 import { useRailLayout } from "./rail-layout";
 import { useRailPins, type RailEntry } from "./rail-pins";
 import { railSections } from "./rail-sections";
 
 /**
- * The list column for the current visit: which section it lists, and that
- * section's rows. Pages that list no conversations render alone.
+ * Which section the list column shows for the current visit: the one the
+ * visit names or last listed, else the one the open conversation belongs to.
+ * Unset on pages that list no conversations.
  */
-export function SectionListColumn({
-  session,
-  scope,
-  navigator,
-  pages,
-  onSelect,
-  sidebarSections,
-  list,
-  setOpen,
-  children,
-}: {
-  session: RelaySession;
-  scope: NavigationScope;
-  navigator: Navigation;
-  pages: readonly RegisteredPage[];
-  onSelect(key: string): void;
-  sidebarSections?: SidebarSections | undefined;
-  list: ListColumnState;
-  setOpen(open: boolean, animate?: boolean): void;
-  children: ReactNode;
-}) {
-  const partition = `${scope.communityOrigin}:${scope.viewer}`;
-  const visit = useSyncExternalStore(navigator.subscribe, navigator.snapshot);
-  const target = visit.entry.target;
-  const active = listsConversations(target);
-  const { layout } = useRailLayout(partition);
-  const { pins } = useRailPins(partition);
+export function useListSection(
+  session: RelaySession,
+  partition: string | undefined,
+  navigator: Navigation | undefined,
+  sidebarSections: SidebarSections | undefined,
+  list: ListColumn,
+) {
+  const visit = useSyncExternalStore(
+    navigator?.subscribe ?? noSubscription,
+    () => navigator?.snapshot(),
+  );
+  const target = visit?.entry.target;
+  const { layout } = useRailLayout(partition ?? "disconnected");
+  const { pins } = useRailPins(partition ?? "disconnected");
   const roster = useChannelRoster(session.channels);
   const contributed = useSyncExternalStore(
     sidebarSections?.subscribe ?? noSubscription,
-    sidebarSections?.snapshot ?? noSections,
     sidebarSections?.snapshot ?? noSections,
   );
   const membership = useMemo(
@@ -65,6 +48,7 @@ export function SectionListColumn({
       ),
     [layout, contributed],
   );
+  if (!partition || !target || !listsConversations(target)) return;
   const selected =
     target.kind === "conversation"
       ? roster.channels.find((channel) => channel.id === target.channelId)
@@ -93,37 +77,17 @@ export function SectionListColumn({
       ? "solo"
       : "messages");
   const title = membership.sections.get(section) ?? "Team";
-  return (
-    <ListColumn
-      scope={partition}
-      list={active ? list : undefined}
-      setOpen={setOpen}
-      title={title}
-      label={
-        section === "messages" || section === "solo"
-          ? title
-          : `${title} workspace`
-      }
-      fill={routedSection(target) !== undefined}
-      content={
-        active && (
-          <RailNavigation
-            key={partition}
-            pageSection={section}
-            session={session}
-            scope={scope}
-            navigator={navigator}
-            pages={pages}
-            selected="buzz.channels/channels"
-            onSelect={onSelect}
-            sidebarSections={sidebarSections}
-          />
-        )
-      }
-    >
-      {children}
-    </ListColumn>
-  );
+  return {
+    section,
+    title,
+    /** Names the list and its page together. */
+    label:
+      section === "messages" || section === "solo"
+        ? title
+        : `${title} workspace`,
+    /** Nothing is selected: a narrow window gives the list the whole width. */
+    fill: routedSection(target) !== undefined,
+  };
 }
 
 const noSubscription = () => () => {};

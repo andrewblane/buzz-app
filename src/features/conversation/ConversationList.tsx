@@ -9,7 +9,9 @@ import {
   useCallback,
   type ReactNode,
   type RefCallback,
+  memo,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -476,7 +478,7 @@ export function ConversationList({
       ? isOpen({ channelId, ...(threadId ? { threadId } : {}) })
       : selectedChannel === channelId && selectedThread === threadId;
 
-  const open = (
+  const openNow = (
     channelId: string,
     options: { messageId?: string; threadRootId?: string } = {},
   ) => {
@@ -500,6 +502,18 @@ export function ConversationList({
         : {}),
     });
   };
+  // Rows keep one handler for as long as they are mounted.
+  const opener = useRef(openNow);
+  useLayoutEffect(() => {
+    opener.current = openNow;
+  });
+  const open = useCallback(
+    (
+      channelId: string,
+      options?: { messageId?: string; threadRootId?: string },
+    ) => opener.current(channelId, options),
+    [],
+  );
 
   const unreadOnly = view.unread;
   const filter = view.filter;
@@ -688,8 +702,14 @@ export function ConversationList({
         .ensure(profileKey.split(":"), "background")
         .catch(() => {});
   }, [session, profileKey, list.status]);
-  const nameOf = (id: string) =>
-    resolveName(id, profiles.get(id)?.name ?? formatPublicKey(id) ?? "Someone");
+  const nameOf = useCallback(
+    (id: string) =>
+      resolveName(
+        id,
+        profiles.get(id)?.name ?? formatPublicKey(id) ?? "Someone",
+      ),
+    [resolveName, profiles],
+  );
 
   const describeEvent = (event: ActivityEvent): ConversationListEntry => ({
     key: `e:${event.key}`,
@@ -800,11 +820,9 @@ export function ConversationList({
         {mapEntries(eventRow, (entry) => (
           <ChannelActivityRow
             previewRef={previewRef}
-            wrap={
-              wrapRow
-                ? (content) => wrapRow(describeChannel(entry), content)
-                : undefined
-            }
+            wrapRow={wrapRow}
+            scope={scope}
+            label={entry.label}
             layout={layout}
             key={`c:${entry.channel.id}`}
             session={session}
@@ -818,7 +836,7 @@ export function ConversationList({
             resolveName={resolveName}
             unreadOnly={unreadOnly}
             selected={isSelected(entry.channel.id)}
-            onOpen={() => open(entry.channel.id)}
+            onOpen={open}
           />
         ))}
       </ul>
@@ -1002,9 +1020,12 @@ function useFrozenOrder(key: string) {
   }, [frozen, key]);
 }
 
-export function ChannelActivityRow({
+/** Renders again only when its own conversation's evidence or state changes. */
+export const ChannelActivityRow = memo(function ChannelActivityRow({
   previewRef,
-  wrap,
+  wrapRow,
+  scope,
+  label,
   layout,
   session,
   channel,
@@ -1020,7 +1041,13 @@ export function ChannelActivityRow({
   onOpen,
 }: {
   previewRef?: RefCallback<HTMLLIElement> | undefined;
-  wrap?: ((row: ReactNode) => ReactNode) | undefined;
+  /** A stable host wrapper; the row describes itself to it. */
+  wrapRow?:
+    | ((entry: ConversationListEntry, row: ReactNode) => ReactNode)
+    | undefined;
+  /** With wrapRow: where this row opens and what the host calls it. */
+  scope?: NavigationScope | undefined;
+  label?: string | undefined;
   layout: "sidebar" | "feed" | "navigation";
   session: RelaySession;
   channel: ChannelSummary;
@@ -1034,7 +1061,7 @@ export function ChannelActivityRow({
   resolveName: ReturnType<typeof useIdentityNames>;
   unreadOnly: boolean;
   selected: boolean;
-  onOpen(): void;
+  onOpen(channelId: string): void;
 }) {
   const dm = channel.channelType === "dm";
   const state = useUnreadState(session, channel.id, dm);
@@ -1060,7 +1087,7 @@ export function ChannelActivityRow({
       layout={layout}
       aria-current={selected ? "page" : undefined}
       selected={selected}
-      onClick={onOpen}
+      onClick={() => onOpen(channel.id)}
       onPointerEnter={() => session.channels.prepare?.(channel.id)}
       onFocus={() => session.channels.prepare?.(channel.id)}
       avatar={
@@ -1113,10 +1140,25 @@ export function ChannelActivityRow({
       data-activity-row={channel.id}
       className={layout === "feed" ? feedStyles.item : undefined}
     >
-      {wrap ? wrap(content) : content}
+      {wrapRow && scope
+        ? wrapRow(
+            {
+              key: `c:${channel.id}`,
+              label: label ?? channel.name,
+              at,
+              target: {
+                version: 1,
+                kind: "conversation",
+                scope,
+                channelId: channel.id,
+              },
+            },
+            content,
+          )
+        : content}
     </li>
   );
-}
+});
 
 /** The newest thread you're in, in a Team channel: its latest reply. */
 function newestThread(session: RelaySession, channel: ChannelSummary) {

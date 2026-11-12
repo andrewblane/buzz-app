@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useCallback, useLayoutEffect, useRef, type ReactNode } from "react";
 import type { RelaySession } from "../../features/relay/session";
 import type { Navigation } from "../../features/navigation/controller";
 import type {
@@ -11,6 +11,7 @@ import {
   includeMessagesChannel,
   useActivityView,
   type ActivityView,
+  type ConversationListEntry,
 } from "../../features/conversation/ConversationList";
 import type { RailEntry } from "./rail-pins";
 import { RailDestinationRow } from "./RailArrangement";
@@ -58,6 +59,29 @@ export function RailConversationList({
       conversations.set(destination.channelId, entry);
     else others.push(entry);
   }
+  // Rows keep one wrapper while mounted; it reads the current entries.
+  const current = useRef(conversations);
+  useLayoutEffect(() => {
+    current.current = conversations;
+  });
+  const wrapRow = useCallback(
+    (item: ConversationListEntry, content: ReactNode) => {
+      const original = current.current.get(item.target.channelId);
+      if (!original) return content;
+      const entry = {
+        ...original,
+        label: item.label,
+        target: item.target,
+        id: item.key.startsWith("e:") ? `activity:${item.key}` : original.id,
+      };
+      return (
+        <RailDestinationRow section={section} entry={entry}>
+          {content}
+        </RailDestinationRow>
+      );
+    },
+    [section],
+  );
   const extras = others.filter(
     (entry) =>
       view.filter === "all" ||
@@ -94,23 +118,7 @@ export function RailConversationList({
             conversations.has(channel.id) &&
             (section !== "messages" || includeMessagesChannel(channel, view))
           }
-          wrapRow={(item, content) => {
-            const original = conversations.get(item.target.channelId);
-            if (!original) return content;
-            const entry = {
-              ...original,
-              label: item.label,
-              target: item.target,
-              id: item.key.startsWith("e:")
-                ? `activity:${item.key}`
-                : original.id,
-            };
-            return (
-              <RailDestinationRow section={section} entry={entry}>
-                {content}
-              </RailDestinationRow>
-            );
-          }}
+          wrapRow={wrapRow}
         />
         {extras.length > 0 && (
           <ul className={feedStyles.list} aria-label="Other destinations">

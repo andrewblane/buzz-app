@@ -1,4 +1,11 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { SidePanelPresence } from "./side-panel-presence";
 import styles from "./Panels.module.css";
 import { PanelSheet } from "./PanelSheet";
 
@@ -49,6 +56,11 @@ function InlineDock({
   keepMounted?: boolean;
 }) {
   const element = useRef<HTMLDivElement>(null);
+  const presence = useContext(SidePanelPresence);
+  useLayoutEffect(
+    () => (open ? presence?.opened() : undefined),
+    [open, presence],
+  );
   const [retained, setRetained] = useState(open ? { children } : null);
   if (
     (open || (keepMounted && retained)) &&

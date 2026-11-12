@@ -36,7 +36,7 @@ export function ListColumn({
   setOpen(open: boolean, animate?: boolean): void;
   title: string;
   /** Names the list and its page together. */
-  label?: string;
+  label?: string | undefined;
   /** Nothing is selected: a narrow window gives the list the whole width. */
   fill: boolean;
   content: ReactNode;

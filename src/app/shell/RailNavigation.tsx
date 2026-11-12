@@ -9,7 +9,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { flushSync } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import type { RelaySession } from "../../features/relay/session";
 import { RailConversationItem } from "./RailConversationItem";
 import type { NavigationScope } from "../../features/navigation/targets";
@@ -64,13 +64,14 @@ import {
 export function RailNavigation({
   session,
   scope,
-  navigator,
+  navigator: directNavigator,
   pages,
   selected,
   onSelect,
   creationAction,
   sidebarSections,
-  pageSection,
+  list: listColumn,
+  listNavigator = directNavigator,
   compact = false,
 }: {
   session: RelaySession;
@@ -84,7 +85,10 @@ export function RailNavigation({
   ): void;
   creationAction?: ReactNode;
   sidebarSections?: SidebarSections | undefined;
-  pageSection?: string | undefined;
+  /** The section the shell's list column shows, rendered into its slot. */
+  list?: { section: string; slot: Element | null } | undefined;
+  /** Opens from the list column, which keep that column as it is. */
+  listNavigator?: Navigation;
   compact?: boolean;
 }) {
   const partition = `${scope.communityOrigin}:${scope.viewer}`;
@@ -99,7 +103,7 @@ export function RailNavigation({
       ? channelNavigation.muteRecovery
       : undefined;
   useEffect(() => {
-    if (!muteRecovery || pageSection) return;
+    if (!muteRecovery) return;
     const recovery = {
       closeMenu: () => closeMuteMenu.current?.(),
       focus: (channelId: string) =>
@@ -113,7 +117,7 @@ export function RailNavigation({
     return () => {
       if (muteRecovery.current === recovery) muteRecovery.current = undefined;
     };
-  }, [muteRecovery, pageSection]);
+  }, [muteRecovery]);
   const preferences = useSyncExternalStore(
     session.sidebarPreferences.subscribe,
     session.sidebarPreferences.snapshot,
@@ -137,8 +141,8 @@ export function RailNavigation({
     session.archives.snapshot,
   );
   const navigation = useSyncExternalStore(
-    navigator.subscribe,
-    navigator.snapshot,
+    directNavigator.subscribe,
+    directNavigator.snapshot,
   );
   const sectionRoute =
     navigation.entry.target.kind === "page"
@@ -283,7 +287,7 @@ export function RailNavigation({
     );
     return saved;
   };
-  const open = async (entry: RailEntry) => {
+  const open = async (entry: RailEntry, navigator: Navigation) => {
     setError(undefined);
     if (entry.target.kind !== "person") {
       void navigator.open(entry.target);
@@ -387,90 +391,6 @@ export function RailNavigation({
       agentEntries={agentEntries}
     />
   );
-  const row = (entry: RailEntry, avatarOnly = false) => {
-    const target = entry.target;
-    const channel =
-      target.kind === "conversation"
-        ? channelsById.get(target.channelId)
-        : target.kind === "person"
-          ? channels.find(
-              (channel) =>
-                channel.channelType === "dm" &&
-                channel.participants?.length === 1 &&
-                channel.participants[0] === target.pubkey,
-            )
-          : undefined;
-    const label = (
-      <span className={styles.rowLabel}>
-        <span>{entry.label}</span>
-      </span>
-    );
-    const props = {
-      title: avatarOnly ? undefined : entry.label,
-      "aria-label": entry.label,
-      selected: isSelected(entry),
-      disabled: opening === entry.id,
-      onClick: () => void open(entry),
-    };
-    const control = channel ? (
-      <RailConversationItem
-        key={entry.id}
-        {...props}
-        data-rail-channel={channel.id}
-        session={session}
-        channel={channel}
-        destination={entry.target}
-        avatar={artwork(entry, avatarOnly)}
-        avatarOnly={avatarOnly}
-        place={label}
-      />
-    ) : (
-      <NavigationItem
-        key={entry.id}
-        {...props}
-        icon={artwork(entry, avatarOnly)}
-        variant={avatarOnly ? "avatar" : "row"}
-        label={label}
-      />
-    );
-    return avatarOnly ? (
-      <Tooltip
-        content={entry.kind === "agent" ? `DM ${entry.label}` : entry.label}
-        hint="dock"
-      >
-        {control}
-      </Tooltip>
-    ) : (
-      control
-    );
-  };
-
-  const sourceRow = (entry: RailEntry, section: string) => ({
-    entry,
-    content: row(
-      entry,
-      (section === "pins" || section === "agents") && pageSection !== section,
-    ),
-  });
-  const pageRow = (page: RegisteredPage) => {
-    const entry = byId.get(page.key);
-    return entry
-      ? [
-          {
-            entry,
-            content: (
-              <PageNavigation
-                pages={[page]}
-                selected={selected}
-                onSelect={onSelect}
-                previews
-              />
-            ),
-          },
-        ]
-      : [];
-  };
-
   const soloChats = useMemo(
     () =>
       channels
@@ -489,20 +409,6 @@ export function RailNavigation({
       preferredRailAgents(agentEntries, channels, readSearchUsage(partition)),
     [agentEntries, channels, partition, navigation.attempt.id],
   );
-  const plugins = pages.filter(
-    (page) =>
-      page.primary &&
-      ![
-        "buzz.channels/channels",
-        "buzz.inbox/inbox",
-        "buzz.drafts-and-sent/drafts-sent",
-        "buzz.agents/agents",
-      ].includes(page.key),
-  );
-  const teamPageIds = ["buzz.inbox/inbox", "buzz.drafts-and-sent/drafts-sent"];
-  const teamPages = teamPageIds.flatMap((key) =>
-    pages.filter((page) => page.key === key),
-  );
   const current = entries.find(
     (entry) =>
       entry.target.kind !== "person" &&
@@ -513,15 +419,6 @@ export function RailNavigation({
     kind: "page" as const,
     target: navigation.entry.target,
   };
-  const sortMessages = (
-    a: RailEntry,
-    b: RailEntry,
-    order: ReadonlyMap<string, number>,
-  ) =>
-    (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
-      (order.get(b.id) ?? Number.MAX_SAFE_INTEGER) ||
-    a.label.localeCompare(b.label) ||
-    a.id.localeCompare(b.id);
   const matches = (picker ? entries : [])
     .filter((entry) =>
       `${entry.label} ${entry.kind}`
@@ -530,80 +427,195 @@ export function RailNavigation({
     )
     .slice(0, 60);
 
-  const messageCard = (
-    items: readonly RailEntry[],
-    order: ReadonlyMap<string, number>,
-  ) => (
-    <RailGroup
-      id="messages"
-      title="Team"
-      rowsLabel="Recent conversations"
-      rows={[
-        ...teamPages.flatMap(pageRow),
-        ...items.map((entry) => sourceRow(entry, "messages")),
-      ]}
-      leadingEntryIds={teamPageIds}
-      pageContent={sectionPage}
-      sortEntries={(a, b) => sortMessages(a, b, order)}
-      action={
-        <>
-          <ConversationFiltersMenu
-            label="Filter and sort Team card"
-            view={messageView}
-            onChange={setMessageView}
-            sort
-            views
-          />
-          {creationAction}
-        </>
-      }
-      footer={
-        <NavigationItem
-          label="Open Team"
-          data-rail-view-more=""
-          aria-label="Open Team"
-          icon={<ArrowRightIcon size={18} />}
-          selected={
-            navigation.entry.target.kind === "page" &&
-            !isSidebarSectionRoute(navigation.entry.target.route?.params) &&
-            selected === "buzz.channels/channels"
-          }
-          onClick={() => onSelect("buzz.channels/channels")}
+  /** The cards, or one section's full list for the shell's list column. */
+  const view = (pageSection: string | undefined) => {
+    const navigator = pageSection ? listNavigator : directNavigator;
+    const row = (entry: RailEntry, avatarOnly = false) => {
+      const target = entry.target;
+      const channel =
+        target.kind === "conversation"
+          ? channelsById.get(target.channelId)
+          : target.kind === "person"
+            ? channels.find(
+                (channel) =>
+                  channel.channelType === "dm" &&
+                  channel.participants?.length === 1 &&
+                  channel.participants[0] === target.pubkey,
+              )
+            : undefined;
+      const label = (
+        <span className={styles.rowLabel}>
+          <span>{entry.label}</span>
+        </span>
+      );
+      const props = {
+        title: avatarOnly ? undefined : entry.label,
+        "aria-label": entry.label,
+        selected: isSelected(entry),
+        disabled: opening === entry.id,
+        onClick: () => void open(entry, navigator),
+      };
+      const control = channel ? (
+        <RailConversationItem
+          key={entry.id}
+          {...props}
+          data-rail-channel={channel.id}
+          session={session}
+          channel={channel}
+          destination={entry.target}
+          avatar={artwork(entry, avatarOnly)}
+          avatarOnly={avatarOnly}
+          place={label}
         />
-      }
-    >
-      {!items.length && (
-        <p className={styles.note}>No matching conversations.</p>
-      )}
-    </RailGroup>
-  );
-  let sectionPage: ReactNode;
-  if (pageSection === "messages" || pageSection === "solo") {
-    const membership = railSections(
-      railLayout,
-      contributed.map((section) => ({ id: section.key, title: section.title })),
+      ) : (
+        <NavigationItem
+          key={entry.id}
+          {...props}
+          icon={artwork(entry, avatarOnly)}
+          variant={avatarOnly ? "avatar" : "row"}
+          label={label}
+        />
+      );
+      return avatarOnly ? (
+        <Tooltip
+          content={entry.kind === "agent" ? `DM ${entry.label}` : entry.label}
+          hint="dock"
+        >
+          {control}
+        </Tooltip>
+      ) : (
+        control
+      );
+    };
+
+    const sourceRow = (entry: RailEntry, section: string) => ({
+      entry,
+      content: row(
+        entry,
+        (section === "pins" || section === "agents") && pageSection !== section,
+      ),
+    });
+    const pageRow = (page: RegisteredPage) => {
+      const entry = byId.get(page.key);
+      return entry
+        ? [
+            {
+              entry,
+              content: (
+                <PageNavigation
+                  pages={[page]}
+                  selected={selected}
+                  onSelect={onSelect}
+                  previews
+                />
+              ),
+            },
+          ]
+        : [];
+    };
+
+    const plugins = pages.filter(
+      (page) =>
+        page.primary &&
+        ![
+          "buzz.channels/channels",
+          "buzz.inbox/inbox",
+          "buzz.drafts-and-sent/drafts-sent",
+          "buzz.agents/agents",
+        ].includes(page.key),
     );
-    const defaults = (pageSection === "solo" ? soloChats : channels).flatMap(
-      (channel) => {
-        const entry = byId.get(`channel:${channel.id}`);
-        return entry ? [entry] : [];
-      },
+    const teamPageIds = [
+      "buzz.inbox/inbox",
+      "buzz.drafts-and-sent/drafts-sent",
+    ];
+    const teamPages = teamPageIds.flatMap((key) =>
+      pages.filter((page) => page.key === key),
     );
-    const sectionEntries = membership.entries(pageSection, defaults, byId);
-    sectionPage = (
-      <RailConversationList
-        section={pageSection}
-        entries={sectionEntries}
-        session={session}
-        scope={scope}
-        navigator={navigator}
-        target={navigation.entry.target}
-        renderOther={(entry) => row(entry)}
-      />
+    const sortMessages = (
+      a: RailEntry,
+      b: RailEntry,
+      order: ReadonlyMap<string, number>,
+    ) =>
+      (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+        (order.get(b.id) ?? Number.MAX_SAFE_INTEGER) ||
+      a.label.localeCompare(b.label) ||
+      a.id.localeCompare(b.id);
+    const messageCard = (
+      items: readonly RailEntry[],
+      order: ReadonlyMap<string, number>,
+    ) => (
+      <RailGroup
+        id="messages"
+        title="Team"
+        rowsLabel="Recent conversations"
+        rows={[
+          ...teamPages.flatMap(pageRow),
+          ...items.map((entry) => sourceRow(entry, "messages")),
+        ]}
+        leadingEntryIds={teamPageIds}
+        pageContent={sectionPage}
+        sortEntries={(a, b) => sortMessages(a, b, order)}
+        action={
+          <>
+            <ConversationFiltersMenu
+              label="Filter and sort Team card"
+              view={messageView}
+              onChange={setMessageView}
+              sort
+              views
+            />
+            {creationAction}
+          </>
+        }
+        footer={
+          <NavigationItem
+            label="Open Team"
+            data-rail-view-more=""
+            aria-label="Open Team"
+            icon={<ArrowRightIcon size={18} />}
+            selected={
+              navigation.entry.target.kind === "page" &&
+              !isSidebarSectionRoute(navigation.entry.target.route?.params) &&
+              selected === "buzz.channels/channels"
+            }
+            onClick={() => onSelect("buzz.channels/channels")}
+          />
+        }
+      >
+        {!items.length && (
+          <p className={styles.note}>No matching conversations.</p>
+        )}
+      </RailGroup>
     );
-  }
-  return (
-    <>
+    let sectionPage: ReactNode;
+    if (pageSection === "messages" || pageSection === "solo") {
+      const membership = railSections(
+        railLayout,
+        contributed.map((section) => ({
+          id: section.key,
+          title: section.title,
+        })),
+      );
+      const defaults = (pageSection === "solo" ? soloChats : channels).flatMap(
+        (channel) => {
+          const entry = byId.get(`channel:${channel.id}`);
+          return entry ? [entry] : [];
+        },
+      );
+      const sectionEntries = membership.entries(pageSection, defaults, byId);
+      sectionPage = (
+        <RailConversationList
+          section={pageSection}
+          entries={sectionEntries}
+          session={session}
+          scope={scope}
+          navigator={navigator}
+          target={navigation.entry.target}
+          renderOther={(entry) => row(entry)}
+        />
+      );
+    }
+    return (
       <RailArrangement
         key={partition}
         partition={partition}
@@ -625,7 +637,7 @@ export function RailNavigation({
           />
         )}
         pageSection={pageSection}
-        compact={compact}
+        compact={!pageSection && compact}
         selectedSection={selectedSection}
         openSection={(id) =>
           void navigator.open(sidebarSectionTarget(scope, id))
@@ -910,6 +922,14 @@ export function RailNavigation({
           })),
         ]}
       />
+    );
+  };
+  return (
+    <>
+      {view(undefined)}
+      {listColumn?.slot &&
+        createPortal(view(listColumn.section), listColumn.slot)}
+
       {error && !picker && (
         <p role="alert" className={styles.note}>
           {error}

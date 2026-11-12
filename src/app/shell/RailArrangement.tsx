@@ -83,6 +83,8 @@ type Arrangement = {
   onTogglePin(entry: RailEntry, pinned: boolean): void;
 };
 const ArrangementContext = createContext<Arrangement | null>(null);
+/** Whether rows sit in a section's full list, where they do not drag. */
+const ListedContext = createContext(false);
 const touchOptions = { activationConstraint: { delay: 250, tolerance: 5 } };
 const pointerOptions = { activationConstraint: { distance: 6 } };
 const collisions: CollisionDetection = (args) =>
@@ -190,161 +192,163 @@ export function RailArrangement({
   };
   return (
     <ArrangementContext value={value}>
-      <DndContext
-        sensors={sensors}
-        collisionDetection={collisions}
-        accessibility={{ container: document.body }}
-        onDragStart={({ active }) =>
-          setDragging({
-            label: active.data.current?.label ?? "",
-          })
-        }
-        onDragCancel={() => {
-          animateDrop.current = false;
-          setDragging(undefined);
-        }}
-        onDragEnd={({ active, over }) => {
-          setDragging(undefined);
-          const data = active.data.current;
-          animateDrop.current =
-            !!over &&
-            !reducedMotion &&
-            (data?.section
-              ? data.section !== over.id
-              : !!data?.entry &&
-                over.id !== data.source &&
-                over.id !== "rail:new-section");
-          if (!over) return;
-          if (data?.section)
-            value.reorder(
-              data.section,
-              over.id === "rail:top"
-                ? (groups[0]?.id ?? data.section)
-                : String(over.id),
-            );
-          else if (data?.entry) {
-            if (over.id === "rail:new-section") setCreating(data.entry);
-            else if (over.id !== data.source)
-              value.move(data.entry, String(over.id));
+      <ListedContext value={!!pageSection}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={collisions}
+          accessibility={{ container: document.body }}
+          onDragStart={({ active }) =>
+            setDragging({
+              label: active.data.current?.label ?? "",
+            })
           }
-        }}
-      >
-        {pageSection ? (
-          (groups.find((group) => group.id === pageSection)?.content ?? (
-            <EmptyState
-              icon={<ChatCircleIcon />}
-              title="Section unavailable"
-              description="This sidebar section may have been removed."
-            />
-          ))
-        ) : (
-          <>
-            {compact && (
-              <section className={styles.dock} aria-label="Sidebar sections">
-                {groups.map((group) => (
-                  <div key={group.id} className={styles.dockTile}>
-                    <Tooltip content={group.title} hint="dock" side="right">
-                      <IconButton
-                        size="md"
-                        aria-label={group.title}
-                        aria-current={
-                          selectedSection === group.id ? "page" : undefined
-                        }
-                        data-selected={
-                          selectedSection === group.id || undefined
-                        }
-                        icon={group.icon ?? <SquaresFourIcon size={22} />}
-                        onClick={() => openSection(group.id)}
-                      />
-                    </Tooltip>
-                  </div>
-                ))}
-              </section>
-            )}
-            <div hidden={compact}>
-              <div
-                className={styles.groups}
-                onKeyDownCapture={(event) => {
-                  // Escape belongs to the active move before the shell's rail dismissal.
-                  if (dragging && event.key === "Escape")
-                    event.preventDefault();
-                }}
-              >
-                <FirstSectionTarget />
-                {groups.map((group) => (
-                  <motion.div
-                    key={group.id}
-                    layout="position"
-                    layoutDependency={layout}
-                    initial={false}
-                    transition={{
-                      layout: animateDrop.current
-                        ? { type: "spring", duration: 0.28, bounce: 0.15 }
-                        : { duration: 0 },
-                    }}
-                    onLayoutAnimationComplete={() => {
-                      animateDrop.current = false;
-                    }}
-                  >
-                    {group.content}
-                  </motion.div>
-                ))}
-              </div>
-              <div className={styles.createSection}>
-                <Button
-                  ref={newSectionButton}
-                  size="sm"
-                  variant="subtle"
-                  onClick={() => setCreating(null)}
-                >
-                  New section
-                </Button>
-              </div>
-              <NewSectionTarget />
-            </div>
-          </>
-        )}
-        {createPortal(
-          <DragOverlay dropAnimation={null}>
-            {dragging && (
-              <div className={styles.overlay}>
-                <NavigationItem label={dragging.label} />
-              </div>
-            )}
-          </DragOverlay>,
-          document.body,
-        )}
-      </DndContext>
-      {error && (
-        <p role="alert" className="text-caption text-secondary">
-          {error}
-        </p>
-      )}
-      {creating !== undefined && (
-        <CreateSidebarSection
-          channelName={creating?.label}
-          finalFocus={creating === null ? newSectionButton : false}
-          writable
-          refreshing={false}
-          retry={async () => {}}
-          close={() => setCreating(undefined)}
-          create={({ id, name }) => {
-            if (
-              !saved(
-                create(
-                  id,
-                  name,
-                  creating ?? undefined,
-                  groups.map((group) => group.id),
-                ),
-              )
-            )
-              throw new Error("Couldn’t save this section. Try again.");
-            setCreating(undefined);
-            return true;
+          onDragCancel={() => {
+            animateDrop.current = false;
+            setDragging(undefined);
           }}
-        />
-      )}
+          onDragEnd={({ active, over }) => {
+            setDragging(undefined);
+            const data = active.data.current;
+            animateDrop.current =
+              !!over &&
+              !reducedMotion &&
+              (data?.section
+                ? data.section !== over.id
+                : !!data?.entry &&
+                  over.id !== data.source &&
+                  over.id !== "rail:new-section");
+            if (!over) return;
+            if (data?.section)
+              value.reorder(
+                data.section,
+                over.id === "rail:top"
+                  ? (groups[0]?.id ?? data.section)
+                  : String(over.id),
+              );
+            else if (data?.entry) {
+              if (over.id === "rail:new-section") setCreating(data.entry);
+              else if (over.id !== data.source)
+                value.move(data.entry, String(over.id));
+            }
+          }}
+        >
+          {pageSection ? (
+            (groups.find((group) => group.id === pageSection)?.content ?? (
+              <EmptyState
+                icon={<ChatCircleIcon />}
+                title="Section unavailable"
+                description="This sidebar section may have been removed."
+              />
+            ))
+          ) : (
+            <>
+              {compact && (
+                <section className={styles.dock} aria-label="Sidebar sections">
+                  {groups.map((group) => (
+                    <div key={group.id} className={styles.dockTile}>
+                      <Tooltip content={group.title} hint="dock" side="right">
+                        <IconButton
+                          size="md"
+                          aria-label={group.title}
+                          aria-current={
+                            selectedSection === group.id ? "page" : undefined
+                          }
+                          data-selected={
+                            selectedSection === group.id || undefined
+                          }
+                          icon={group.icon ?? <SquaresFourIcon size={22} />}
+                          onClick={() => openSection(group.id)}
+                        />
+                      </Tooltip>
+                    </div>
+                  ))}
+                </section>
+              )}
+              <div hidden={compact}>
+                <div
+                  className={styles.groups}
+                  onKeyDownCapture={(event) => {
+                    // Escape belongs to the active move before the shell's rail dismissal.
+                    if (dragging && event.key === "Escape")
+                      event.preventDefault();
+                  }}
+                >
+                  <FirstSectionTarget />
+                  {groups.map((group) => (
+                    <motion.div
+                      key={group.id}
+                      layout="position"
+                      layoutDependency={layout}
+                      initial={false}
+                      transition={{
+                        layout: animateDrop.current
+                          ? { type: "spring", duration: 0.28, bounce: 0.15 }
+                          : { duration: 0 },
+                      }}
+                      onLayoutAnimationComplete={() => {
+                        animateDrop.current = false;
+                      }}
+                    >
+                      {group.content}
+                    </motion.div>
+                  ))}
+                </div>
+                <div className={styles.createSection}>
+                  <Button
+                    ref={newSectionButton}
+                    size="sm"
+                    variant="subtle"
+                    onClick={() => setCreating(null)}
+                  >
+                    New section
+                  </Button>
+                </div>
+                <NewSectionTarget />
+              </div>
+            </>
+          )}
+          {createPortal(
+            <DragOverlay dropAnimation={null}>
+              {dragging && (
+                <div className={styles.overlay}>
+                  <NavigationItem label={dragging.label} />
+                </div>
+              )}
+            </DragOverlay>,
+            document.body,
+          )}
+        </DndContext>
+        {error && (
+          <p role="alert" className="text-caption text-secondary">
+            {error}
+          </p>
+        )}
+        {creating !== undefined && (
+          <CreateSidebarSection
+            channelName={creating?.label}
+            finalFocus={creating === null ? newSectionButton : false}
+            writable
+            refreshing={false}
+            retry={async () => {}}
+            close={() => setCreating(undefined)}
+            create={({ id, name }) => {
+              if (
+                !saved(
+                  create(
+                    id,
+                    name,
+                    creating ?? undefined,
+                    groups.map((group) => group.id),
+                  ),
+                )
+              )
+                throw new Error("Couldn’t save this section. Try again.");
+              setCreating(undefined);
+              return true;
+            }}
+          />
+        )}
+      </ListedContext>
     </ArrangementContext>
   );
 }
@@ -629,13 +633,14 @@ export function RailDestinationRow({
   section: string;
   children: ReactNode;
 }) {
-  const arrangement = useContext(ArrangementContext);
-  const pinned = section === "pins" || arrangement?.isPinned(entry);
+  // The arrangement changes with every sidebar update. A row reads only what
+  // it shows; its menu reads the rest while open.
+  const listed = useContext(ListedContext);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement>();
   const drag = useDraggable({
     id: `row:${section}:${entry.id}`,
-    disabled: !!arrangement?.pageSection,
+    disabled: listed,
     data: { entry, source: section, label: entry.label },
   });
   return (
@@ -666,32 +671,54 @@ export function RailDestinationRow({
         {children}
       </ContextMenuTrigger>
       <MenuPopup anchor={menuAnchor}>
-        {arrangement?.renderRowActions?.(
-          entry,
-          () => setMenuOpen(false),
-          () =>
-            drag.node.current?.querySelector<HTMLElement>("button")?.focus(),
-        )}
-        <MenuItem onClick={() => arrangement?.onTogglePin(entry, !pinned)}>
-          {pinned ? "Unpin" : "Pin"}
-        </MenuItem>
-        <MenuGroup>
-          <MenuGroupLabel>Move to</MenuGroupLabel>
-          {arrangement?.groups.map((group) => (
-            <MenuItem
-              key={group.id}
-              disabled={group.id === section}
-              onClick={() => arrangement.move(entry, group.id)}
-            >
-              {group.title}
-            </MenuItem>
-          ))}
-        </MenuGroup>
-        <MenuItem onClick={() => arrangement?.create(entry)}>
-          New section…
-        </MenuItem>
+        <RowMenu
+          entry={entry}
+          section={section}
+          close={() => setMenuOpen(false)}
+          focus={() =>
+            drag.node.current?.querySelector<HTMLElement>("button")?.focus()
+          }
+        />
       </MenuPopup>
     </ContextMenuRoot>
+  );
+}
+
+function RowMenu({
+  entry,
+  section,
+  close,
+  focus,
+}: {
+  entry: RailEntry;
+  section: string;
+  close(): void;
+  focus(): void;
+}) {
+  const arrangement = useContext(ArrangementContext);
+  const pinned = section === "pins" || arrangement?.isPinned(entry);
+  return (
+    <>
+      {arrangement?.renderRowActions?.(entry, close, focus)}
+      <MenuItem onClick={() => arrangement?.onTogglePin(entry, !pinned)}>
+        {pinned ? "Unpin" : "Pin"}
+      </MenuItem>
+      <MenuGroup>
+        <MenuGroupLabel>Move to</MenuGroupLabel>
+        {arrangement?.groups.map((group) => (
+          <MenuItem
+            key={group.id}
+            disabled={group.id === section}
+            onClick={() => arrangement.move(entry, group.id)}
+          >
+            {group.title}
+          </MenuItem>
+        ))}
+      </MenuGroup>
+      <MenuItem onClick={() => arrangement?.create(entry)}>
+        New section…
+      </MenuItem>
+    </>
   );
 }
 function FirstSectionTarget() {

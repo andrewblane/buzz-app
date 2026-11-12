@@ -64,15 +64,20 @@ test("columns: messages arriving elsewhere, and switching conversations", async 
   test.skip(browserName !== "chromium", "DevTools counters are Chromium-only");
   await page.goto(app.origin);
   const rail = page.getByRole("navigation", { name: "Apps", exact: true });
-  await rail.getByRole("button", { name: "Open Team", exact: true }).click();
+  // PERF_LIST=closed measures the same work with only the sidebar cards.
+  const listed = process.env.PERF_LIST !== "closed";
+  if (listed)
+    await rail.getByRole("button", { name: "Open Team", exact: true }).click();
   const team = page.getByRole("region", { name: "Team", exact: true });
   const row = (id) =>
-    team.locator(`[data-activity-row="${id}"] [data-conversation-row]`);
+    listed
+      ? team.locator(`[data-activity-row="${id}"] [data-conversation-row]`)
+      : rail.locator(`[data-rail-channel="${id}"]`);
   await row("alpha").click();
   await expect(
     page.locator('section[data-channel-timeline="alpha"] [data-message-id]'),
   ).not.toHaveCount(0);
-  const rows = await team.locator("[data-activity-row]").count();
+  const rows = listed ? await team.locator("[data-activity-row]").count() : 0;
   const measure = await meter(page);
   await idle(page);
 
@@ -82,7 +87,8 @@ test("columns: messages arriving elsewhere, and switching conversations", async 
     for (let index = 0; index < burst; index++) {
       const text = `columns diagnostic ${index}`;
       app.append("primary", "beta", text, true, false);
-      await expect(row("beta")).toContainText(text);
+      if (listed) await expect(row("beta")).toContainText(text);
+      else await idle(page);
     }
     await idle(page);
   });

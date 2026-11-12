@@ -215,7 +215,7 @@ export const ActivityChannelRow = memo(function ActivityChannelRow({
       resolveName={name}
       unreadOnly={unreadOnly}
       selected={selected}
-      onOpen={() => actions.current?.channel(channel.id)}
+      onOpen={(channelId) => actions.current?.channel(channelId)}
     />
   );
 });
