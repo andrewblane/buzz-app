@@ -3450,8 +3450,9 @@ export class AgentRunners {
               .catch(() => [])
           ).find((found) => found.id === id)
         : undefined;
-      if (landed) return landed;
-      throw error;
+      if (!landed) throw error;
+      console.warn("Agent event confirmed after its receipt was lost", id);
+      return landed;
     }
   }
 }
