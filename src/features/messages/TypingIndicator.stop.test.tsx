@@ -530,3 +530,65 @@ it("keeps in-flow Solo status and controls in the same observed-thread scope", a
   await user.click(screen.getByRole("button", { name: "Stop Agent" }));
   expect(interrupt).toHaveBeenLastCalledWith(agent, "channel", root);
 });
+
+it("keeps a grouped Solo Stop pending when its request owner changes", async () => {
+  const f = fixture();
+  const user = userEvent.setup();
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const interrupt = vi.fn(() => pending);
+  const session = {
+    ...f.session,
+    agentActivity: { ...f.session.agentActivity, interrupt },
+  };
+  const local = [
+    {
+      scope: "test",
+      agent,
+      channelId: "channel",
+      threadRootId: root,
+      messageId: "first",
+      startedAt: 1,
+      state: "working" as const,
+      soloChat: true as const,
+      stoppable: true as const,
+      step: { tool: "Read", target: "first.txt" },
+    },
+    {
+      scope: "test",
+      agent,
+      channelId: "channel",
+      threadRootId: secondRoot,
+      messageId: "second",
+      startedAt: 2,
+      state: "waiting" as const,
+      soloChat: true as const,
+      stoppable: true as const,
+    },
+  ];
+  f.update([], { local });
+  render(<TypingIndicator session={session} channelId="channel" />);
+  await user.click(screen.getByRole("button", { name: "Reading first.txt" }));
+  try {
+    await user.click(screen.getByRole("button", { name: "Stop Agent" }));
+    f.update([], {
+      local: local.map((work) => ({ ...work, state: "working" as const })),
+    });
+    const stop = screen.getByRole("button", { name: "Stop Agent" });
+    expect(stop).toHaveAttribute("aria-disabled", "true");
+    expect(stop).toHaveTextContent("Stopping");
+    await user.click(stop);
+    expect(interrupt).toHaveBeenCalledExactlyOnceWith(
+      agent,
+      "channel",
+      "first",
+    );
+  } finally {
+    await act(async () => release());
+  }
+  expect(
+    screen.getByRole("button", { name: "Stop Agent" }),
+  ).not.toHaveAttribute("aria-disabled", "true");
+});

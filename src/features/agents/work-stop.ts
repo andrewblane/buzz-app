@@ -103,7 +103,9 @@ export function conversationWorkStops(
     return control
       ? [
           {
-            control,
+            control: continuous
+              ? { ...control, key: JSON.stringify([agent, channelId, null]) }
+              : control,
             work,
             threadRootId: continuous ? null : localWorkRoot(work),
           },
