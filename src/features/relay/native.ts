@@ -49,7 +49,7 @@ import { workflowHost, workflowRunsPath } from "../workflows/http";
 import { WORKFLOW_KINDS } from "../workflows/protocol";
 import { repoGitHost } from "../repos/git";
 
-import { PublishRejected } from "./outbox";
+import { PublishNotSent, PublishRejected } from "./outbox";
 
 import { readCoordinate, parseReadBlob } from "./read-state-model";
 import { readStateRefusal, type ReadStateSigning } from "./read-state-host";
@@ -611,6 +611,7 @@ export async function connectNativeTransport(
       ? {
           configArtifacts: {
             kinds: [ARTIFACT_KIND],
+            isNotSent: (error: unknown) => error instanceof PublishNotSent,
             async sign(event: EventTemplate, signal: AbortSignal) {
               if (event.kind !== ARTIFACT_KIND)
                 throw new Error("Not an artifact");

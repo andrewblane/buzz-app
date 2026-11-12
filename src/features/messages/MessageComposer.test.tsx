@@ -12127,6 +12127,47 @@ it("compares before local edits and Send even if the storage event has not arriv
   expect(h.input()).toHaveValue("Saved elsewhere");
 });
 
+it("saves a content-free conflict trace and preserves Keep my draft", async () => {
+  const h = mount();
+  h.fill("Private local body");
+  const invoke = vi.fn().mockRejectedValue(new Error("unavailable"));
+  vi.stubGlobal("isTauri", true);
+  vi.stubGlobal("__TAURI_INTERNALS__", { invoke });
+  try {
+    localStorage.setItem(
+      'buzz-view.v1:["scope","draft:channel"]',
+      JSON.stringify("Private saved body"),
+    );
+    await h.user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalled());
+    const [command, payload] = invoke.mock.calls.at(-1) ?? [];
+    expect(command).toBe("draft_diagnostics_save");
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toMatch(/Private|scope|channel|text|recipients/);
+    expect(payload).toMatchObject({
+      records: expect.arrayContaining([
+        expect.objectContaining({
+          operation: "send-start-conflict",
+          expected: "object",
+          current: "string",
+          sameExpected: false,
+          sameNext: false,
+        }),
+      ]),
+    });
+    expect(h.messages.send).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+    await h.user.click(screen.getByRole("button", { name: "Keep my draft" }));
+    expect(h.input()).toHaveValue("Private local body");
+    expect(readView("scope", "draft:channel", "")).toMatchObject({
+      text: "Private local body",
+    });
+    expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it("keeps the original draft after synchronous outbox rejection without a persistence callback", async () => {
   const retired = vi.fn();
   const h = mount({ onDraftSaved: retired });

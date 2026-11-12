@@ -1,3 +1,4 @@
+import { draftEditorId, traceDraft } from "../../shared/draft-diagnostics";
 import {
   soloModelPicksKey,
   parseSoloModelPicks,
@@ -28,7 +29,10 @@ import {
   useToastNotification,
 } from "../../shared/design-system/ui/Toast";
 import { writeClipboardText } from "../../shared/clipboard";
-import { SelectedMentionContext } from "./selected-mention-context";
+import {
+  AddressedAgentsContext,
+  SelectedMentionContext,
+} from "./selected-mention-context";
 import { DraftMentionRoster } from "./draft-mention-roster";
 import {
   allowsOutsideMentions,
@@ -191,6 +195,7 @@ const noChannels: ReturnType<ComposerSession["channels"]["list"]> = {
   channels: [],
 };
 const noSubscription = () => () => {};
+const noAgents: readonly string[] = [];
 
 type AcceptedDraft = {
   next: MentionDraft;
@@ -629,6 +634,23 @@ function Composer({
     return pending;
   });
   const revision = useRef(viewRevision(scope, draftKey));
+  const [diagnosticEditor] = useState(draftEditorId);
+  function diagnose(
+    operation: Parameters<typeof traceDraft>[2],
+    expected: string | null | undefined,
+    current: string | null | undefined,
+    next = JSON.stringify(valueRef.current),
+  ) {
+    traceDraft(scope, draftKey, operation, diagnosticEditor, {
+      expected,
+      current,
+      next,
+      flags:
+        Number(dirty.current) |
+        (Number(writing.current) << 1) |
+        (Number(!!sendAttempt.current) << 2),
+    });
+  }
   // Whether this mount seeded the shortcut's initial text, rather than
   // restoring a saved draft that may already have had its tag removed.
   const [seededKey] = useState(() =>
@@ -1112,14 +1134,20 @@ function Composer({
   };
   function persist(next: MentionDraft, expected = revision.current) {
     writing.current = true;
+    const current = viewRevision(scope, draftKey);
+    const serialized = JSON.stringify(next);
+    diagnose("persist", expected, current, serialized);
     // A value already saved by another writer, as the Huddle owner saves the
     // stub after a companion send, is this save's outcome, not a conflict.
     const result =
-      viewRevision(scope, draftKey) === JSON.stringify(next)
+      current === serialized
         ? "saved"
         : replaceView(scope, draftKey, expected, next);
     writing.current = false;
-    if (result === "saved") revision.current = JSON.stringify(next);
+    const saved = viewRevision(scope, draftKey);
+    const nextRevision = JSON.stringify(next);
+    diagnose(result, expected, saved, nextRevision);
+    if (result === "saved") revision.current = nextRevision;
     setConflict(result === "changed");
     setStorageFailed(result === "failed");
     return result;
@@ -1430,6 +1458,7 @@ function Composer({
     active && !editingDisabled && !!outbox?.supports(9),
   );
   function loadSaved(raw: string | null) {
+    diagnose("load", revision.current, raw);
     let next: MentionDraft;
     try {
       next = stageChatCards(
@@ -1455,6 +1484,7 @@ function Composer({
   // remain the chat's current choices, including edits made during an upload.
   const reconcileDraft = useEffectEvent(
     (restored?: MentionDraft, recoveredPicks?: DraftPicks) => {
+      traceDraft(scope, draftKey, "reconcile", diagnosticEditor);
       if (submission || editing.target || writing.current) return;
       if (accepted) {
         // The recovered revision can precede attachment adoption. The explicit
@@ -1471,6 +1501,7 @@ function Composer({
       }
       const current = viewRevision(scope, draftKey);
       if (current === undefined) return;
+      diagnose("reconcile", revision.current, current);
       const recovering = !!restored && current === JSON.stringify(restored);
       if (current === revision.current) {
         // The storage listener usually loads the recovered revision before
@@ -1491,6 +1522,7 @@ function Composer({
       )
         loadSaved(current);
       else if (dirty.current || sendAttempt.current) {
+        diagnose("changed", revision.current, current);
         setConflict(true);
         return;
       } else loadSaved(current);
@@ -1539,6 +1571,7 @@ function Composer({
   }, [session, recoveryKey, scope, draftKey]);
   function resolveDraft(keep: boolean) {
     const current = viewRevision(scope, draftKey);
+    diagnose(keep ? "keep" : "use-saved", revision.current, current);
     if (current === undefined) {
       setStorageFailed(true);
       return;
@@ -2630,9 +2663,14 @@ function Composer({
       input.current?.reset(recovering.next);
       return;
     }
-    if (!submission && viewRevision(scope, draftKey) !== revision.current) {
-      setConflict(true);
-      return;
+    if (!submission) {
+      const current = viewRevision(scope, draftKey);
+      diagnose("send-start", revision.current, current);
+      if (current !== revision.current) {
+        diagnose("send-start-conflict", revision.current, current);
+        setConflict(true);
+        return;
+      }
     }
     const choicesNow = resolvedPicks.current;
     const picksNow = choicesNow?.source ?? committedPicks.current;
@@ -2718,7 +2756,9 @@ function Composer({
           if (await handled) {
             attempt.signal.throwIfAborted();
             if (valueRef.current !== captured) return;
-            if (viewRevision(scope, draftKey) !== savedRevision) {
+            const current = viewRevision(scope, draftKey);
+            if (current !== savedRevision) {
+              diagnose("send-upload-conflict", savedRevision, current);
               setConflict(true);
               return;
             }
@@ -2872,7 +2912,9 @@ function Composer({
         )
       )
         return;
-      if (viewRevision(scope, draftKey) !== savedRevision) {
+      const preparedRevision = viewRevision(scope, draftKey);
+      if (preparedRevision !== savedRevision) {
+        diagnose("send-prepare-conflict", savedRevision, preparedRevision);
         setConflict(true);
         return;
       }
@@ -2912,7 +2954,9 @@ function Composer({
         if (!(await linkSharing.prepare(linkedChats, attempt.signal, current)))
           return;
         attempt.signal.throwIfAborted();
-        if (viewRevision(scope, draftKey) !== savedRevision) {
+        const publishRevision = viewRevision(scope, draftKey);
+        if (publishRevision !== savedRevision) {
+          diagnose("send-publish-conflict", savedRevision, publishRevision);
           setConflict(true);
           return;
         }
@@ -3360,18 +3404,23 @@ function Composer({
           <WorkspaceCompletion.Provider
             value={editing.target ? undefined : workspace}
           >
-            <ComposerCompletions
-              registry={extensions.completions}
-              editor={completion}
-              input={input}
-              session={session}
-              scope={scope}
-              channelId={channelId}
-              threadRootId={threadRootId}
-              inviteAgents={agentChoices && !editing.target}
-              replace={replaceCompletion}
-              resolved={chips.length ? { ...value, tokens: chips } : value}
-            />
+            <AddressedAgentsContext.Provider
+              value={editing.target ? noAgents : addressedKeys}
+            >
+              <ComposerCompletions
+                registry={extensions.completions}
+                identityMarks={extensions.identityMarks}
+                editor={completion}
+                input={input}
+                session={session}
+                scope={scope}
+                channelId={channelId}
+                threadRootId={threadRootId}
+                inviteAgents={agentChoices && !editing.target}
+                replace={replaceCompletion}
+                resolved={chips.length ? { ...value, tokens: chips } : value}
+              />
+            </AddressedAgentsContext.Provider>
           </WorkspaceCompletion.Provider>
         )}
         <BackgroundUploadStatus

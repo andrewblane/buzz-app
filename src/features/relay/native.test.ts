@@ -311,6 +311,15 @@ it("publishes config artifacts straight to the relay, re-sending identical bytes
     .publish(event, signal)
     .catch((error: unknown) => error);
   expect(refused).toBeInstanceOf(PublishRejected);
+  expect(transport.configArtifacts.isNotSent?.(refused)).toBe(true);
+  expect(
+    transport.configArtifacts.isNotSent?.(
+      new Error((refused as Error).message),
+    ),
+  ).toBe(false);
+  expect(
+    transport.configArtifacts.isNotSent?.(new PublishRejected("denied")),
+  ).toBe(false);
   expect((refused as Error).message).toBe(
     "rate-limited: quota exceeded; retry in 9s",
   );
