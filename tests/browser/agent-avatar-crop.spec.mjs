@@ -46,12 +46,25 @@ const savedArtwork = async (page) => {
       )
         (i >> 2) % 512 < 256 ? left++ : right++;
     return {
+      blank: !data.some((value, i) => i % 4 === 3 && value),
       size: [bitmap.width, bitmap.height],
       left: at(10, 256),
       right: at(500, 256),
       painted: { left, right },
     };
   });
+};
+
+// A cold WebKit can read a just-decoded image as blank once; read again.
+const paintedArtwork = async (page) => {
+  let artwork;
+  await expect
+    .poll(async () => {
+      artwork = await savedArtwork(page);
+      return artwork.blank;
+    })
+    .toBe(false);
+  return artwork;
 };
 
 const drag = async (page, locator, dx, dy) => {
@@ -85,15 +98,7 @@ test("pans and zooms an uploaded agent avatar into the saved artwork", async ({
     path: test.info().outputPath("agent-avatar-crop.png"),
   });
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  // A cold WebKit can read a just-decoded image as blank once; read again.
-  let saved;
-  await expect
-    .poll(async () => {
-      saved = await savedArtwork(page);
-      return saved.left[3];
-    })
-    .toBeGreaterThan(0);
-  const { size, left, right } = saved;
+  const { size, left, right } = await paintedArtwork(page);
   expect({ size, left, right }).toEqual({
     size: [512, 512],
     left: [255, 0, 0, 255],
@@ -159,7 +164,7 @@ test("pans and zooms an emoji over its background", async ({ page }) => {
     path: test.info().outputPath("agent-avatar-emoji.png"),
   });
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  const { size, painted } = await savedArtwork(page);
+  const { size, painted } = await paintedArtwork(page);
   expect(size).toEqual([512, 512]);
   expect(painted.left).toBe(0);
   expect(painted.right).toBeGreaterThan(0);
