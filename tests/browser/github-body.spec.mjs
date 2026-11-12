@@ -12,6 +12,10 @@ const after =
   "https://github.com/user-attachments/assets/dd1f7e4f-e2a4-4aec-b661-cb45032f29c5";
 const picture =
   "https://github.com/user-attachments/assets/cd0773ee-9861-46d9-8a0f-352ae951ec7f";
+const tableBefore =
+  "https://github.com/user-attachments/assets/5b8e2f41-0c7d-4a9e-b3f6-1d2c4e6a8b90";
+const tableAfter =
+  "https://github.com/user-attachments/assets/9a1c3e5f-7b2d-4f6a-8c0e-2b4d6f8a0c13";
 // GitHub media downloads redirect to the objects CDN; the packaged media
 // policy must allow the redirect origin, not only the original URL.
 const redirected =
@@ -25,7 +29,7 @@ const imagePath = fileURLToPath(
 const details = {
   title: "Render PR descriptions with inline media",
   state: "open",
-  body: `## Before\n\nThe description was **plain text**.\n\n${before}\n\n## After\n\nReview **formatted sections** and recordings in place.\n\n${after}\n\n### Checklist\n\n- [x] Preserve document order\n- [x] Keep original attachment links\n\n### Attachments\n\n- Video\n- Image\n\n1. Review\n2. Compare\n\n| Media | Result |\n| --- | --- |\n| Recordings | Inline players |\n\n<details><summary>Supporting evidence</summary><p>Captured after the change.</p><img src="${picture}" alt="Example attachment"><p><a href="https://github.com/user-attachments/files/99/source.zip">Source archive</a></p></details>`,
+  body: `## Before\n\nThe description was **plain text**.\n\n${before}\n\n## After\n\nReview **formatted sections** and recordings in place.\n\n${after}\n\n### Checklist\n\n- [x] Preserve document order\n- [x] Keep original attachment links\n\n### Attachments\n\n- Video\n- Image\n\n1. Review\n2. Compare\n\n| Media | Result |\n| --- | --- |\n| Recordings | Inline players |\n| ![Table before](${tableBefore}) | ![Table after](${tableAfter}) |\n\n<details><summary>Supporting evidence</summary><p>Captured after the change.</p><img src="${picture}" alt="Example attachment"><p><a href="https://github.com/user-attachments/files/99/source.zip">Source archive</a></p></details>`,
   body_html: `<video src="https://private-user-images.githubusercontent.com/1888043/659873452-81e77cff-0e61-4694-9a88-add0c1f997e4.mp4?jwt=expired"></video><video src="${after}"></video>`,
 };
 
@@ -71,6 +75,8 @@ test("PR media plays under the packaged media policy in a narrow GitHub panel", 
     [after, videoPath, "video/mp4"],
     [redirected, videoPath, "video/mp4"],
     [picture, imagePath, "image/png"],
+    [tableBefore, imagePath, "image/png"],
+    [tableAfter, imagePath, "image/png"],
   ]) {
     const bytes = await readFile(path);
     await context.route(url, (route) => {
@@ -251,8 +257,9 @@ test("PR media plays under the packaged media policy in a narrow GitHub panel", 
           };
         }),
     );
-    // Two videos, the table and the expanded image must all be measured.
-    expect(overflow).toHaveLength(4);
+    // Two videos, the table, its two images and the expanded image must all
+    // be measured: table images shrink with their columns to fit the panel.
+    expect(overflow).toHaveLength(6);
     expect(overflow.every(({ left, right }) => left && right)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`panel-${width}.png`) });
   }
@@ -273,7 +280,10 @@ test("PR media plays under the packaged media policy in a narrow GitHub panel", 
     "https://github.com/user-attachments/files/99/source.zip",
   );
   await page.screenshot({ path: testInfo.outputPath("html-evidence.png") });
-  await panel.getByRole("button", { name: "Open image fullscreen" }).click();
+  await panel
+    .getByRole("button", { name: "Open image fullscreen" })
+    .filter({ has: page.getByAltText("Example attachment") })
+    .click();
   await expect(
     page
       .getByRole("dialog", { name: "Image attachment" })
