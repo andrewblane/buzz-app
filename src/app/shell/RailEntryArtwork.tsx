@@ -16,6 +16,7 @@ import styles from "./RailNavigation.module.css";
 export function RailEntryArtwork({
   entry,
   avatarOnly = false,
+  size = "compact",
   selected,
   session,
   channelsById,
@@ -26,6 +27,7 @@ export function RailEntryArtwork({
 }: {
   entry: RailEntry;
   avatarOnly?: boolean;
+  size?: "compact" | "fill";
   selected: boolean;
   session: RelaySession;
   channelsById: ReadonlyMap<string, ChannelSummary>;
@@ -61,7 +63,7 @@ export function RailEntryArtwork({
     if (entry.kind === "person" || entry.kind === "agent")
       return (
         <Avatar
-          size={avatarOnly ? "fill" : "compact"}
+          size={avatarOnly ? "fill" : size}
           shape={entry.kind === "agent" ? "squircle" : "circle"}
           src={avatarMedia(entry.picture, session.media)}
           alt=""
@@ -74,7 +76,7 @@ export function RailEntryArtwork({
       );
       return (
         <Avatar
-          size="compact"
+          size={size}
           shape="squircle"
           src={avatarMedia(
             agent?.avatar ?? (agent && profiles.get(agent.pubkey)?.picture),
@@ -87,11 +89,8 @@ export function RailEntryArtwork({
     }
     const Icon = entry.kind === "chat" ? ChatCircleIcon : StorefrontIcon;
     return entry.kind === "channel" ? (
-      <ChannelAvatar
-        size={avatarOnly ? "fill" : "compact"}
-        name={entry.label}
-      />
-    ) : avatarOnly ? (
+      <ChannelAvatar size={avatarOnly ? "fill" : size} name={entry.label} />
+    ) : avatarOnly || size === "fill" ? (
       <Avatar
         size="fill"
         alt=""

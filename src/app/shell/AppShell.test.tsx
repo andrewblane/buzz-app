@@ -165,6 +165,19 @@ it("hides and shows a contributed sidebar without re-rendering its content", asy
   expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeVisible();
   rerender(shell("buzz.channels/channels"));
   expect(screen.getByRole("complementary", { name: "Sidebar" })).toBeVisible();
+
+  const resize = screen.getByRole("separator", { name: "Resize app sidebar" });
+  fireEvent.keyDown(resize, { key: "Home" });
+  expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeVisible();
+  expect(resize.closest(".shell-workspace")).toHaveStyle({
+    "--shell-rail-width": "240px",
+  });
+  fireEvent.keyDown(resize, { key: "End" });
+  expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeVisible();
+  fireEvent.doubleClick(resize);
+  expect(resize.closest(".shell-workspace")).toHaveStyle({
+    "--shell-rail-width": "304px",
+  });
 });
 
 it.each([true, false])(

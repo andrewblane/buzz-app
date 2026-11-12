@@ -150,7 +150,11 @@ export const apply: PluginModule["apply"] = (ctx) => {
       const section = isSidebarSectionRoute(params)
         ? params.section
         : undefined;
-      if (section && section !== "messages" && section !== "solo")
+      if (
+        section &&
+        !["messages", "solo", "pins", "agents"].includes(section) &&
+        !section.startsWith("custom:")
+      )
         return (
           <RailSectionPage
             section={section}
@@ -174,7 +178,7 @@ export const apply: PluginModule["apply"] = (ctx) => {
           relay={relay}
           navigator={navigator}
           navigation={navigation}
-          section={section === "solo" ? "solo" : undefined}
+          section={section}
           list={(section, listNavigator) => (
             <RailSectionPage
               section={section}

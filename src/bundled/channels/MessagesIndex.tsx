@@ -47,7 +47,7 @@ export function MessagesIndex({
   navigation?: PageNavigation | undefined;
   host: ConversationHostServices;
   extensions: ConversationExtensions;
-  section?: "messages" | "solo" | undefined;
+  section?: string | undefined;
   sidebarSections?: SidebarSections | undefined;
   list(section: string, navigator: Navigation): ReactNode;
   detail?: ReactNode;

@@ -18,10 +18,8 @@ import { targetKey } from "../../features/navigation/targets";
 import type { Navigation } from "../../features/navigation/controller";
 import type { RegisteredPage } from "../../features/pages/service";
 import { useAgentChoices } from "../../features/agents/use-choices";
-import { AgentAvatarArtworkProvider } from "../../features/agents/AgentAvatarArtworkProvider";
 import { canMessageAgent } from "../../features/agents/choices";
 import { archiveHides } from "../../features/relay/identity-archives";
-import { readSearchUsage } from "../../features/search/usage";
 import { dmLabel } from "../../bundled/inbox/dm-label";
 import { useIdentityNames } from "../../features/identity-names/react";
 import { useSavedHiddenDmIds } from "../../bundled/channels/useHiddenDms";
@@ -39,7 +37,6 @@ import {
   PinIcon,
   PlusIcon,
   StorefrontIcon,
-  RobotIcon,
   UserIcon,
 } from "../../shared/design-system/icons";
 import { useRailLayout } from "./rail-layout";
@@ -52,7 +49,6 @@ import { useRailPins, type RailEntry } from "./rail-pins";
 import { useChannelNavigation } from "../../features/channel-navigation/ChannelNavigationState";
 import { MenuItem } from "../../shared/design-system/ui/Menu";
 import styles from "./RailNavigation.module.css";
-import { preferredRailAgents } from "./rail-activity";
 import {
   ConversationList,
   CollectionFilters,
@@ -374,10 +370,11 @@ export function RailNavigation({
             entry.target.messageId === target.messageId)
       : targetKey(entry.target) === targetKey(target);
   };
-  const artwork = (entry: RailEntry, avatarOnly = false) => (
+  const artwork = (entry: RailEntry, avatarOnly = false, feed = false) => (
     <RailEntryArtwork
       entry={entry}
       avatarOnly={avatarOnly}
+      size={feed ? "fill" : "compact"}
       selected={isSelected(entry)}
       session={session}
       channelsById={channelsById}
@@ -387,7 +384,7 @@ export function RailNavigation({
       agentEntries={agentEntries}
     />
   );
-  const row = (entry: RailEntry, avatarOnly = false) => {
+  const row = (entry: RailEntry, avatarOnly = false, feed = false) => {
     const target = entry.target;
     const channel =
       target.kind === "conversation"
@@ -412,7 +409,29 @@ export function RailNavigation({
       disabled: opening === entry.id,
       onClick: () => void open(entry),
     };
-    const control = channel ? (
+    const control = feed ? (
+      <RailConversationItem
+        key={entry.id}
+        {...props}
+        layout="feed"
+        session={session}
+        channel={channel}
+        destination={entry.target}
+        avatar={artwork(entry, false, true)}
+        place={entry.label}
+        preview={
+          entry.kind === "agent"
+            ? "Agent · Direct message"
+            : entry.kind === "person"
+              ? "Direct message"
+              : entry.kind === "page"
+                ? "App"
+                : target.kind === "conversation" && target.threadRootId
+                  ? "Thread"
+                  : "Message"
+        }
+      />
+    ) : channel ? (
       <RailConversationItem
         key={entry.id}
         {...props}
@@ -483,22 +502,35 @@ export function RailNavigation({
         ),
     [channels],
   );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a visit records fresh usage.
-  const topAgents = useMemo(
-    () =>
-      preferredRailAgents(agentEntries, channels, readSearchUsage(partition)),
-    [agentEntries, channels, partition, navigation.attempt.id],
-  );
   const plugins = pages.filter(
     (page) =>
-      page.primary &&
+      (page.primary || page.key === "buzz.agents/agents") &&
       ![
         "buzz.channels/channels",
         "buzz.inbox/inbox",
         "buzz.drafts-and-sent/drafts-sent",
-        "buzz.agents/agents",
       ].includes(page.key),
   );
+  const target = navigation.entry.target;
+  const currentChannel =
+    target.kind === "conversation"
+      ? channels.find((channel) => channel.id === target.channelId)
+      : undefined;
+  const activeDockSection =
+    selectedSection ??
+    (currentChannel?.channelType === "solo" ||
+    (sectionRoute &&
+      typeof sectionRoute === "object" &&
+      "kind" in sectionRoute &&
+      sectionRoute.kind === "solo-draft")
+      ? "solo"
+      : [
+            "buzz.channels/channels",
+            "buzz.inbox/inbox",
+            "buzz.drafts-and-sent/drafts-sent",
+          ].includes(selected)
+        ? "messages"
+        : "navigation");
   const teamPageIds = ["buzz.inbox/inbox", "buzz.drafts-and-sent/drafts-sent"];
   const teamPages = teamPageIds.flatMap((key) =>
     pages.filter((page) => page.key === key),
@@ -564,11 +596,6 @@ export function RailNavigation({
           data-rail-view-more=""
           aria-label="Open Team"
           icon={<ArrowRightIcon size={18} />}
-          selected={
-            navigation.entry.target.kind === "page" &&
-            !isSidebarSectionRoute(navigation.entry.target.route?.params) &&
-            selected === "buzz.channels/channels"
-          }
           onClick={() => onSelect("buzz.channels/channels")}
         />
       }
@@ -599,7 +626,7 @@ export function RailNavigation({
         scope={scope}
         navigator={navigator}
         target={navigation.entry.target}
-        renderOther={(entry) => row(entry)}
+        renderOther={(entry) => row(entry, false, true)}
       />
     );
   }
@@ -622,12 +649,12 @@ export function RailNavigation({
             scope={scope}
             navigator={navigator}
             target={navigation.entry.target}
-            renderOther={(entry) => row(entry)}
+            renderOther={(entry) => row(entry, false, true)}
           />
         )}
         pageSection={pageSection}
         compact={compact}
-        selectedSection={selectedSection}
+        selectedSection={activeDockSection}
         openSection={(id) =>
           void navigator.open(sidebarSectionTarget(scope, id))
         }
@@ -845,36 +872,6 @@ export function RailNavigation({
                   <p className={styles.note}>No Solo chats yet.</p>
                 )}
               </RailGroup>
-            ),
-          },
-          {
-            id: "agents",
-            title: "Agents",
-            icon: <RobotIcon size={22} />,
-            content: (
-              <AgentAvatarArtworkProvider>
-                <RailGroup
-                  avatarGrid
-                  id="agents"
-                  title="Agents"
-                  rows={topAgents.map((entry) => sourceRow(entry, "agents"))}
-                  footer={
-                    <NavigationItem
-                      label="Open Agents"
-                      data-rail-view-more=""
-                      aria-label="Open Agents"
-                      icon={<ArrowRightIcon size={18} />}
-                      onClick={() => onSelect("buzz.agents/agents")}
-                    />
-                  }
-                >
-                  {!topAgents.length && (
-                    <p className={styles.note}>
-                      {agents.pending ? "Loading agents…" : "No agents yet."}
-                    </p>
-                  )}
-                </RailGroup>
-              </AgentAvatarArtworkProvider>
             ),
           },
           ...contributed.map((section) => ({

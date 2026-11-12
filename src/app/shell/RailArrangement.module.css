@@ -1,5 +1,3 @@
-@reference "../../shared/styles/globals.css";
-
 .groups {
   position: relative;
   display: flex;
@@ -38,9 +36,6 @@
 }
 .dockTile {
   display: flex;
-  padding: var(--space-1);
-  border-radius: var(--radius-icon-button);
-  background: var(--surface-rail-card);
 }
 .pageRows {
   padding-inline: var(--space-panel-inset);
@@ -129,7 +124,7 @@
   }
 }
 .newSectionReveal[data-drop-target] {
-  background: var(--bg-glass-secondary-hover);
+  background: var(--surface-message-own-hover);
 }
 .row {
   min-width: 0;
@@ -149,12 +144,6 @@
 }
 .grabDots {
   opacity: 0.4;
-}
-.group [data-rail-view-more] {
-  opacity: 0.5;
-}
-.group [data-rail-view-more]:focus-visible {
-  opacity: 1;
 }
 /* Tabler's outer columns move inward 1px: 4px dots with 2px gaps. */
 .grabDots path:nth-child(-n + 2) {
@@ -248,10 +237,10 @@ html[data-keyboard-input] .group:focus-within [data-rail-card-actions] {
   pointer-events: none;
 }
 .newSectionReveal {
-  @apply glass-secondary;
   position: relative;
   padding: var(--space-1) var(--space-4);
-  color: var(--text-standard);
+  background: var(--surface-message-own);
+  color: var(--text-message-own);
   border-radius: var(--radius-pill);
   opacity: 0;
   transform: translateY(var(--space-4)) scale(0.95);
@@ -293,15 +282,5 @@ html[data-keyboard-input] .group:focus-within [data-rail-card-actions] {
   .newSection[data-shown] .newSectionReveal[data-drop-target] {
     transform: none;
     transition: opacity var(--time-fast) var(--ease-state);
-  }
-}
-
-@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
-  .newSectionReveal {
-    background: var(--surface-panel);
-    backdrop-filter: none;
-  }
-  .newSectionReveal[data-drop-target] {
-    background: var(--affordance-subtle-hover);
   }
 }

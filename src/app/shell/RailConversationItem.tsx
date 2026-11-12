@@ -72,12 +72,16 @@ export function RailConversationItem({
   channel,
   destination,
   avatarOnly = false,
+  layout = "navigation",
+  preview = null,
   ...props
 }: {
   session: RelaySession;
-  channel: ChannelSummary;
+  channel?: ChannelSummary | undefined;
   destination: RailEntry["target"];
   avatarOnly?: boolean;
+  layout?: "navigation" | "feed";
+  preview?: ComponentProps<typeof ConversationRow>["preview"];
 } & Omit<
   ComponentProps<typeof ConversationRow>,
   "layout" | "state" | "time" | "preview"
@@ -86,9 +90,9 @@ export function RailConversationItem({
   return (
     <ConversationRow
       {...props}
-      layout={avatarOnly ? "avatar" : "navigation"}
+      layout={avatarOnly ? "avatar" : layout}
       time={null}
-      preview={null}
+      preview={preview}
       state={unread ? "unread" : "read"}
       aria-description={unread ? "Unread messages" : undefined}
     />

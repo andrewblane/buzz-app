@@ -15,6 +15,7 @@
 }
 .frame[data-compact] .heading {
   flex-direction: column;
+  padding: 0;
 }
 .frame[hidden] {
   display: none;
@@ -30,7 +31,6 @@
 .primary {
   margin-block-end: var(--space-1);
 }
-.frame[data-compact] .heading,
 .frame[data-compact] .primary {
   padding: var(--space-1);
 }

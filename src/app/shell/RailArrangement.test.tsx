@@ -61,6 +61,7 @@ test.each([false, true])(
     render(
       <RailArrangement
         partition="preview-test"
+        selectedSection="solo"
         isPinned={() => false}
         onTogglePin={() => {}}
         openSection={() => {}}
@@ -87,7 +88,9 @@ test.each([false, true])(
     expect(screen.getByRole("button", { name: "Chat 4" })).not.toBeNull();
     expect(screen.queryByRole("button", { name: "Chat 5" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Chat 6" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Open Solo" })).not.toBeNull();
+    const open = screen.getByRole("button", { name: "Open Solo" });
+    expect(open.hasAttribute("data-selected")).toBe(false);
+    expect(open.hasAttribute("aria-current")).toBe(false);
     if (withLeading) {
       const activity = screen.getByRole("button", {
         name: "activity",

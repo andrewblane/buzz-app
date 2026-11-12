@@ -13,6 +13,8 @@
   background: transparent;
   cursor: ew-resize;
   touch-action: none;
+  /* The grip straddles the divider; native hr overflow must not clip it. */
+  overflow: visible;
 }
 .handle::after {
   /* The painted grip must use the handle’s hit target and cursor. */
@@ -25,6 +27,7 @@
   height: 3.5rem;
   border-radius: var(--radius-pill);
   background: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--surface-panel);
   content: "";
   opacity: 0;
   transform: translate(-50%, -50%) scaleY(calc(40 / 56));
@@ -59,7 +62,8 @@
 @media (hover: hover) and (pointer: fine) {
   .handle:hover::after {
     opacity: var(--resize-grip-opacity, 1);
-    transform: translate(-50%, -50%) scaleY(1);
+    transform: translate(calc(-50% + var(--resize-pointer-offset, 0px)), -50%)
+      scaleY(1);
   }
   .handle:hover::before {
     opacity: 1;
@@ -92,7 +96,8 @@ html[data-keyboard-navigation] .handle::after,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .handle::after {
+  .handle::after,
+  .handle:hover::after {
     transition: none;
     transform: translate(-50%, -50%) scaleY(1);
   }

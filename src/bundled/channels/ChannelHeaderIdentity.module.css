@@ -21,12 +21,6 @@
   align-items: center;
   pointer-events: none;
 }
-.identity:hover {
-  background: var(--affordance-subtle-hover);
-}
-.identity:active {
-  background: var(--affordance-subtle-pressed);
-}
 
 .soloHeader {
   flex: none;

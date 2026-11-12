@@ -493,6 +493,15 @@
     width: var(--size-control-lg);
     height: var(--size-control-lg);
   }
+  /* Compact rail utilities match the section tiles' control and glyph scale. */
+  .buzz-dock-controls .buzz-button[data-icon-variant] {
+    width: var(--size-control-lg);
+    height: var(--size-control-lg);
+  }
+  .buzz-dock-controls .buzz-button .buzz-button-label > svg {
+    width: calc(var(--space-5) + var(--space-half));
+    height: calc(var(--space-5) + var(--space-half));
+  }
   /* A split button is one capsule: the action, then its menu. Filled halves
      part with a hairline; outlined halves share one stroke. */
   .buzz-split-button {
@@ -1673,6 +1682,8 @@
     > h2:not(:first-child) {
     @apply glass-secondary;
     max-width: 100%;
+    margin-block-start: calc(-1 * var(--space-1));
+    position: relative;
     border-radius: var(--radius-pill);
     padding: var(--space-1) var(--space-3);
   }

@@ -245,7 +245,10 @@ export function RailArrangement({
                   <div key={group.id} className={styles.dockTile}>
                     <Tooltip content={group.title} hint="dock" side="right">
                       <IconButton
-                        size="md"
+                        size="large"
+                        variant={
+                          selectedSection === group.id ? "prominent" : "subtle"
+                        }
                         aria-label={group.title}
                         aria-current={
                           selectedSection === group.id ? "page" : undefined
@@ -440,7 +443,7 @@ export function RailGroup({
   if (
     arrangement?.pageSection === id &&
     arrangement.renderSectionList &&
-    (id === "pins" || id.startsWith("custom:"))
+    (id === "pins" || id === "agents" || id.startsWith("custom:"))
   )
     return arrangement.renderSectionList(
       id,
@@ -561,7 +564,6 @@ export function RailGroup({
             data-rail-view-more=""
             aria-label={`Open ${title}`}
             icon={<ArrowRightIcon size={18} />}
-            selected={arrangement?.selectedSection === id}
             onClick={() => arrangement?.openSection(id)}
           />
         )}

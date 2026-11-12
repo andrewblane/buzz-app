@@ -1,0 +1,6 @@
+/* Match ResizeHandle's unlayered styles so it never becomes a grid item. */
+hr.railResize {
+  position: absolute;
+  inset-block: 0;
+  left: var(--shell-rail-width);
+}

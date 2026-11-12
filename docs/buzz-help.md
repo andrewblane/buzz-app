@@ -464,7 +464,9 @@ for 30 days expires.
   views as Team; the filter icon before All chooses whose activity to show and whether
   to show unread only. Team, Activity, and Solo keep the list on the left and the
   selected conversation on the right. Click a sidebar card’s title or **Open [section name]**
-  to open its full list. Use the card’s grabber to reorder it. **Open [section name]** opens the list by default;
+  to open its full list. **Agents** is a single row in Plugins that opens the agent directory. Drag the outer sidebar’s right edge to resize it;
+  double-click the divider to restore its default width. Use the top sidebar
+  toggle to switch between the expanded cards and compact icon rail. Use the card’s grabber to reorder it. **Open [section name]** opens the list by default;
   sidebar chat rows, chat pins, and direct conversation links open with the list
   collapsed. Use the sidebar toggle at the left of the conversation header to
   show or hide the list without leaving the chat. Drag the list’s right edge to

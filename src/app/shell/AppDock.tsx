@@ -57,7 +57,9 @@ export function AppDock({
       data-search-external={!search || undefined}
     >
       {header && (
-        <div className={`${sectionStyles.group} ${styles.heading}`}>
+        <div
+          className={`${sectionStyles.group} ${styles.heading} ${compact ? "buzz-dock-controls" : ""}`}
+        >
           {header}
         </div>
       )}

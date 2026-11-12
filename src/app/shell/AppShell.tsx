@@ -1,6 +1,8 @@
 import { ActivityNavigationProvider } from "./ActivityNavigation";
 import { PageNavigation } from "./PageNavigation";
 import { AppDock } from "./AppDock";
+import styles from "./AppShell.module.css";
+import { ResizeHandle } from "../../features/panels/ResizeHandle";
 import { RailNavigation } from "./RailNavigation";
 import { navigationOwner, orderPages, pagePlacement } from "./presentation";
 import {
@@ -9,6 +11,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ComponentProps,
   type ReactNode,
   type Ref,
@@ -178,6 +181,11 @@ function AppShellContent({
       (page) => page.key === selected && (page.primary || !!page.sidebar),
     );
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [railWidth, setRailWidth] = useState(304);
+  const railWorkspace = useRef<HTMLDivElement>(null);
+  const resizeRail = (width: number) => {
+    setRailWidth(Math.min(440, Math.max(240, width)));
+  };
   const [navigationOpen, setNavigationOpen] = useState(false);
   const navigationToggle = useRef<HTMLButtonElement>(null);
   const visibleSidebar =
@@ -444,13 +452,37 @@ function AppShellContent({
       </header>
 
       <div
+        ref={railWorkspace}
         className="shell-workspace"
+        style={
+          {
+            "--shell-rail-width": compactRail
+              ? "calc(var(--size-control-lg) + 2 * var(--space-1))"
+              : `${railWidth}px`,
+          } as CSSProperties
+        }
         data-detail-container=""
         data-feed-layout={activityPage || undefined}
         data-rail-open={visibleRail || undefined}
         data-rail-compact={compactRail || undefined}
       >
         {dock}
+        {!narrow && !compactRail && (
+          <ResizeHandle
+            label="Resize app sidebar"
+            width={railWidth}
+            min={240}
+            max={440}
+            target={railWorkspace}
+            property="--shell-rail-width"
+            className={styles.railResize}
+            setWidth={resizeRail}
+            reset={() => {
+              setRailWidth(304);
+              setSidebarOpen(true);
+            }}
+          />
+        )}
         <div
           ref={workspaceRef}
           className="shell-dialog-frame"

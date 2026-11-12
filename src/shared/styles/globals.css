@@ -381,9 +381,6 @@
     grid-template-columns: minmax(0, 1fr);
     padding-inline: 0;
   }
-  .shell-workspace[data-rail-compact] {
-    --shell-rail-width: calc(var(--size-control) + var(--space-4));
-  }
   .shell-workspace:not([data-rail-open], [data-rail-compact]) {
     grid-template-columns: minmax(0, 1fr);
   }
