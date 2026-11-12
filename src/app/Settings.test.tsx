@@ -3472,7 +3472,7 @@ it("routes a managed plugin's updates through the managed review instead of the 
     "https://example.com/plugins",
     "v1",
     undefined,
-    { path: "dist" },
+    { commit: pinned, path: "dist" },
   );
 });
 
