@@ -2701,3 +2701,108 @@ it.each([
     }
   },
 );
+
+it("keeps one Solo bubble on the newest working request, preserving other agents and outcomes", () => {
+  const local = createLocalAgentActivity();
+  const f = fixture(local);
+  const begin = (agent: string, messageId: string) =>
+    local.begin({
+      scope: "test",
+      channelId: "c",
+      threadRootId: messageId,
+      messageId,
+      agent,
+      soloChat: true,
+    });
+  const first = begin(A, root);
+  first.started();
+  const other = begin(B, root);
+  other.started();
+  const second = begin(A, next);
+  const view = render(
+    <>
+      <div data-testid="first">
+        <ActivityAccessory
+          {...f.props}
+          threadRootId={undefined}
+          messageLayout="timeline"
+        />
+      </div>
+      <div data-testid="second">
+        <ActivityAccessory
+          {...f.props}
+          threadRootId={undefined}
+          messageLayout="timeline"
+          message={{ ...f.props.message, id: next, createdAt: 2 }}
+        />
+      </div>
+    </>,
+  );
+  try {
+    // A queued follow-up does not duplicate the current worker.
+    expect(screen.getByTestId("second")).toBeEmptyDOMElement();
+    act(() => second.started());
+    expect(
+      within(screen.getByTestId("first")).getByRole("button", {
+        name: /^View agent activity: Bubbles/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("second")).getByRole("button", {
+        name: /^View agent activity: Blossom/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: /^View agent activity: Blossom/ }),
+    ).toHaveLength(1);
+    // The earlier request still has an independent outcome, not a fake success.
+    act(() =>
+      first.finish({
+        ok: false,
+        error: "Could not complete the earlier request",
+      }),
+    );
+    expect(screen.getByTestId("first")).toHaveTextContent("Couldn’t finish");
+    act(() => second.finish({ ok: true }));
+    expect(screen.getByTestId("second")).toBeEmptyDOMElement();
+  } finally {
+    view.unmount();
+    f.dispose();
+  }
+});
+
+it("preserves separate working bubbles for actual Solo threads", () => {
+  const local = createLocalAgentActivity();
+  const f = fixture(local);
+  for (const messageId of [root, next])
+    local
+      .begin({
+        scope: "test",
+        channelId: "c",
+        threadRootId: messageId,
+        messageId,
+        agent: A,
+        soloChat: true,
+        thread: true,
+      })
+      .started();
+  const view = render(
+    <>
+      <ActivityAccessory {...f.props} messageLayout="thread" />
+      <ActivityAccessory
+        {...f.props}
+        threadRootId={next}
+        messageLayout="thread"
+        message={{ ...f.props.message, id: next }}
+      />
+    </>,
+  );
+  try {
+    expect(
+      screen.getAllByRole("button", { name: /^View agent activity: Blossom/ }),
+    ).toHaveLength(2);
+  } finally {
+    view.unmount();
+    f.dispose();
+  }
+});

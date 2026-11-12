@@ -7,6 +7,7 @@ import {
   sendOnlyTo,
 } from "./navigation.mjs";
 import { setPluginEnabled } from "./plugin-settings.mjs";
+import { settle } from "./timeline.mjs";
 
 const chat = "33333333-3333-4333-8333-333333333333";
 const agent =
@@ -64,8 +65,12 @@ test("Solo follow-ups share one agent Activity row", async ({
   // Live message bubbles own the working cue. Without that plugin, the host
   // fallback still groups continuous Solo work into one actionable row.
   await expect(
-    page.getByRole("button", { name: /^View agent activity:/ }).first(),
-  ).toBeVisible();
+    page.getByRole("button", { name: /^View agent activity:/ }),
+  ).toHaveCount(1);
+  await settle(page);
+  await page.screenshot({
+    path: testInfo.outputPath("solo-followups-message-bubble.png"),
+  });
   await expect(activity).toHaveCount(0);
   await openSettings(page);
   await selectSettingsSection(page, "Manage plugins");

@@ -54,6 +54,7 @@ import {
   type RequestWork,
 } from "../../features/agents/request-work";
 import {
+  localActivity,
   localWorkLabel,
   type WorkStep,
 } from "../../features/agents/local-activity";
@@ -187,7 +188,23 @@ function MessageActivity(
           work.channelId === channelId &&
           work.messageId === messageId,
       );
-      if (local.length)
+      if (local.length) {
+        // Solo follow-ups steer one conversation. Its newest working request
+        // owns the bubble; waiting follow-ups and older requests add no copy.
+        if (
+          (entry.state === "working" || entry.state === "waiting") &&
+          local.some((work) => work.soloChat && !work.thread)
+        ) {
+          const current = localActivity(
+            {
+              local: (snapshot.local ?? [])
+                .filter((work) => work.soloChat && !work.thread)
+                .reverse(),
+            },
+            channelId,
+          ).get(entry.agent);
+          if (current?.messageId !== messageId) return false;
+        }
         return local.some(
           (work) =>
             !work.thread &&
@@ -197,6 +214,7 @@ function MessageActivity(
               work.threadRootId === message.id
             ),
         );
+      }
       const turns = activityTranscript(entry.selected.records, {
         agent: entry.agent,
         channelId,
