@@ -496,6 +496,11 @@ Profile replacement does not establish relay ownership transfer or revocation.
 The viewer signs the unchanged Delete command and the relay enforces its stored
 ownership and current channel state. A definitive rejection retains the channel
 and recoverable confirmation; uncertain delivery still blocks blind resubmission.
+A Delete refused by the client's relay-request pause (bare `ApiPaused`, which can only
+escape `run` before publication) keeps its confirmation open with the remaining wait;
+**Retry** enables when the pause ends and reruns the full `run`, fresh checks included.
+It never starts by itself, and a pause wrapped as unconfirmed or reported by publication
+keeps the ordinary failure.
 Existing membership requirements remain; nonmember access and community-admin
 overrides are not added. Invalid member keys and duplicate entries still fail
 closed in the confirmation check.
@@ -1183,8 +1188,16 @@ member neither deletes their identity nor stops their agents.
 
 Role change and removal use deliberate confirmation steps in the same dialog,
 initially focused on Cancel. Removal shows only the avatar/name and actions;
-Cancel returns to the list. Errors appear below Search, outside the scrolling
-list; pending and success banners are omitted.
+Cancel returns to the list. Leaving either step keeps the list's scroll position
+and returns focus to that member's actions, including while a confirmed change
+is pending. When a confirmed removal takes the row away, focus moves to the
+actions of the member now in its place, the one before it, or Search when none
+is left, unless focus has moved elsewhere; a failed or uncertain removal leaves
+focus on the member. An addition's confirmation returns to Search. Errors appear
+below Search, outside the scrolling list. Only a confirmed change's own error
+scrolls the list, to keep that member's actions in view, and only while focus
+and the list are where the change left them. Pending and success banners are
+omitted.
 The service checks fresh actor/target state before signing and again
 before publication, rejects altered signer payloads, and confirms the requested
 role or roster absence with a fresh read. Relay acceptance alone is not success.

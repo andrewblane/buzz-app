@@ -121,9 +121,19 @@ const empty: State = {
   thread: undefined,
   settings: undefined,
 };
+/** Specialized readers opt into native profile history without changing catch-all panels. */
+export const profileContentPanel = (entry: PanelOpening) =>
+  entry.panel.key === "buzz.profiles/profile" ||
+  ((
+    entry.panel.component as typeof entry.panel.component & {
+      profileHistory?: boolean;
+    }
+  )?.profileHistory === true &&
+    !!(profilePanelKey(entry.target) ?? profileActivityViewKey(entry.target)));
+
 /** A version inspector changes the address within one profile, not its tab. */
 export const panelContentTarget = (entry: PanelOpening) =>
-  entry.panel.key === "buzz.profiles/profile" &&
+  profileContentPanel(entry) &&
   profileHistoryActive(entry.target) &&
   profilePanelKey(entry.target)
     ? (entry.target.split("#")[0] as string)
@@ -835,7 +845,8 @@ export function useChannelTabState(
           tabs: tab ? [tab] : [],
           selected: (side && keep) || "",
           mainSelected: main ? keep : undefined,
-          paneOpen: side,
+          // A launcher's side panel is not a tab, so a pane showing one stays.
+          paneOpen: side || (s.paneOpen && !!s.sidePanel),
           thread: undefined,
           settings,
         };
