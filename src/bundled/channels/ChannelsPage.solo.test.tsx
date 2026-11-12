@@ -1448,7 +1448,9 @@ it("names the owner on the access controls of someone else's shared chat", async
     name: "Share access to Planning, Teammate’s chat",
   });
   expect(screen.getByRole("heading", { name: "Planning" })).toBeVisible();
-  expect(header).toHaveAttribute("title", "Teammate’s chat");
+  expect(header).toHaveAccessibleName(
+    "Share access to Planning, Teammate’s chat",
+  );
   const mark = screen.getByRole("button", { name: "Teammate’s chat" });
   expect(mark).toHaveTextContent("T");
   await user.click(mark);
