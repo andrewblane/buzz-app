@@ -380,6 +380,7 @@ async function setup({
     presence: fake.presence,
     second,
     select: client.select,
+    switchViewer: client.switchViewer,
     leave: client.leave,
     communities: client.communities,
     ctx,
@@ -13525,6 +13526,117 @@ it("dismisses a creation draft without creating an identity", async () => {
   service.dismissCreation(result.requestId);
   expect(service.creationRequests()).toEqual([]);
   expect(native.create).toHaveBeenCalledTimes(1);
+});
+
+it("creates a plugin's requested agent only after owner review", async () => {
+  const { service, native, plugin } = await setup();
+  const { requestId, outcome } = plugin.agents.requestCreation({
+    type: "example/echo",
+    name: " Helper ",
+    instructions: "Keep notes.",
+  });
+  expect(native.create).not.toHaveBeenCalled();
+  expect(service.creationRequests()).toMatchObject([
+    {
+      id: requestId,
+      requester: "plugin:example",
+      requesterName: "example plugin",
+      owner: viewer,
+      community: "https://relay.example.test",
+      type: "example/echo",
+      name: "Helper",
+      instructions: "Keep notes.",
+    },
+  ]);
+  const settled = vi.fn();
+  void outcome.then(settled);
+  await settle();
+  expect(settled).not.toHaveBeenCalled();
+  const agent = await service.approveCreation(requestId, {
+    type: "example/echo",
+    name: "Reviewed",
+  });
+  expect(native.create).toHaveBeenCalledWith(
+    "https://relay.example.test",
+    viewer,
+    "example/echo",
+    "Reviewed",
+  );
+  await expect(outcome).resolves.toEqual({ status: "created", agent });
+  expect(service.creationRequests()).toEqual([]);
+});
+
+it("settles a plugin's request as dismissed when the owner closes its review", async () => {
+  const { service, native, plugin } = await setup();
+  const { requestId, outcome } = plugin.agents.requestCreation({
+    type: "example/echo",
+    name: "Helper",
+  });
+  service.dismissCreation(requestId);
+  await expect(outcome).resolves.toEqual({ status: "dismissed" });
+  expect(service.creationRequests()).toEqual([]);
+  expect(native.create).not.toHaveBeenCalled();
+});
+
+it("settles a plugin's request as dismissed when another owner signs in", async () => {
+  const { service, plugin, switchViewer } = await setup();
+  const { outcome } = plugin.agents.requestCreation({
+    type: "example/echo",
+    name: "Helper",
+  });
+  switchViewer("e".repeat(64));
+  await expect(outcome).resolves.toEqual({ status: "dismissed" });
+  expect(service.creationRequests()).toEqual([]);
+});
+
+it("keeps a plugin's request pending after a failed approval", async () => {
+  const { service, plugin } = await setup();
+  const { requestId, outcome } = plugin.agents.requestCreation({
+    type: "example/echo",
+    name: "Helper",
+  });
+  const settled = vi.fn();
+  void outcome.then(settled);
+  await expect(
+    service.approveCreation(requestId, { type: "missing", name: "Helper" }),
+  ).rejects.toThrow("not available");
+  await settle();
+  expect(settled).not.toHaveBeenCalled();
+  expect(service.creationRequests()).toHaveLength(1);
+});
+
+it("refuses plugin creation requests it cannot review", async () => {
+  const { service, plugin, ctx } = await setup();
+  ctx
+    .extend({ pluginOwner: Object.freeze({ id: "other", revision: "one" }) })
+    .agents.register({
+      id: "plain",
+      title: "Plain",
+      defaults: () => ({ config: {} }),
+      run: vi.fn(),
+    });
+  expect(() =>
+    service.requestCreation({ type: "example/echo", name: "Helper" }),
+  ).toThrow("installed plugin");
+  expect(() =>
+    plugin.agents.requestCreation({ type: "missing", name: "Helper" }),
+  ).toThrow("not available");
+  expect(() =>
+    plugin.agents.requestCreation({ type: "example/echo", name: " " }),
+  ).toThrow("Name the agent");
+  expect(() =>
+    plugin.agents.requestCreation({
+      type: "other/plain",
+      name: "Helper",
+      instructions: "Triage.",
+    }),
+  ).toThrow("Plain agents have no instructions to set");
+  expect(service.creationRequests()).toEqual([]);
+  for (let i = 0; i < 16; i++)
+    plugin.agents.requestCreation({ type: "example/echo", name: `Kid ${i}` });
+  expect(() =>
+    plugin.agents.requestCreation({ type: "example/echo", name: "Kid" }),
+  ).toThrow("pending agent requests");
 });
 
 it("refuses agent creation through a stale handle or an unavailable type", async () => {

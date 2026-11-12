@@ -434,6 +434,7 @@ function setup(
     joinable: (): readonly Agent[] => [],
     join: vi.fn(),
     leave: vi.fn(),
+    requestCreation: vi.fn(),
     creationRequests: () => [],
     dismissCreation: vi.fn(),
     approveCreation: vi.fn(),
