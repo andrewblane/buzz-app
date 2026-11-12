@@ -2,6 +2,8 @@ import { ActivityNavigationProvider } from "./ActivityNavigation";
 import { PageNavigation } from "./PageNavigation";
 import { AppDock } from "./AppDock";
 import { RailNavigation } from "./RailNavigation";
+import { SectionListColumn } from "./SectionListColumn";
+import { routedSection, useListColumn } from "./list-column";
 import { navigationOwner, orderPages, pagePlacement } from "./presentation";
 import {
   useCallback,
@@ -178,6 +180,34 @@ function AppShellContent({
       (page) => page.key === selected && (page.primary || !!page.sidebar),
     );
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const listColumn = useListColumn(searchServices?.navigation);
+  const resetList = listColumn.reset;
+  const hostNavigation = searchServices?.navigation;
+  // The sidebar opens destinations directly; only a section address lists.
+  const railNavigator = useMemo(
+    () =>
+      hostNavigation && {
+        ...hostNavigation,
+        open: ((target, options) => {
+          if (!routedSection(target)) resetList();
+          return hostNavigation.open(target, options);
+        }) as typeof hostNavigation.open,
+      },
+    [hostNavigation, resetList],
+  );
+  const shellScope = useMemo(
+    () =>
+      connection.viewer && connection.scope
+        ? {
+            viewer: connection.viewer,
+            communityOrigin: connection.scope.slice(
+              0,
+              -(connection.viewer.length + 1),
+            ),
+          }
+        : undefined,
+    [connection.viewer, connection.scope],
+  );
   const [navigationOpen, setNavigationOpen] = useState(false);
   const navigationToggle = useRef<HTMLButtonElement>(null);
   const visibleSidebar =
@@ -341,20 +371,14 @@ function AppShellContent({
       settings={null}
       header={railActions}
     >
-      {connection.viewer && connection.scope && searchServices?.navigation ? (
+      {shellScope && searchServices && railNavigator ? (
         <RailNavigation
           key={connection.scope}
           compact={compactRail}
           session={connection.session}
-          scope={{
-            viewer: connection.viewer,
-            communityOrigin: connection.scope.slice(
-              0,
-              -(connection.viewer.length + 1),
-            ),
-          }}
+          scope={shellScope}
           sidebarSections={searchServices.sidebarSections}
-          navigator={searchServices.navigation}
+          navigator={railNavigator}
           pages={pages}
           selected={selected}
           onSelect={onSelect}
@@ -520,7 +544,25 @@ function AppShellContent({
                             }
                           >
                             <OpenCommunitySwitcher value={openSwitcher}>
-                              {children}
+                              {shellScope && searchServices?.navigation ? (
+                                <SectionListColumn
+                                  key={connection.scope}
+                                  session={connection.session}
+                                  scope={shellScope}
+                                  navigator={searchServices.navigation}
+                                  pages={pages}
+                                  onSelect={onSelect}
+                                  sidebarSections={
+                                    searchServices.sidebarSections
+                                  }
+                                  list={listColumn.list}
+                                  setOpen={listColumn.setOpen}
+                                >
+                                  {children}
+                                </SectionListColumn>
+                              ) : (
+                                children
+                              )}
                             </OpenCommunitySwitcher>
                           </div>
                         </div>

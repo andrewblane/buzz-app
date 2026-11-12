@@ -94,7 +94,7 @@ function ReadyNewMenu({
         scope,
         route: {
           version: 1,
-          params: global ? "new-message" : { compose: "new" },
+          params: global ? "new-message" : "compose",
         },
       });
   };

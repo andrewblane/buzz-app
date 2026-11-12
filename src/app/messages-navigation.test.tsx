@@ -168,7 +168,8 @@ it("opens Drafts & sent from the shared rail and retains the rail through Back/F
     expect(services?.navigation.snapshot().status).toBe("opened"),
   );
   act(() => services?.navigation.back());
-  expect(await screen.findByRole("region", { name: "Team" })).toBeVisible();
+  // Without a community there is no list: the conversations page stands alone.
+  expect(await screen.findByRole("region", { name: "Channels" })).toBeVisible();
   act(() => services?.navigation.forward());
   expect(
     await screen.findByRole("region", { name: "Drafts & sent" }),

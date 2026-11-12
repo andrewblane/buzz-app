@@ -318,7 +318,7 @@ it("filters the combined sidebar without navigating or resetting Solo sections",
     pluginId: "buzz.channels",
     pageId: "channels",
     scope: { viewer, communityOrigin: "https://relay.test" },
-    route: { version: 1, params: { compose: "new" } },
+    route: { version: 1, params: "compose" },
   });
 });
 
@@ -851,7 +851,7 @@ it("opens the Team composer when + is clicked", async () => {
   expect(f.open).toHaveBeenLastCalledWith(
     expect.objectContaining({
       pluginId: "buzz.channels",
-      route: { version: 1, params: { compose: "new" } },
+      route: { version: 1, params: "compose" },
     }),
   );
   expect(screen.queryByRole("menu")).toBeNull();

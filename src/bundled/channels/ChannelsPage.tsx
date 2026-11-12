@@ -1,3 +1,5 @@
+import { isSidebarSectionRoute } from "../../features/channel-navigation/sidebar-section-route";
+import { PanelHeader } from "../../shared/design-system/ui/PanelHeader";
 import { ConversationListToggle } from "../../features/conversation/ConversationListToggle";
 import { useInlineReply } from "../../features/messages/use-inline-reply";
 import { useChannelHistoryFocus } from "./useChannelHistoryFocus";
@@ -376,16 +378,29 @@ function ChannelWorkspace({
   archive?: ArchiveShortcut | undefined;
   read?: ReadShortcut | undefined;
 }) {
-  const composingMessage =
-    navigation?.target.kind === "page" &&
-    navigation.target.route?.params === "new-message";
   const draftTarget = navigation?.target;
+  const draftRoute =
+    draftTarget?.kind === "page" ? draftTarget.route?.params : undefined;
+  // A section's own address has no conversation: it shows that section's
+  // draft, Solo's for Solo and Team's for every other one.
+  const home =
+    draftTarget?.kind !== "page"
+      ? undefined
+      : !draftTarget.route
+        ? "messages"
+        : isSidebarSectionRoute(draftRoute)
+          ? draftRoute.section
+          : undefined;
+  const composingTeam = draftRoute === "compose" || (!!home && home !== "solo");
+  const composingMessage = composingTeam || draftRoute === "new-message";
   const draft = useMemo(
     () =>
-      draftTarget?.kind === "page"
-        ? soloDraft(draftTarget.route?.params)
-        : undefined,
-    [draftTarget],
+      draftTarget?.kind !== "page"
+        ? undefined
+        : home === "solo"
+          ? soloDraft({ kind: "solo-draft" })
+          : soloDraft(draftTarget.route?.params),
+    [draftTarget, home],
   );
   // The draft consumes its source on creation. Keep this visit's source while
   // membership and first-send work settles; a later visit reads storage anew.
@@ -2273,8 +2288,19 @@ function ChannelWorkspace({
           }
           data-attachment-drop-zone=""
         >
+          {composingTeam && (
+            <PanelHeader
+              variant="conversation"
+              title="New message"
+              navigation={listToggle}
+            />
+          )}
           {composingMessage ? (
             <LiveNewMessage
+              {...(composingTeam && {
+                layout: "page" as const,
+                expanded: true,
+              })}
               host={{ relay, panels, navigation: navigator }}
               session={queries}
               scope={scope}
@@ -2286,23 +2312,27 @@ function ChannelWorkspace({
               onOpenChat={(channelId) => {
                 if (!behindSettings()) select(channelId);
               }}
-              solo={{
-                onStarted: (channelId) => {
-                  if (!behindSettings()) select(channelId);
-                },
-                onFailed: (_channelId, message, retry) =>
-                  notify(
-                    message,
-                    "error",
-                    retry
-                      ? {
-                          label: "Retry restoring message",
-                          onClick: () => void retry(),
-                          timeout: Infinity,
-                        }
-                      : undefined,
-                  ),
-              }}
+              solo={
+                composingTeam
+                  ? undefined
+                  : {
+                      onStarted: (channelId) => {
+                        if (!behindSettings()) select(channelId);
+                      },
+                      onFailed: (_channelId, message, retry) =>
+                        notify(
+                          message,
+                          "error",
+                          retry
+                            ? {
+                                label: "Retry restoring message",
+                                onClick: () => void retry(),
+                                timeout: Infinity,
+                              }
+                            : undefined,
+                        ),
+                    }
+              }
               onStarted={(channelId, id) => {
                 handoff?.clearPreparingDm();
                 if (behindSettings()) return;
@@ -2325,6 +2355,7 @@ function ChannelWorkspace({
                 draft.region,
                 retiredSoloDraft.generation,
               ])}
+              navigation={listToggle}
               linkedId={draft.linked}
               region={draft.region}
               lead={draft.lead}
