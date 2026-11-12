@@ -2151,10 +2151,9 @@ test("a Git-installed plugin reviews its URL self-update and survives requester 
     .poll(() => page.evaluate(() => typeof window.requestMigration))
     .toBe("function");
   await page.evaluate(() => window.requestMigration());
-  const review = page.getByRole("dialog", {
-    name: "Update Artifact",
-    exact: true,
-  });
+  const review = page
+    .getByRole("dialog", { name: "Update Artifact", exact: true })
+    .filter({ has: page.getByRole("button", { name: "Update", exact: true }) });
   await expect(review).toContainText(
     "This update switches this plugin from Git to a packaged download.",
   );
