@@ -1,3 +1,5 @@
+@reference "../../shared/styles/globals.css";
+
 .groups {
   position: relative;
   display: flex;
@@ -127,7 +129,7 @@
   }
 }
 .newSectionReveal[data-drop-target] {
-  background: color-mix(in srgb, var(--surface-message-own) 90%, black);
+  background: var(--bg-glass-secondary-hover);
 }
 .row {
   min-width: 0;
@@ -241,15 +243,15 @@ html[data-keyboard-input] .group:focus-within [data-rail-card-actions] {
 .newSection {
   position: absolute;
   bottom: var(--space-6);
-  inset-inline: var(--space-2);
+  inset-inline: var(--space-4);
   z-index: 1;
   pointer-events: none;
 }
 .newSectionReveal {
+  @apply glass-secondary;
   position: relative;
-  padding: var(--space-2) var(--space-4);
-  background: var(--surface-message-own);
-  color: var(--text-message-own);
+  padding: var(--space-1) var(--space-4);
+  color: var(--text-standard);
   border-radius: var(--radius-pill);
   opacity: 0;
   transform: translateY(var(--space-4)) scale(0.95);
@@ -274,10 +276,10 @@ html[data-keyboard-input] .group:focus-within [data-rail-card-actions] {
 .newSection[data-shown] .newSectionReveal {
   opacity: 1;
   transform: translateY(0) scale(1);
-  /* A small overshoot welcomes the dragged row without moving its hit target. */
-  transition:
-    transform var(--time-sheet) cubic-bezier(0.34, 1.56, 0.64, 1),
-    opacity var(--time-fast) var(--ease-enter);
+}
+/* Grow only the visual surface; the droppable wrapper keeps stable bounds. */
+.newSection[data-shown] .newSectionReveal[data-drop-target] {
+  transform: translateY(0) scale(1.04);
 }
 @media (hover: none) {
   .grabber {
@@ -287,8 +289,19 @@ html[data-keyboard-input] .group:focus-within [data-rail-card-actions] {
 }
 @media (prefers-reduced-motion: reduce) {
   .newSectionReveal,
-  .newSection[data-shown] .newSectionReveal {
+  .newSection[data-shown] .newSectionReveal,
+  .newSection[data-shown] .newSectionReveal[data-drop-target] {
     transform: none;
     transition: opacity var(--time-fast) var(--ease-state);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .newSectionReveal {
+    background: var(--surface-panel);
+    backdrop-filter: none;
+  }
+  .newSectionReveal[data-drop-target] {
+    background: var(--affordance-subtle-hover);
   }
 }

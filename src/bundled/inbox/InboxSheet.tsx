@@ -539,6 +539,7 @@ export function InboxSheet({
               <CollectionCreationAction
                 value={
                   <IconButton
+                    variant="glass"
                     aria-label="New message"
                     title="New message"
                     onClick={expandDraft}
@@ -611,7 +612,7 @@ export function InboxSheet({
                               narrow && (
                                 <IconButton
                                   size="sm"
-                                  variant="subtle"
+                                  variant="glass"
                                   aria-label="Close new message"
                                   icon={<XIcon size={16} />}
                                   onClick={dismiss}
@@ -744,7 +745,7 @@ export function InboxSheet({
                                     ) : (
                                       <IconButton
                                         size="sm"
-                                        variant="subtle"
+                                        variant="glass"
                                         aria-label="Close conversation"
                                         title="Close conversation"
                                         icon={<XIcon size={16} />}

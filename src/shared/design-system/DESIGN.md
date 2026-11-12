@@ -578,20 +578,20 @@ Features keep unread cues, branded headers, drag targets and composite
 row/scrollbar geometry; their existing layout rules remain in charge.
 
 A scrolling list under sticky chrome with no material behind it, such as the
-sidebar below its tabs or message history below its header, feathers its edges
-with the scroll fade instead of cutting rows at a hard line. Set
-`data-scroll-fade` on the scroller. `always` feathers both edges, as message
-history does. `scrolled` feathers only an edge with content past it, marked by
-`useScrollEdges("block")`, so a list at rest keeps its first row crisp; the
-sidebar uses it. A host whose scroller cannot carry the attribute applies
-`--scroll-fade-always`. ConversationTimeline wraps history in `conversation-history-viewport`: a
-96px opacity falloff with three transparent, progressively blurred layers at the
-top edge. Conversation identity headers float above the history, which scrolls behind
-the avatars and name. A 104px initial history inset scrolls away with the content.
-The header and composer stay sharp; blur increases from 4px to 16px toward the
-top. The layers intercept no pointer input and add no surface fill.
-Conversation headers use a 12px bottom inset. Reduced transparency and forced
-colors remove the fade.
+sidebar below its tabs, feathers its edges with the scroll fade instead of
+cutting rows at a hard line. Set `data-scroll-fade` on the scroller. `always`
+feathers both edges. `scrolled` feathers only an edge with content past it,
+marked by `useScrollEdges("block")`, so a list at rest keeps its first row
+crisp; the sidebar uses it. A host whose scroller cannot carry the attribute
+applies `--scroll-fade-always`. Reduced transparency and forced colors remove
+the fade.
+
+ConversationTimeline wraps history in `conversation-history-viewport` for layout
+only: messages retain their full opacity and sharpness while scrolling, without
+a blur or fade. Conversation identity headers float above the history, which
+scrolls behind the avatars and name. A 104px initial history inset and 64px
+leading space scroll away with the content. Conversation headers use a 12px
+bottom inset.
 Tab strips keep their own wider horizontal fade.
 
 Every sidebar heading row, including collapsible channel groups and Solo

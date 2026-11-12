@@ -331,6 +331,7 @@ export function PageTabs({
     ref?: typeof secondary.splitTrigger,
   ) => (
     <IconButton
+      variant="glass"
       hint="familiar"
       ref={ref}
       data-tab-pane-toggle=""

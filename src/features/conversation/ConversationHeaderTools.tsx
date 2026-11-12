@@ -83,7 +83,7 @@ export function ConversationHeaderTools({
           <IconButton
             ref={trigger}
             size="sm"
-            variant="subtle"
+            variant="glass"
             aria-label={label}
             title={label}
             icon={<DotsThreeIcon size="1rem" />}

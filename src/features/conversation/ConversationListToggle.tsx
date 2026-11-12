@@ -23,7 +23,7 @@ export function ConversationListToggle({
     <span className="flex min-w-0 items-center gap-2">
       <IconButton
         size="sm"
-        variant="subtle"
+        variant="glass"
         data-highlight-expanded="false"
         aria-label={label}
         title={label}

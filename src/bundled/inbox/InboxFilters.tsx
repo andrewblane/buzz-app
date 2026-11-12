@@ -96,7 +96,7 @@ export function InboxFilters({
         render={
           <IconButton
             size="sm"
-            variant="inset"
+            variant="glass"
             shape="round"
             aria-label={fromLabel}
             title={`${fromLabel}${unreadOnly ? ", unread only" : ""}`}

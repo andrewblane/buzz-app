@@ -298,11 +298,6 @@ export function ConversationTimeline(
         {...shared}
         {...props}
       />
-      <div className="conversation-history-blur" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </div>
     </div>
   );
 }

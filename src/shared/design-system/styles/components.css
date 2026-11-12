@@ -1103,15 +1103,6 @@
       #000 calc(100% - var(--scroll-fade)),
       transparent
     );
-    --scroll-fade-history: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(0 0 0 / 28%) var(--space-8),
-      rgb(0 0 0 / 65%) var(--space-16),
-      #000 calc(var(--space-16) + var(--space-8)),
-      #000 calc(100% - var(--space-2)),
-      transparent
-    );
     --scroll-fade-start: linear-gradient(
       to bottom,
       transparent,
@@ -1126,7 +1117,6 @@
   @media (forced-colors: active), (prefers-reduced-transparency: reduce) {
     :root {
       --scroll-fade-always: none;
-      --scroll-fade-history: none;
       --scroll-fade-start: none;
       --scroll-fade-end: none;
     }
@@ -1142,8 +1132,7 @@
     mask-image: var(--scroll-fade-end);
   }
 
-  /* Fade the history and its transparent blur together, never the header or
-     composer. Three bounded layers soften progressively toward the top edge. */
+  /* Shared history layout keeps the scroller separate from the composer. */
   .conversation-history-viewport {
     position: relative;
     display: flex;
@@ -1151,39 +1140,7 @@
     flex: 1;
     min-height: 0;
     min-width: 0;
-    mask-image: var(--scroll-fade-history);
   }
-  .conversation-history-blur {
-    position: absolute;
-    inset-block-start: 0;
-    inset-inline: 0;
-    height: calc(var(--space-16) + var(--space-8));
-    pointer-events: none;
-    z-index: 1;
-  }
-  .conversation-history-blur > span {
-    position: absolute;
-    inset: 0;
-    -webkit-backdrop-filter: blur(var(--blur-sm));
-    backdrop-filter: blur(var(--blur-sm));
-    mask-image: linear-gradient(to bottom, #000 50%, transparent);
-  }
-  .conversation-history-blur > span:nth-child(2) {
-    -webkit-backdrop-filter: blur(var(--blur-md));
-    backdrop-filter: blur(var(--blur-md));
-    mask-image: linear-gradient(to bottom, #000 25%, transparent 75%);
-  }
-  .conversation-history-blur > span:nth-child(3) {
-    -webkit-backdrop-filter: blur(var(--blur-lg));
-    backdrop-filter: blur(var(--blur-lg));
-    mask-image: linear-gradient(to bottom, #000, transparent 50%);
-  }
-  @media (forced-colors: active), (prefers-reduced-transparency: reduce) {
-    .conversation-history-blur {
-      display: none;
-    }
-  }
-
   /* A scrolling strip fades out on each edge that has tabs past them, so a cut
      tab reads as "more this way" rather than as clipped. Panel, navigation and button
      lists share this overflow cue. */
@@ -1701,12 +1658,31 @@
   .panel-header[data-variant="conversation"] > .panel-header-title {
     grid-area: 1 / 2;
     flex-direction: column;
+    overflow: visible;
     text-align: center;
     gap: 0;
   }
   .panel-header[data-variant="conversation"] > .panel-header-actions {
     grid-area: 1 / 3;
     justify-self: end;
+  }
+
+  /* Keep the name legible over scrolling history using the glass-button material. */
+  .panel-header[data-variant="conversation"]
+    .panel-header-title
+    > h2:not(:first-child) {
+    @apply glass-secondary;
+    max-width: 100%;
+    border-radius: var(--radius-pill);
+    padding: var(--space-1) var(--space-3);
+  }
+  @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+    .panel-header[data-variant="conversation"]
+      .panel-header-title
+      > h2:not(:first-child) {
+      background: var(--surface-panel);
+      backdrop-filter: none;
+    }
   }
 
   /* Conversation identity composes PanelHeader; only its inner content lives here. */
@@ -2482,6 +2458,8 @@
     padding-block: 0;
   }
   .buzz-tabs[data-variant="navigation"] .buzz-tabs-item {
+    @apply glass-secondary;
+    border-radius: var(--radius-pill);
     display: flex;
     position: relative;
     flex: 0 0 auto;
@@ -2494,9 +2472,24 @@
     border-radius: var(--radius-icon-button);
     padding-inline-start: var(--space-2);
     padding-inline-end: var(--space-2);
+    background: transparent;
   }
-  .buzz-tabs[data-variant="navigation"] .navigation-item[data-selected] {
-    background: var(--affordance-subtle);
+  .buzz-tabs[data-variant="navigation"] .buzz-tabs-item:has([data-selected]) {
+    background: var(--bg-glass-secondary-hover);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .buzz-tabs[data-variant="navigation"] .buzz-tabs-item:hover {
+      background: var(--bg-glass-secondary-hover);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+    .buzz-tabs[data-variant="navigation"] .buzz-tabs-item {
+      background: var(--surface-panel);
+      backdrop-filter: none;
+    }
+    .buzz-tabs[data-variant="navigation"] .buzz-tabs-item:has([data-selected]) {
+      background: var(--affordance-subtle);
+    }
   }
   /* Reopening an existing tab identifies it without changing selection or focus. */
   .buzz-tabs-attention {

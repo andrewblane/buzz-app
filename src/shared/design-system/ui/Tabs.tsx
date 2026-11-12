@@ -295,6 +295,7 @@ export function Tabs<Value extends string>({
               )}
               {item.onClose && (
                 <IconButton
+                  variant="ghost"
                   size="xs"
                   aria-label={`Close ${item.label} tab`}
                   onClick={item.onClose}

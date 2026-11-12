@@ -222,12 +222,14 @@ export function ConversationFiltersMenu({
   sort = false,
   views = false,
   label,
+  variant = "glass",
 }: {
   view: View;
   onChange(view: View): void;
   sort?: boolean;
   views?: boolean;
   label?: string;
+  variant?: "glass" | "ghost";
 }) {
   const showLabel =
     label ??
@@ -242,7 +244,7 @@ export function ConversationFiltersMenu({
         render={
           <IconButton
             size="sm"
-            variant="inset"
+            variant={variant}
             shape="round"
             aria-label={showLabel}
             title={showLabel}

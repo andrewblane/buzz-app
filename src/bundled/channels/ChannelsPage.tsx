@@ -2402,6 +2402,7 @@ function ChannelWorkspace({
                     !showingChannelPanel && (
                       <span className={panelStyles.paneToggle}>
                         <IconButton
+                          variant="glass"
                           hint="familiar"
                           ref={splitTrigger}
                           data-tab-pane-toggle=""
@@ -2532,6 +2533,7 @@ function ChannelWorkspace({
                         {current && hasChannelPanel && !showingChannelPanel && (
                           <span className={panelStyles.paneToggle}>
                             <IconButton
+                              variant="glass"
                               hint="familiar"
                               ref={splitTrigger}
                               data-tab-pane-toggle=""
@@ -2632,7 +2634,7 @@ function ChannelWorkspace({
                       hint="familiar"
                       data-tab-pane-toggle=""
                       data-highlight-expanded="false"
-                      variant="subtle"
+                      variant="glass"
                       size="toolbar"
                       aria-label="Toggle tab pane"
                       title="Close tab pane"

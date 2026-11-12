@@ -549,6 +549,7 @@ export function RailNavigation({
         <>
           <ConversationFiltersMenu
             label="Filter and sort Team card"
+            variant={pageSection ? "glass" : "ghost"}
             view={messageView}
             onChange={setMessageView}
             sort
@@ -749,7 +750,7 @@ export function RailNavigation({
                 action={
                   <IconButton
                     size="sm"
-                    variant="ghost"
+                    variant={pageSection ? "glass" : "ghost"}
                     aria-label="Add pin"
                     ref={pinTrigger}
                     icon={<PlusIcon size={16} strokeWidth={2} />}
@@ -831,7 +832,7 @@ export function RailNavigation({
                 action={
                   <IconButton
                     size="sm"
-                    variant="ghost"
+                    variant={pageSection ? "glass" : "ghost"}
                     aria-label="New Solo chat"
                     icon={<PlusIcon size={16} strokeWidth={2} />}
                     onClick={() =>
