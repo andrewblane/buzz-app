@@ -2187,6 +2187,47 @@ it("does not take another event for an unconfirmed one", async () => {
   await vi.waitFor(() => expect(published).toHaveBeenCalled());
 });
 
+it("does not look up an unconfirmed event once its agent is gone", async () => {
+  const { service, run, emit, native } = await setup();
+  await service.create({ type: "example/echo", name: "Echo" });
+  const id = "d".repeat(64);
+  let fail = (_error: Error) => {};
+  native.publish.mockImplementationOnce(
+    () =>
+      new Promise<RelayEvent>((_resolve, reject) => {
+        fail = reject;
+      }),
+  );
+  const rejected = vi.fn();
+  run.mockImplementationOnce(async ({ agent }) => {
+    await agent
+      .publish({ kind: 9, content: "hi", tags: [["h", channel]] })
+      .catch(rejected);
+  });
+  emit({
+    events: [
+      event("removed-request", {
+        tags: [
+          ["h", channel],
+          ["p", bot],
+        ],
+      }),
+    ],
+    channelId: channel,
+  });
+  await vi.waitFor(() => expect(native.publish).toHaveBeenCalled());
+  await service.remove(bot);
+  fail(
+    new Error(
+      `Agent event ${id} unconfirmed; it may or may not have been accepted`,
+    ),
+  );
+  await vi.waitFor(() => expect(rejected).toHaveBeenCalled());
+  expect(native.query).not.toHaveBeenCalledWith(member(bot), [
+    expect.objectContaining({ ids: [id] }),
+  ]);
+});
+
 it("does not make ordinary work Solo when it publishes into a Solo chat", async () => {
   const { service, run, emit, session, activity } = await setup();
   await service.create({ type: "example/echo", name: "Echo" });
