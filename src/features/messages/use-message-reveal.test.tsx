@@ -13,6 +13,7 @@ import { HIGHLIGHT_MAX_WAIT_MS, HIGHLIGHT_QUIET_MS } from "./message-highlight";
 import {
   useMessageReveal,
   watchArrival,
+  watchRevealRequest,
   type RevealArrival,
 } from "./use-message-reveal";
 
@@ -66,9 +67,12 @@ async function idle() {
 }
 function mount(
   hold?: () => boolean,
-  { focus, mark }: { focus?: boolean; mark?: boolean } = {},
+  {
+    focus,
+    mark,
+    request = new AbortController(),
+  }: { focus?: boolean; mark?: boolean; request?: AbortController } = {},
 ) {
-  const request = new AbortController();
   const complete = vi.fn();
   function Surface({
     signal = request.signal,
@@ -572,6 +576,34 @@ it("adopts an arrival recorded before the signal, for that request only", async 
     expect(complete).toHaveBeenCalledTimes(3);
   } finally {
     stop();
+  }
+});
+
+// A message visit's owner starts the record when it receives the visit; the
+// timeline that reveals it mounts only once the channel loads.
+it.each([
+  ["leaves focus moved before the reveal mounted, watched from receipt", true],
+  ["takes focus moved before the reveal mounted when nothing watched", false],
+])("%s", async (_, watched) => {
+  const request = new AbortController();
+  const composer = document.body.appendChild(
+    document.createElement("textarea"),
+  );
+  const stop = watched ? watchRevealRequest(request.signal) : () => {};
+  try {
+    moves.click(composer);
+    const { row, complete, next } = mount(undefined, { request });
+    await idle();
+    expect(row.scrollIntoView).toHaveBeenCalled();
+    expect(document.activeElement).toBe(watched ? composer : row);
+    expect(complete).toHaveBeenCalledOnce();
+    next(); // The record serves only its own request.
+    await idle();
+    expect(document.activeElement).toBe(row);
+    expect(complete).toHaveBeenCalledTimes(2);
+  } finally {
+    stop();
+    composer.remove();
   }
 });
 

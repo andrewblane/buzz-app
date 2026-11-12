@@ -61,8 +61,9 @@ export function useMessageReveal({
     [],
   );
   // The person's input since each request arrived, watched from before the
-  // target loads, however late. An arrival handed in by the owner serves only
-  // the first new signal after it.
+  // target loads, however late. A record started for the signal when its owner
+  // received it comes first. An arrival handed in by the owner serves only the
+  // first new signal after it.
   const arrived = useRef<{ signal: AbortSignal; arrival: RevealArrival }>(
     undefined,
   );
@@ -72,7 +73,10 @@ export function useMessageReveal({
     if (arrived.current?.signal !== signal) {
       const handed = arrival !== adopted.current ? arrival : undefined;
       if (handed) adopted.current = handed;
-      arrived.current = { signal, arrival: handed ?? { input: false } };
+      arrived.current = {
+        signal,
+        arrival: received.get(signal) ?? handed ?? { input: false },
+      };
     }
     return watchArrival(arrived.current.arrival);
   }, [signal, arrival]);
@@ -222,6 +226,23 @@ export function useMessageReveal({
  * reveal request arrived.
  */
 export type RevealArrival = { input: boolean };
+
+const received = new WeakMap<AbortSignal, RevealArrival>();
+
+/**
+ * Until stopped, watch the person's input for a request from when its owner
+ * receives it, for a reveal that mounts only once its target's surface loads,
+ * such as a message visit into a channel still loading. The reveal adopts this
+ * record when it receives the signal.
+ */
+export function watchRevealRequest(signal: AbortSignal): () => void {
+  let arrival = received.get(signal);
+  if (!arrival) {
+    arrival = { input: false };
+    received.set(signal, arrival);
+  }
+  return watchArrival(arrival);
+}
 
 /**
  * Until stopped, set `input` when the person moves focus or types into the
