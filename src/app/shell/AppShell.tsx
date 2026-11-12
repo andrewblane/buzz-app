@@ -1,4 +1,3 @@
-import { ActivityNavigationProvider } from "./ActivityNavigation";
 import { PageNavigation } from "./PageNavigation";
 import { AppDock } from "./AppDock";
 import { RailNavigation } from "./RailNavigation";
@@ -44,7 +43,10 @@ import { MarkAllReadShortcut } from "./MarkAllReadShortcut";
 import type { Appearance } from "../../shared/theme/service";
 import { PageSearch, type SearchServices } from "./PageSearch";
 import { BestieNavigationProvider } from "./BestieNavigation";
-import type { NavigationOpenOptions } from "../../features/navigation/controller";
+import type {
+  Navigation as AppNavigation,
+  NavigationOpenOptions,
+} from "../../features/navigation/controller";
 import {
   ConversationDetailPane,
   useConversationDetailPane,
@@ -63,12 +65,7 @@ export function AppShell(props: ComponentProps<typeof AppShellContent>) {
       pages={props.pages}
       relay={props.communities.relay}
     >
-      <ActivityNavigationProvider
-        pages={props.pages}
-        relay={props.communities.relay}
-      >
-        <AppShellContent {...props} />
-      </ActivityNavigationProvider>
+      <AppShellContent {...props} />
     </BestieNavigationProvider>
   );
 }
@@ -112,11 +109,7 @@ function AppShellContent({
   workspace?: boolean;
   /** Centered modal frame below window chrome. */
   workspaceRef?: Ref<HTMLDivElement>;
-  sidebar?: (
-    pages: ReactNode,
-    creationAction: ReactNode,
-    pinnedConversation: ReactNode,
-  ) => ReactNode;
+  sidebar?: (pages: ReactNode, creationAction: ReactNode) => ReactNode;
   communities: Communities;
   invite?: (JoinRequest & { requestId: number }) | undefined;
   onInviteClose?: ((requestId: number) => void) | undefined;
@@ -140,6 +133,8 @@ function AppShellContent({
     onOpenChange: (open: boolean) => void,
     triggerContainer: HTMLElement | null,
     menuTriggerContainer: HTMLElement | null,
+    /** Opens what was created the way the sidebar does: without the list. */
+    navigator: AppNavigation | undefined,
   ) => ReactNode;
   creationInSidebar?: boolean;
   children: ReactNode;
@@ -183,7 +178,7 @@ function AppShellContent({
     );
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const listColumn = useListColumn(searchServices?.navigation);
-  const resetList = listColumn.reset;
+  const askList = listColumn.ask;
   const listSection = useListSection(
     connection.session,
     connection.viewer ? connection.scope : undefined,
@@ -203,12 +198,12 @@ function AppShellContent({
     }),
     [],
   );
-  // Beside a conversation, an open side panel takes the sidebar's room: the
-  // sidebar collapses to its rail, and returns when the panel closes.
-  const besideConversation = !!listSection && sidePanels > 0;
+  // Four columns do not fit comfortably: while the list and a side panel are
+  // both open the sidebar collapses to its rail, and returns when either closes.
+  const fourColumns = !!listSection && listColumn.list.open && sidePanels > 0;
   const collapsedForPanel = useRef(false);
   useEffect(() => {
-    if (besideConversation) {
+    if (fourColumns) {
       setSidebarOpen((open) => {
         if (open) collapsedForPanel.current = true;
         return false;
@@ -217,7 +212,7 @@ function AppShellContent({
       collapsedForPanel.current = false;
       setSidebarOpen(true);
     }
-  }, [besideConversation]);
+  }, [fourColumns]);
   const hostNavigation = searchServices?.navigation;
   // The sidebar opens destinations directly; only a section address lists.
   const railNavigator = useMemo(
@@ -225,11 +220,23 @@ function AppShellContent({
       hostNavigation && {
         ...hostNavigation,
         open: ((target, options) => {
-          if (!routedSection(target)) resetList();
+          if (!routedSection(target)) askList("close");
           return hostNavigation.open(target, options);
         }) as typeof hostNavigation.open,
       },
-    [hostNavigation, resetList],
+    [hostNavigation, askList],
+  );
+  // Opens from the list keep it showing.
+  const listNavigator = useMemo(
+    () =>
+      hostNavigation && {
+        ...hostNavigation,
+        open: ((target, options) => {
+          askList("keep");
+          return hostNavigation.open(target, options);
+        }) as typeof hostNavigation.open,
+      },
+    [hostNavigation, askList],
   );
   const shellScope = useMemo(
     () =>
@@ -288,7 +295,6 @@ function AppShellContent({
   // navigation element stable across those renders so React skips the whole
   // sidebar subtree instead of re-rendering every row on each click.
   const navigation = useMemo(() => {
-    const bestie = pages.find((page) => page.key === "buzz.bestie/bestie");
     const selectedPageHasSidebar = pages.some(
       (page) => page.key === selected && !!page.sidebar,
     );
@@ -306,13 +312,6 @@ function AppShellContent({
             />
           </nav>,
           null,
-          bestie ? (
-            <PageNavigation
-              pages={[bestie]}
-              selected={selected}
-              onSelect={onSelect}
-            />
-          ) : null,
         )
       : null;
     return selectedPageHasSidebar ? (
@@ -323,11 +322,6 @@ function AppShellContent({
       content
     );
   }, [pages, selected, sidebar, sidebarScope, onSelect]);
-  const dockPages = orderPages(
-    pages.filter((page) => page.primary && page.key === "buzz.inbox/inbox"),
-    "dock",
-  );
-  const activityPage = selected === "buzz.inbox/inbox";
   const search = (
     <PageSearch
       pages={pages}
@@ -397,7 +391,7 @@ function AppShellContent({
         else setSidebarOpen(false);
         navigationToggle.current?.focus();
       }}
-      pages={dockPages}
+      pages={noPages}
       selected={owner}
       currentPage={selected}
       onSelect={onSelect}
@@ -415,7 +409,8 @@ function AppShellContent({
           scope={shellScope}
           sidebarSections={searchServices.sidebarSections}
           navigator={railNavigator}
-          listNavigator={searchServices.navigation}
+          listNavigator={listNavigator ?? searchServices.navigation}
+          shortcuts={searchServices.shortcuts}
           list={listSection && { section: listSection.section, slot: listSlot }}
           pages={pages}
           selected={selected}
@@ -427,9 +422,7 @@ function AppShellContent({
       ) : (
         <PageNavigation
           placement={compactRail ? "dock" : "sidebar"}
-          pages={pages.filter(
-            (page) => page.primary && page.key !== "buzz.inbox/inbox",
-          )}
+          pages={pages.filter((page) => page.primary)}
           selected={selected}
           onSelect={onSelect}
         />
@@ -512,7 +505,6 @@ function AppShellContent({
       <div
         className="shell-workspace"
         data-detail-container=""
-        data-feed-layout={activityPage || undefined}
         data-rail-open={visibleRail || undefined}
         data-rail-compact={compactRail || undefined}
         data-side-panel={sidePanels > 0 || undefined}
@@ -550,7 +542,10 @@ function AppShellContent({
                       event.key === "Escape" &&
                       !event.shiftKey &&
                       navigationOpen &&
-                      !event.defaultPrevented
+                      !event.defaultPrevented &&
+                      // The list column is portaled from the sidebar.
+                      event.target instanceof Node &&
+                      event.currentTarget.contains(event.target)
                     ) {
                       // Closing the drawer consumes Escape, so it marks nothing read.
                       event.preventDefault();
@@ -625,6 +620,7 @@ function AppShellContent({
         setCreationOpen,
         creationContainer,
         creationMenuContainer,
+        railNavigator,
       )}
       {searchServices && (
         <>
@@ -642,3 +638,5 @@ function AppShellContent({
     </div>
   );
 }
+
+const noPages: readonly RegisteredPage[] = [];

@@ -238,15 +238,13 @@ export function createServices() {
     authorize: externalApps.open,
     rejected: rejectedLinks.reject,
     accepted: () => rejectedLinks.clear(),
-    // As the router decides: Inbox waits on startup and its own activation.
-    inbox: {
+    // As the router decides: the landing waits on startup and Team's activation.
+    home: {
       status: () =>
         plugins.startup() === "loading" ||
-        plugins.snapshot().activation["buzz.inbox"]?.status === "starting"
+        plugins.snapshot().activation["buzz.channels"]?.status === "starting"
           ? ("loading" as const)
-          : pages.snapshot().some((page) => page.key === "buzz.inbox/inbox")
-            ? ("on" as const)
-            : ("off" as const),
+          : ("ready" as const),
       // Both producers emit mid-update: reconciliation before every plugin is
       // starting, activation before pages publish it. Read once both finish.
       subscribe(listener: () => void) {

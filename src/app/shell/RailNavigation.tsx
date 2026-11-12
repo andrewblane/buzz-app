@@ -3,6 +3,7 @@ import { RailEntryArtwork } from "./RailEntryArtwork";
 import { railSections } from "./rail-sections";
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -10,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal, flushSync } from "react-dom";
+import type { ShortcutsService } from "../../features/shortcuts/service";
 import type { RelaySession } from "../../features/relay/session";
 import { RailConversationItem } from "./RailConversationItem";
 import type { NavigationScope } from "../../features/navigation/targets";
@@ -22,7 +24,7 @@ import { AgentAvatarArtworkProvider } from "../../features/agents/AgentAvatarArt
 import { canMessageAgent } from "../../features/agents/choices";
 import { archiveHides } from "../../features/relay/identity-archives";
 import { readSearchUsage } from "../../features/search/usage";
-import { dmLabel } from "../../bundled/inbox/dm-label";
+import { dmLabel } from "../../features/conversation/dm-label";
 import { useIdentityNames } from "../../features/identity-names/react";
 import { useSavedHiddenDmIds } from "../../bundled/channels/useHiddenDms";
 import { soloDraftTarget } from "../../features/channel-navigation/routes";
@@ -55,10 +57,12 @@ import styles from "./RailNavigation.module.css";
 import { preferredRailAgents } from "./rail-activity";
 import {
   ConversationList,
+  CollectionCreationAction,
   CollectionFilters,
   ConversationFiltersMenu,
   includeMessagesChannel,
   useActivityView,
+  type ActivityView,
 } from "../../features/conversation/ConversationList";
 
 export function RailNavigation({
@@ -72,6 +76,7 @@ export function RailNavigation({
   sidebarSections,
   list: listColumn,
   listNavigator = directNavigator,
+  shortcuts,
   compact = false,
 }: {
   session: RelaySession;
@@ -89,6 +94,8 @@ export function RailNavigation({
   list?: { section: string; slot: Element | null } | undefined;
   /** Opens from the list column, which keep that column as it is. */
   listNavigator?: Navigation;
+  /** Registers the chords that open Team on one of its views. */
+  shortcuts?: Pick<ShortcutsService, "registerHost"> | undefined;
   compact?: boolean;
 }) {
   const partition = `${scope.communityOrigin}:${scope.viewer}`;
@@ -126,6 +133,30 @@ export function RailNavigation({
   const { layout: railLayout, reset: resetPlacement } =
     useRailLayout(partition);
   const [messageView, setMessageView] = useActivityView(partition);
+  const openTeamView = useRef<(view: Partial<ActivityView>) => void>(() => {});
+  useLayoutEffect(() => {
+    openTeamView.current = (view) => {
+      setMessageView({ ...messageView, ...view });
+      void directNavigator.open(sidebarSectionTarget(scope, "messages"));
+    };
+  });
+  // Slack's chords for a filtered list, including from the composer.
+  useEffect(() => {
+    if (!shortcuts) return;
+    const stops = teamViewShortcuts.map(([id, title, key, order, view]) =>
+      shortcuts.registerHost({
+        id,
+        title,
+        binding: { key, mod: true, shift: true },
+        order,
+        allowInEditable: true,
+        run: () => openTeamView.current(view),
+      }),
+    );
+    return () => {
+      for (const stop of stops) stop();
+    };
+  }, [shortcuts]);
   const { pins, setPinned } = useRailPins(partition);
   const list = useSyncExternalStore(
     session.channels.subscribeList,
@@ -519,15 +550,11 @@ export function RailNavigation({
         page.primary &&
         ![
           "buzz.channels/channels",
-          "buzz.inbox/inbox",
           "buzz.drafts-and-sent/drafts-sent",
           "buzz.agents/agents",
         ].includes(page.key),
     );
-    const teamPageIds = [
-      "buzz.inbox/inbox",
-      "buzz.drafts-and-sent/drafts-sent",
-    ];
+    const teamPageIds = ["buzz.drafts-and-sent/drafts-sent"];
     const teamPages = teamPageIds.flatMap((key) =>
       pages.filter((page) => page.key === key),
     );
@@ -928,7 +955,34 @@ export function RailNavigation({
     <>
       {view(undefined)}
       {listColumn?.slot &&
-        createPortal(view(listColumn.section), listColumn.slot)}
+        createPortal(
+          <CollectionCreationAction
+            value={
+              <IconButton
+                aria-label="New message"
+                title="New message"
+                icon={<PlusIcon size={20} aria-hidden="true" />}
+                onClick={() =>
+                  void listNavigator.open(
+                    listColumn.section === "solo"
+                      ? soloDraftTarget(session.scope)
+                      : {
+                          version: 1,
+                          kind: "page",
+                          pluginId: "buzz.channels",
+                          pageId: "channels",
+                          scope,
+                          route: { version: 1, params: "compose" },
+                        },
+                  )
+                }
+              />
+            }
+          >
+            {view(listColumn.section)}
+          </CollectionCreationAction>,
+          listColumn.slot,
+        )}
 
       {error && !picker && (
         <p role="alert" className={styles.note}>
@@ -963,3 +1017,23 @@ const pluginCatalog: RailEntry = {
 const emptySections: readonly import("../../features/channel-navigation/sidebar-sections-service").RegisteredSidebarSection[] =
   [];
 const noSections = () => emptySections;
+
+const teamViewShortcuts: readonly (readonly [
+  id: string,
+  title: string,
+  key: string,
+  order: number,
+  view: Partial<ActivityView>,
+])[] = [
+  [
+    "open-unread",
+    "Open unread in Team",
+    "a",
+    20,
+    { filter: "all", unread: true },
+  ],
+  ["open-threads", "Open threads in Team", "t", 30, { filter: "threads" }],
+  // Direct lists mentions and DMs together, so both chords open it.
+  ["open-mentions", "Open mentions in Team", "m", 40, { filter: "direct" }],
+  ["open-dms", "Open DMs in Team", "k", 50, { filter: "direct" }],
+];

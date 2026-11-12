@@ -28,7 +28,7 @@ import {
 } from "../../shared/design-system/icons";
 import { parseBuzzLink } from "../../features/navigation/buzz-links";
 import { useIdentityNames } from "../../features/identity-names/react";
-import { dmLabel } from "../inbox/dm-label";
+import { dmLabel } from "../../features/conversation/dm-label";
 import { ChannelMembersButton } from "./ChannelMembersDialog";
 import { ConversationTab } from "./ConversationTab";
 import { TabSlot, useTabNodes } from "./TabHosts";

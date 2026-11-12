@@ -54,23 +54,6 @@ vi.mock("../plugins/storage", async (original) => {
     },
   };
 });
-// Holds Inbox's module load, so its activation can settle last.
-const inboxGate = vi.hoisted(() => ({
-  value: undefined as Promise<void> | undefined,
-}));
-vi.mock("../plugins/modules", async (original) => {
-  const actual = await original<typeof import("../plugins/modules")>();
-  return {
-    ...actual,
-    createModuleLoader(...args: Parameters<typeof actual.createModuleLoader>) {
-      const load = actual.createModuleLoader(...args);
-      return async (plugin: Parameters<typeof load>[0]) => {
-        if (plugin.manifest.id === "buzz.inbox") await inboxGate.value;
-        return load(plugin);
-      };
-    },
-  };
-});
 vi.mock("../bundled", async () => ({
   bundledPlugins: [
     {
@@ -93,10 +76,6 @@ vi.mock("../bundled", async () => ({
       },
       module: await import("../bundled/watching"),
       enabledByDefault: true,
-    },
-    {
-      manifest: { id: "buzz.inbox", name: "Activity", apiVersion: 1 },
-      module: await import("../bundled/inbox"),
     },
     {
       manifest: { id: "buzz.bestie", name: "Bestie", apiVersion: 1 },
@@ -154,7 +133,6 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   catalogGate.value = undefined;
   catalogGate.edit = undefined;
-  inboxGate.value = undefined;
   Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
   localStorage.clear();
   window.history.replaceState(null, "", "/");
@@ -270,50 +248,34 @@ it("keeps an OS entity intent through real community selection and Retry in App"
   );
 });
 
-it.each([
-  ["opens Inbox with the notice", true],
-  ["shows the notice over the start page when Inbox is turned off", false],
-] as const)(
-  "for a malformed link that launches the app, %s",
-  async (_, inbox) => {
-    // The client stays loading until released, so the link is a launch link.
-    let release = () => {};
-    const identity = new Promise<void>((resolve) => (release = resolve));
-    const { current } = bindCommunityLinks(
-      origin,
-      async () => ["buzz://unknown"],
-      identity,
-    );
-    await waitFor(() => expect(current.plugins.startup()).not.toBe("loading"));
-    if (!inbox)
-      await act(() => current.plugins.change("disable", "buzz.inbox"));
-    const before = current.navigation.snapshot();
-    release();
-    await screen.findByRole("dialog", { name: "This link doesn’t work" });
-    if (inbox)
-      await waitFor(() =>
-        expect(current.navigation.snapshot()).toMatchObject({
-          status: "opened",
-          entry: {
-            target: {
-              kind: "page",
-              pluginId: "buzz.inbox",
-              pageId: "inbox",
-              scope: { viewer, communityOrigin: origin },
-            },
-          },
-        }),
-      );
-    else
-      expect(current.navigation.snapshot()).toMatchObject({
-        attempt: { id: before.attempt.id },
-        entry: { id: before.entry.id },
-        canGoForward: false,
-      });
-  },
-);
+it("opens Team with the notice for a malformed link that launches the app", async () => {
+  // The client stays loading until released, so the link is a launch link.
+  let release = () => {};
+  const identity = new Promise<void>((resolve) => (release = resolve));
+  const { current } = bindCommunityLinks(
+    origin,
+    async () => ["buzz://unknown"],
+    identity,
+  );
+  await waitFor(() => expect(current.plugins.startup()).not.toBe("loading"));
+  release();
+  await screen.findByRole("dialog", { name: "This link doesn’t work" });
+  await waitFor(() =>
+    expect(current.navigation.snapshot()).toMatchObject({
+      status: "opened",
+      entry: {
+        target: {
+          kind: "page",
+          pluginId: "buzz.channels",
+          pageId: "channels",
+          scope: { viewer, communityOrigin: origin },
+        },
+      },
+    }),
+  );
+});
 
-it("opens Inbox for a malformed launch link when the catalog settles after the client", async () => {
+it("opens Team for a malformed launch link when the catalog settles after the client", async () => {
   let release = () => {};
   catalogGate.value = new Promise<void>((resolve) => (release = resolve));
   const { current } = bindCommunityLinks(origin, async () => [
@@ -334,82 +296,13 @@ it("opens Inbox for a malformed launch link when the catalog settles after the c
       entry: {
         target: {
           kind: "page",
-          pluginId: "buzz.inbox",
-          pageId: "inbox",
+          pluginId: "buzz.channels",
+          pageId: "channels",
           scope: { viewer, communityOrigin: origin },
         },
       },
     }),
   );
-});
-
-it("opens Inbox for a malformed launch link when Inbox activates last", async () => {
-  let release = () => {};
-  inboxGate.value = new Promise<void>((resolve) => (release = resolve));
-  const { current } = bindCommunityLinks(origin, async () => [
-    "buzz://unknown",
-  ]);
-  await waitFor(() => {
-    expect(current.communities.snapshot()).toMatchObject({
-      status: "ready",
-      selected: origin,
-    });
-    expect(current.plugins.snapshot().activation).toMatchObject({
-      "buzz.channels": { status: "active" },
-      "buzz.inbox": { status: "starting" },
-    });
-  });
-  expect(current.rejectedLinks.snapshot()).toBeUndefined();
-  release();
-  await screen.findByRole("dialog", { name: "This link doesn’t work" });
-  await waitFor(() =>
-    expect(current.navigation.snapshot()).toMatchObject({
-      status: "opened",
-      entry: {
-        target: {
-          kind: "page",
-          pluginId: "buzz.inbox",
-          pageId: "inbox",
-          scope: { viewer, communityOrigin: origin },
-        },
-      },
-    }),
-  );
-});
-
-it("keeps a malformed launch link on the start page when the catalog turning Inbox off settles last", async () => {
-  let release = () => {};
-  catalogGate.value = new Promise<void>((resolve) => (release = resolve));
-  localStorage.setItem(
-    "buzzodz.plugins.v1",
-    JSON.stringify({ version: 3, enabled: { "buzz.inbox": false } }),
-  );
-  const { current } = bindCommunityLinks(origin, async () => [
-    "buzz://unknown",
-  ]);
-  await waitFor(() =>
-    expect(current.communities.snapshot()).toMatchObject({
-      status: "ready",
-      selected: origin,
-    }),
-  );
-  expect(current.plugins.startup()).toBe("loading");
-  expect(current.rejectedLinks.snapshot()).toBeUndefined();
-  const before = current.navigation.snapshot();
-  release();
-  await screen.findByRole("dialog", { name: "This link doesn’t work" });
-  await waitFor(() =>
-    expect(current.navigation.snapshot().status).not.toBe("opening"),
-  );
-  expect(current.navigation.snapshot()).toMatchObject({
-    attempt: { id: before.attempt.id },
-    entry: { id: before.entry.id },
-    canGoForward: false,
-  });
-  expect(current.navigation.snapshot().status).not.toBe("failed");
-  expect(current.navigation.snapshot().entry.target).not.toMatchObject({
-    pluginId: "buzz.inbox",
-  });
 });
 
 it("a malformed link in a running app retires an earlier link's Try again", async () => {
@@ -921,14 +814,14 @@ it("lists active primary pages in the universal rail", async () => {
   services = createServices();
   const current = services;
   render(<App services={current} />);
-  const activity = await screen.findByRole("button", { name: "Activity" });
-  await waitFor(() => expect(activity).toHaveAttribute("aria-current", "page"));
-  expect(current.navigation.snapshot().entry.target).toMatchObject({
-    kind: "page",
-    pluginId: "buzz.inbox",
-    pageId: "inbox",
-  });
-  await userEvent.click(screen.getByRole("button", { name: "Team" }));
+  await screen.findByRole("button", { name: "Team" });
+  await waitFor(() =>
+    expect(current.navigation.snapshot().entry.target).toMatchObject({
+      kind: "page",
+      pluginId: "buzz.channels",
+      pageId: "channels",
+    }),
+  );
   expect(screen.getByRole("button", { name: "Bestie" })).toBeInTheDocument();
 
   expect(
@@ -972,7 +865,7 @@ it("lists active primary pages in the universal rail", async () => {
   );
 
   await act(() => current.plugins.change("disable", "buzz.agents"));
-  expect(screen.getByRole("button", { name: "Activity" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Team" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Bestie" })).toBeInTheDocument();
 
   expect(
@@ -996,11 +889,8 @@ it("lists active primary pages in the universal rail", async () => {
   await userEvent.keyboard("{Escape}");
 
   // Disabling optional pages removes their rail entries without hiding Messages.
-  for (const id of ["buzz.inbox", "buzz.bestie", "buzz.repos"])
+  for (const id of ["buzz.bestie", "buzz.repos"])
     await act(() => current.plugins.change("disable", id));
-  expect(
-    screen.queryByRole("button", { name: "Activity" }),
-  ).not.toBeInTheDocument();
   expect(
     screen.queryByRole("button", { name: "Bestie" }),
   ).not.toBeInTheDocument();
@@ -1045,23 +935,45 @@ function legacyPageFixture(
   return current;
 }
 
+const oldPlaceholder = (params: string) =>
+  ({
+    pluginId: "buzz.channels",
+    pageId: "channels",
+    route: { version: 1, params },
+  }) as const;
 it.each(
-  ["Inbox", "Bestie"].flatMap((name) => [
-    { name, scope: undefined },
-    { name, scope: null },
-    { name, scope: { viewer, communityOrigin: origin } },
+  [
+    // Inbox's placeholder and Activity's own address both open Team now.
+    {
+      name: "Inbox",
+      from: oldPlaceholder("Inbox"),
+      to: { pluginId: "buzz.channels", pageId: "channels" },
+    },
+    {
+      name: "Activity",
+      from: { pluginId: "buzz.inbox", pageId: "inbox" },
+      to: { pluginId: "buzz.channels", pageId: "channels" },
+    },
+    {
+      name: "Bestie",
+      from: oldPlaceholder("Bestie"),
+      to: { pluginId: "buzz.bestie", pageId: "bestie" },
+    },
+  ].flatMap((link) => [
+    { ...link, scope: undefined },
+    { ...link, scope: null },
+    { ...link, scope: { viewer, communityOrigin: origin } },
   ]),
 )(
   "normalizes old $name links in the same visit and caller, retaining $scope scope",
-  async ({ name, scope }) => {
+  async ({ name, from, to, scope }) => {
     if (name === "Bestie")
       localStorage.setItem(
         "buzzodz.plugins.v1",
         JSON.stringify({ version: 3, enabled: { "buzz.bestie": true } }),
       );
     const current = legacyPageFixture();
-    await screen.findByRole("button", { name: "Activity" });
-    const pageId = name.toLowerCase();
+    await screen.findByRole("button", { name: "Team" });
 
     act(() => {
       void current.navigation.open({
@@ -1077,9 +989,7 @@ it.each(
     const old: OpenTarget = {
       version: 1,
       kind: "page",
-      pluginId: "buzz.channels",
-      pageId: "channels",
-      route: { version: 1, params: name },
+      ...from,
       ...(scope !== undefined ? { scope } : {}),
     };
     const bound = parseOpenTarget(old);
@@ -1098,8 +1008,7 @@ it.each(
       target: {
         version: 1,
         kind: "page",
-        pluginId: `buzz.${pageId}`,
-        pageId,
+        ...to,
         ...(scope !== undefined ? { scope } : {}),
       },
     });
@@ -1181,18 +1090,33 @@ it("restores legacy placeholder history but does not normalize unknown versions 
     "",
     `/#buzz=${encodeURIComponent(JSON.stringify(old))}`,
   );
+  localStorage.setItem(
+    "buzzodz.plugins.v1",
+    JSON.stringify({ version: 3, enabled: { "buzz.bestie": true } }),
+  );
   const current = legacyPageFixture();
   await waitFor(() =>
     expect(current.navigation.snapshot().status).toBe("opened"),
   );
-  expect(current.navigation.snapshot().entry.target).toMatchObject({
-    pluginId: "buzz.inbox",
-    pageId: "inbox",
+  // Inbox's placeholder restores as plain Team, without the old route.
+  expect(current.navigation.snapshot().entry.target).toEqual({
+    version: 1,
+    kind: "page",
+    pluginId: "buzz.channels",
+    pageId: "channels",
   });
+  const foreign = { viewer: "ab".repeat(32), communityOrigin: origin };
   for (const target of [
     { ...old, route: { version: 2, params: "Inbox" } },
     { ...old, route: { version: 1, params: "Unknown" } },
-    { ...old, scope: { viewer: "ab".repeat(32), communityOrigin: origin } },
+    { ...old, scope: foreign },
+    {
+      version: 1,
+      kind: "page",
+      pluginId: "buzz.inbox",
+      pageId: "inbox",
+      scope: foreign,
+    } as const,
   ]) {
     let result!: ReturnType<typeof current.navigation.open>;
     act(() => {
@@ -1203,10 +1127,14 @@ it("restores legacy placeholder history but does not normalize unknown versions 
     );
     expect(await result).toMatchObject({ status: "failed" });
   }
-  await act(() => current.plugins.change("disable", "buzz.inbox"));
+  // Team is required, so the plugin gate is shown with Bestie's placeholder.
+  await act(() => current.plugins.change("disable", "buzz.bestie"));
   let result!: ReturnType<typeof current.navigation.open>;
   act(() => {
-    result = current.navigation.open(old);
+    result = current.navigation.open({
+      ...old,
+      route: { version: 1, params: "Bestie" },
+    });
   });
   await waitFor(() =>
     expect(current.navigation.snapshot().status).toBe("failed"),
@@ -1214,7 +1142,7 @@ it("restores legacy placeholder history but does not normalize unknown versions 
   expect(await result).toEqual({ status: "failed", reason: "unavailable" });
 });
 
-it("cold Settings Close uses required Messages when Inbox is disabled", async () => {
+it("cold Settings Close opens Team", async () => {
   window.history.replaceState(
     null,
     "",
@@ -1228,10 +1156,6 @@ it("cold Settings Close uses required Messages when Inbox is disabled", async ()
   );
   const current = legacyPageFixture();
   const back = await screen.findByRole("button", { name: "Close Settings" });
-  await act(() => current.plugins.change("disable", "buzz.inbox"));
-  expect(
-    current.pages.snapshot().some((page) => page.key === "buzz.inbox/inbox"),
-  ).toBe(false);
   await userEvent.click(back);
   await waitFor(() =>
     expect(current.navigation.snapshot()).toMatchObject({
@@ -1246,7 +1170,7 @@ it("cold Settings Close uses required Messages when Inbox is disabled", async ()
 
 it("Close returns to the immediately preceding failed destination, not an older retained workspace", async () => {
   const current = legacyPageFixture();
-  await screen.findByRole("button", { name: "Activity" });
+  await screen.findByRole("button", { name: "Team" });
   await act(async () => {
     void current.navigation.open({
       version: 1,
@@ -1288,10 +1212,10 @@ it("Close returns to the immediately preceding failed destination, not an older 
   );
 });
 
-/** The card for Activity turned off, with its copy and actions. */
-async function activityTurnedOff() {
+/** The card for Agents turned off, with its copy and actions. */
+async function agentsTurnedOff() {
   const card = (
-    await screen.findByRole("heading", { name: "Activity is turned off" })
+    await screen.findByRole("heading", { name: "Agents is turned off" })
   ).closest<HTMLElement>('[role="alert"]');
   if (!card) throw new Error("Expected the failure alert");
   expect(
@@ -1305,22 +1229,22 @@ async function activityTurnedOff() {
   return card;
 }
 
-/** Turns Activity off while it's open, then goes to Messages and Back. */
-async function backOntoTurnedOffActivity() {
+/** Turns Agents off while its page is open, then goes to Team and Back. */
+async function backOntoTurnedOffAgents() {
   const current = legacyPageFixture();
   await userEvent.click(
-    await screen.findByRole("button", { name: "Activity" }),
+    await screen.findByRole("button", { name: "Open Agents" }),
   );
   await waitFor(() =>
     expect(current.navigation.snapshot()).toMatchObject({
       status: "opened",
-      entry: { target: { kind: "page", pluginId: "buzz.inbox" } },
+      entry: { target: { kind: "page", pluginId: "buzz.agents" } },
     }),
   );
   const visit = current.navigation.snapshot().entry.id;
-  await act(() => current.plugins.change("disable", "buzz.inbox"));
+  await act(() => current.plugins.change("disable", "buzz.agents"));
   await userEvent.click(
-    within(await activityTurnedOff()).getByRole("button", {
+    within(await agentsTurnedOff()).getByRole("button", {
       name: "Go to Team",
     }),
   );
@@ -1331,7 +1255,7 @@ async function backOntoTurnedOffActivity() {
     }),
   );
   act(() => current.navigation.back());
-  const card = await activityTurnedOff();
+  const card = await agentsTurnedOff();
   expect(current.navigation.snapshot()).toMatchObject({
     status: "failed",
     reason: "unavailable",
@@ -1341,7 +1265,7 @@ async function backOntoTurnedOffActivity() {
 }
 
 it("says when the open page's plugin is turned off, again after Back, and its Manage plugins opens that plugin and returns to the page", async () => {
-  const { current, visit, card } = await backOntoTurnedOffActivity();
+  const { current, visit, card } = await backOntoTurnedOffAgents();
 
   await userEvent.click(
     within(card).getByRole("button", { name: "Manage plugins" }),
@@ -1351,7 +1275,7 @@ it("says when the open page's plugin is turned off, again after Back, and its Ma
       version: 1,
       kind: "settings",
       section: "plugins",
-      pluginId: "buzz.inbox",
+      pluginId: "buzz.agents",
       scope: { viewer, communityOrigin: origin },
     }),
   );
@@ -1361,7 +1285,9 @@ it("says when the open page's plugin is turned off, again after Back, and its Ma
   );
   await waitFor(() =>
     expect(
-      current.pages.snapshot().some((page) => page.key === "buzz.inbox/inbox"),
+      current.pages
+        .snapshot()
+        .some((page) => page.key === "buzz.agents/agents"),
     ).toBe(true),
   );
   await userEvent.click(
@@ -1370,22 +1296,22 @@ it("says when the open page's plugin is turned off, again after Back, and its Ma
   await waitFor(() =>
     expect(current.navigation.snapshot()).toMatchObject({
       status: "opened",
-      entry: { id: visit, target: { kind: "page", pluginId: "buzz.inbox" } },
+      entry: { id: visit, target: { kind: "page", pluginId: "buzz.agents" } },
     }),
   );
   expect(current.navigation.snapshot().reason).toBeUndefined();
   expect(screen.queryByText(pageFailure)).not.toBeInTheDocument();
   expect(
-    screen.queryByRole("heading", { name: "Activity is turned off" }),
+    screen.queryByRole("heading", { name: "Agents is turned off" }),
   ).not.toBeInTheDocument();
 });
 
 // The failed visit doesn't retry by itself; Try again opens it.
 it("turning a plugin back on over its failed page offers Try again, which opens the page", async () => {
-  const { current, visit } = await backOntoTurnedOffActivity();
+  const { current, visit } = await backOntoTurnedOffAgents();
 
   // As ⌘K's switch does.
-  await act(() => current.plugins.change("enable", "buzz.inbox"));
+  await act(() => current.plugins.change("enable", "buzz.agents"));
   const card = (
     await screen.findByRole("heading", { name: "This page isn’t available" })
   ).closest<HTMLElement>('[role="alert"]');
@@ -1399,7 +1325,7 @@ it("turning a plugin back on over its failed page offers Try again, which opens 
       .map((button) => button.textContent),
   ).toEqual(["Try again", "Go to Team"]);
   expect(
-    screen.queryByRole("heading", { name: "Activity is turned off" }),
+    screen.queryByRole("heading", { name: "Agents is turned off" }),
   ).not.toBeInTheDocument();
 
   await userEvent.click(
@@ -1408,7 +1334,7 @@ it("turning a plugin back on over its failed page offers Try again, which opens 
   await waitFor(() =>
     expect(current.navigation.snapshot()).toMatchObject({
       status: "opened",
-      entry: { id: visit, target: { kind: "page", pluginId: "buzz.inbox" } },
+      entry: { id: visit, target: { kind: "page", pluginId: "buzz.agents" } },
     }),
   );
   expect(current.navigation.snapshot().reason).toBeUndefined();
@@ -1433,7 +1359,7 @@ it("keeps the unavailable card for a turned-off external plugin while external p
         }
       : result;
   const current = legacyPageFixture();
-  await screen.findByRole("button", { name: "Activity" });
+  await screen.findByRole("button", { name: "Team" });
   expect(current.plugins.snapshot().configuration).toMatchObject({
     status: "ready",
     externalPluginsPaused: true,

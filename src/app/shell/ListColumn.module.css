@@ -116,3 +116,8 @@ html[data-keyboard-input] .columns[data-list-animate] .list {
 .frame:not([data-detail-workspace]) > .columns > .page {
   display: contents;
 }
+
+/* With nothing selected the list is the whole frame; the page stays mounted. */
+.frame[data-narrow] .columns[data-list-fill][data-list-open="true"] .page {
+  display: none;
+}

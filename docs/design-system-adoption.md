@@ -76,7 +76,8 @@ During PR preparation, source references were refreshed against `a6ea532d6`,
 including the Me workspace. The browser observations below remain tied to
 `2bea18769`; the newer Me workspace and Agents page were not browser-retested.
 The Me and Sessions pages named in this snapshot have since been retired: Solo
-chats now open in Messages, so those observations are historical.
+chats now open in Messages, so those observations are historical. Inbox (later
+Activity) is retired too; its views are now Team's list.
 
 Browser inspection covered Messages, Inbox, Reminders, Projects, Agents, Sessions,
 Workflows, Me, the account menu, Channel members, a profile companion panel, and
@@ -94,7 +95,7 @@ below are labelled separately. No product fixes are included in this documentati
 | Surface | Example and the specific pattern it demonstrates |
 | --- | --- |
 | Conversation workspace | [ChannelsPage](../src/bundled/channels/ChannelsPage.tsx): pane identity and icon actions, timeline scroll ownership, persistent composer |
-| Collection with detail | [InboxPage](../src/bundled/inbox/InboxPage.tsx): filters in the body and list/detail ownership |
+| Collection with detail | [ListColumn](../src/app/shell/ListColumn.tsx) with [ConversationList](../src/features/conversation/ConversationList.tsx): the shell-owned list column beside the page, with view tabs and the filter menu under the collection heading |
 | Solo chats | [ChannelsPage](../src/bundled/channels/ChannelsPage.tsx) Solo treatment ([SoloHeading](../src/bundled/channels/SoloHeading.tsx)): flat timeline/composer in the shared conversation page and panel workspace |
 | Immediate settings | [NotificationSettings](../src/app/NotificationSettings.tsx), [AppearanceSettings](../src/app/AppearanceSettings.tsx): shared preference rows, grouped controls, and contextual permission feedback |
 | Explicit-save settings | [ProfileSettings](../src/app/ProfileSettings.tsx): scoped description, labelled fields, preserved draft/save behavior. [IdentitySettings](../src/app/IdentitySettings.tsx) owns separate identity details |

@@ -1,6 +1,5 @@
 import {
   AlarmIcon,
-  BellIcon,
   BestieIcon,
   BrowserIcon,
   ChatsCircleIcon,
@@ -23,7 +22,6 @@ export const shellPresentation = {
 // contribution keys so an external page's local ID cannot claim a bundled slot.
 const bundledOrder = [
   "buzz.channels/channels",
-  "buzz.inbox/inbox",
   "buzz.drafts-and-sent/drafts-sent",
   "buzz.reminders/reminders",
   "buzz.bestie/bestie",
@@ -55,7 +53,6 @@ export function orderPages(
 
 const bundledIcons = new Map<string, typeof BrowserIcon>([
   ["buzz.bestie/bestie", BestieIcon],
-  ["buzz.inbox/inbox", BellIcon],
   ["buzz.drafts-and-sent/drafts-sent", SendIcon],
   ["buzz.reminders/reminders", AlarmIcon],
   ["buzz.agents/agents", RobotIcon],
@@ -69,7 +66,6 @@ export function pagePlacement(page: RegisteredPage) {
     case "buzz.bestie/bestie":
       return "sidebar";
     case "buzz.channels/channels":
-    case "buzz.inbox/inbox":
     case "buzz.reminders/reminders":
     case "buzz.agents/agents":
     case "buzz.workflows/workflows":

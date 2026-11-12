@@ -50,10 +50,6 @@ import bestieManifest from "./bestie/manifest.json";
 import * as bestie from "./bestie";
 import usageManifest from "./usage/manifest.json";
 import * as usage from "./usage";
-import activitySidebarManifest from "./activity-sidebar/manifest.json";
-import * as activitySidebar from "./activity-sidebar";
-import inboxManifest from "./inbox/manifest.json";
-import * as inbox from "./inbox";
 import focusManifest from "./focus/manifest.json";
 import * as focus from "./focus";
 import remindersManifest from "./reminders/manifest.json";
@@ -204,18 +200,6 @@ export const bundledPlugins: readonly BundledPlugin[] = [
     manifest: { ...usageManifest, apiVersion: 1 },
     module: usage,
     enabledByDefault: false,
-  },
-  {
-    manifest: { ...inboxManifest, apiVersion: 1 },
-    module: inbox,
-    enabledByDefault: true,
-  },
-  // PROTOTYPE: on by default on this branch. The desktop catalog in
-  // crates/plugin-manager lists it too.
-  {
-    manifest: { ...activitySidebarManifest, apiVersion: 1 },
-    module: activitySidebar,
-    enabledByDefault: true,
   },
   {
     manifest: { ...remindersManifest, apiVersion: 1 },

@@ -46,6 +46,7 @@ import {
   ChatCircleIcon,
   CircleNotchIcon,
   ClockIcon,
+  SmileyIcon,
 } from "../../shared/design-system/icons/index";
 import { HeaderIcon } from "../../shared/design-system/ui/HeaderIcon";
 import { Header } from "../../shared/design-system/ui/Header";
@@ -73,10 +74,14 @@ import {
   type LatestMessage,
 } from "./latest-previews";
 import { useIdentityNames } from "../../features/identity-names/react";
-import { dmLabel } from "../../bundled/inbox/dm-label";
+import { dmLabel } from "./dm-label";
+import { reactionRows } from "./reaction-rows";
+import type { ReadTarget } from "../relay/read-state-model";
+import { ReactionRow } from "./ReactionRow";
+import { useToastNotification } from "../../shared/design-system/ui/Toast";
 
 export type ActivityView = {
-  filter: "all" | "threads" | "direct" | "working" | "waiting";
+  filter: "all" | "threads" | "direct" | "working" | "waiting" | "reactions";
   unread: boolean;
   sort?: "recent" | "alpha";
 };
@@ -108,6 +113,11 @@ export const conversationViews = [
     label: "Waiting",
     icon: <ClockIcon size={20} aria-hidden="true" />,
   },
+  {
+    value: "reactions",
+    label: "Reactions",
+    icon: <SmileyIcon size={20} aria-hidden="true" />,
+  },
 ] as const;
 const viewKey = "activity-sidebar:view:v5";
 
@@ -119,7 +129,8 @@ function readSavedView(scope: string): View {
       saved?.filter === "threads" ||
       saved?.filter === "direct" ||
       saved?.filter === "working" ||
-      saved?.filter === "waiting"
+      saved?.filter === "waiting" ||
+      saved?.filter === "reactions"
         ? saved.filter
         : "all",
     unread: saved?.unread === true,
@@ -515,9 +526,11 @@ export function ConversationList({
     [],
   );
 
+  const notify = useToastNotification();
   const unreadOnly = view.unread;
   const filter = view.filter;
-  const flat = filter === "threads";
+  const reacted = filter === "reactions";
+  const flat = filter === "threads" || reacted;
   const direct = filter === "direct";
   const working = useWorkingChannels(session);
   const agentView = filter === "working" || filter === "waiting";
@@ -637,11 +650,13 @@ export function ConversationList({
   );
   const channelsById = new Map(list.channels.map((c) => [c.id, c]));
   const shownEvents = (
-    flat
-      ? threadEvents(inbox.items, teamIds, session)
-      : direct
-        ? mentionEvents(inbox.items, teamIds)
-        : []
+    reacted
+      ? []
+      : flat
+        ? threadEvents(inbox.items, teamIds, session)
+        : direct
+          ? mentionEvents(inbox.items, teamIds)
+          : []
   )
     .sort(newestFirst)
     .filter(
@@ -798,7 +813,11 @@ export function ConversationList({
         time={shortTime(event.createdAt)}
         preview={messagePreview(event.preview)}
         state={event.unread ? "unread" : "read"}
-        onMarkRead={() => void markEventRead(session, event)}
+        onMarkRead={() =>
+          void markEventRead(session, event).then(() => {
+            if (unreadOnly) offerUndo(notify, session, eventTarget(event));
+          })
+        }
       />
     );
     return (
@@ -811,6 +830,33 @@ export function ConversationList({
     );
   };
 
+  if (reacted)
+    return (
+      <div className={styles.activity} data-activity-sidebar="">
+        <ReactionList
+          session={session}
+          layout={layout}
+          channels={channelsById}
+          includes={(channelId) => {
+            const channel = channelsById.get(channelId);
+            return (
+              !!channel &&
+              listed(channel) &&
+              (!includeChannel || includeChannel(channel))
+            );
+          }}
+          includeAuthor={includeAuthor}
+          profiles={profiles}
+          resolveName={resolveName}
+          isSelected={(channelId, messageId) =>
+            target.kind === "conversation" &&
+            target.channelId === channelId &&
+            target.messageId === messageId
+          }
+          onOpen={open}
+        />
+      </div>
+    );
   return (
     <div className={styles.activity} data-activity-sidebar="">
       <ul
@@ -1063,6 +1109,7 @@ export const ChannelActivityRow = memo(function ChannelActivityRow({
   selected: boolean;
   onOpen(channelId: string): void;
 }) {
+  const notify = useToastNotification();
   const dm = channel.channelType === "dm";
   const state = useUnreadState(session, channel.id, dm);
   const threadUnread = (state.activity.items ?? []).some(
@@ -1130,7 +1177,17 @@ export const ChannelActivityRow = memo(function ChannelActivityRow({
       preview={preview}
       state={working ? "working" : unread ? "unread" : "read"}
       onMarkRead={() =>
-        void session.unread.markChannelRead(channel.id).catch(() => {})
+        void session.unread.markChannelRead(channel.id).then(
+          () => {
+            // Under Unread the row leaves the list, so its read can be undone.
+            if (unreadOnly && !selected)
+              offerUndo(notify, session, {
+                kind: "channel",
+                channelId: channel.id,
+              });
+          },
+          () => {},
+        )
       }
     />
   );
@@ -1184,6 +1241,111 @@ function privateIcon(channel: ChannelSummary | undefined) {
 
 /** A thread row reads through its latest reply; a top-level mention reads
  * just that message. */
+const eventTarget = (event: ActivityEvent): ReadTarget =>
+  event.rootId
+    ? { kind: "thread", channelId: event.channelId, rootId: event.rootId }
+    : {
+        kind: "message",
+        channelId: event.channelId,
+        messageId: event.messageId,
+      };
+
+/** Unread again on this device; saved read state is not rewound. */
+function offerUndo(
+  notify: ReturnType<typeof useToastNotification>,
+  session: RelaySession,
+  target: ReadTarget,
+) {
+  notify("Marked as read", "success", {
+    label: "Undo",
+    onClick: () =>
+      void session.unread
+        .markUnreadLocal(target)
+        .catch(() => notify("Couldn't mark unread", "error")),
+  });
+}
+
+/** Reactions to your messages: context, never unread and never marked read. */
+function ReactionList({
+  session,
+  layout,
+  channels,
+  includes,
+  includeAuthor,
+  profiles,
+  resolveName,
+  isSelected,
+  onOpen,
+}: {
+  session: RelaySession;
+  layout: "sidebar" | "feed" | "navigation";
+  channels: ReadonlyMap<string, ChannelSummary>;
+  includes(channelId: string): boolean;
+  includeAuthor?: ((authorId: string) => boolean) | undefined;
+  profiles: ReadonlyMap<string, Profile>;
+  resolveName: ReturnType<typeof useIdentityNames>;
+  isSelected(channelId: string, messageId: string): boolean;
+  onOpen(
+    channelId: string,
+    options: { messageId?: string; threadRootId?: string },
+  ): void;
+}) {
+  const reactions = session.inboxFeed.reactions;
+  const feed = useSyncExternalStore(
+    reactions.subscribe,
+    reactions.snapshot,
+    reactions.snapshot,
+  );
+  useEffect(() => {
+    void reactions.ensure();
+  }, [reactions]);
+  const rows = reactionRows(
+    feed.items.filter((item) => includes(item.channelId)),
+    includeAuthor,
+  );
+  return (
+    <>
+      <ul
+        className={layout === "feed" ? feedStyles.list : styles.rows}
+        aria-label="Reactions"
+      >
+        {rows.map((item) => (
+          <li
+            key={item.id}
+            className={layout === "feed" ? feedStyles.item : undefined}
+          >
+            <ReactionRow
+              item={item}
+              session={session}
+              profiles={profiles}
+              name={resolveName}
+              channel={channels.get(item.channelId)}
+              selected={isSelected(item.channelId, item.message.id)}
+              onClick={() =>
+                onOpen(item.channelId, {
+                  messageId: item.message.id,
+                  ...(item.message.threadRootId && {
+                    threadRootId: item.message.threadRootId,
+                  }),
+                })
+              }
+            />
+          </li>
+        ))}
+      </ul>
+      {!rows.length && (
+        <p className={`text-body-sm text-subtle ${styles.empty}`}>
+          {feed.status === "error"
+            ? (feed.error ?? "Couldn't load reactions.")
+            : feed.status === "ready"
+              ? "No reactions yet."
+              : "Loading reactions…"}
+        </p>
+      )}
+    </>
+  );
+}
+
 async function markEventRead(session: RelaySession, event: ActivityEvent) {
   try {
     await (event.rootId

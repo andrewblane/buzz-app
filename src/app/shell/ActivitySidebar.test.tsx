@@ -18,6 +18,9 @@ import {
 } from "../../features/relay/channel-previews";
 import type { RelaySession } from "../../features/relay/session";
 import type { InboxItem } from "../../features/relay/inbox";
+import type { InboxReaction } from "../../features/relay/inbox-reactions";
+import { foldMessages } from "../../features/relay/fold";
+import { keypair, message, signed } from "../../features/relay/testing";
 import type { Navigation } from "../../features/navigation/controller";
 import {
   ActivityFilters,
@@ -25,9 +28,16 @@ import {
   type ActivityView,
 } from "../../features/conversation/ConversationList";
 
+const notify = vi.hoisted(() => vi.fn());
+vi.mock("../../shared/design-system/ui/Toast", async (original) => ({
+  ...(await original<typeof import("../../shared/design-system/ui/Toast")>()),
+  useToastNotification: () => notify,
+}));
+
 const previewOwners: (() => void)[] = [];
 afterEach(() => {
   cleanup();
+  notify.mockReset();
   for (const stop of previewOwners.splice(0)) stop();
   vi.unstubAllGlobals();
 });
@@ -49,6 +59,7 @@ function setup(
   dmParticipants: readonly string[] = [alice],
   snapshotRead?: RelaySession["snapshotRead"],
   isOpen?: (target: { channelId: string; threadId?: string }) => boolean,
+  reactions: readonly InboxReaction[] = [],
 ) {
   const base = createRelaySession(null).session;
   const channels = [
@@ -138,6 +149,8 @@ function setup(
     [reply, { name: "Eli" }],
   ]);
   const markChannelRead = vi.fn(async () => ({}) as never);
+  const markUnreadLocal = vi.fn(async () => ({}) as never);
+  const reactionFeed = { status: "ready" as const, items: reactions };
   const previews = createChannelPreviews({
     read: snapshotRead
       ? (filters, options) => snapshotRead(filters, options ?? {})
@@ -172,7 +185,16 @@ function setup(
       snapshot: () => profiles,
       ensure: async () => {},
     },
-    inboxFeed: { ...base.inboxFeed, ensure: async () => {} },
+    inboxFeed: {
+      ...base.inboxFeed,
+      ensure: async () => {},
+      reactions: {
+        ...base.inboxFeed.reactions,
+        snapshot: () => reactionFeed,
+        subscribe: () => () => {},
+        ensure: async () => {},
+      },
+    },
     agentActivity: {
       ...base.agentActivity,
       subscribe: () => () => {},
@@ -192,6 +214,7 @@ function setup(
     unread: {
       ...base.unread,
       markChannelRead,
+      markUnreadLocal,
       ensure: async () => {},
       inbox: () => inbox as never,
       subscribeInbox: () => () => {},
@@ -233,7 +256,7 @@ function setup(
     );
   }
   render(<Harness />);
-  return { open, markChannelRead };
+  return { open, markChannelRead, markUnreadLocal };
 }
 
 const rowNames = () =>
@@ -545,4 +568,89 @@ test("a group DM shows at most three other participants", async () => {
 test("a Solo row with no known message shows its agent", async () => {
   setup();
   expect(faceOf("solo")).toBe("B");
+});
+
+test("marking a row read under Unread offers Undo, which marks it unread again", async () => {
+  const { markChannelRead, markUnreadLocal } = setup();
+  await userEvent.click(screen.getByRole("button", { name: "Showing all" }));
+  await userEvent.click(
+    await screen.findByRole("menuitemradio", { name: "Unread only" }),
+  );
+  const row = screen
+    .getAllByRole("listitem")
+    .find((li) => li.getAttribute("data-activity-row") === "old");
+  if (!row) throw new Error("missing row");
+  await userEvent.click(
+    within(row).getByRole("button", { name: "Mark as read" }),
+  );
+  expect(markChannelRead).toHaveBeenCalledWith("old");
+  await waitFor(() =>
+    expect(notify).toHaveBeenCalledWith(
+      "Marked as read",
+      "success",
+      expect.objectContaining({ label: "Undo" }),
+    ),
+  );
+  notify.mock.calls[0]?.[2].onClick();
+  expect(markUnreadLocal).toHaveBeenCalledWith({
+    kind: "channel",
+    channelId: "old",
+  });
+});
+
+test("marking a row read in the full list offers no Undo: the row stays", async () => {
+  const { markChannelRead } = setup();
+  const row = screen
+    .getAllByRole("listitem")
+    .find((li) => li.getAttribute("data-activity-row") === "old");
+  if (!row) throw new Error("missing row");
+  await userEvent.click(
+    within(row).getByRole("button", { name: "Mark as read" }),
+  );
+  await waitFor(() => expect(markChannelRead).toHaveBeenCalled());
+  await act(async () => {});
+  expect(notify).not.toHaveBeenCalled();
+});
+
+test("Reactions lists reactions to your messages and opens the message", async () => {
+  const me = keypair();
+  const fan = keypair();
+  const mine = message(me, "old", "Shipped it", 1);
+  const folded = foldMessages("old", me.pubkey, [mine])[0];
+  if (!folded) throw new Error("Missing fixture message");
+  const { open } = setup([], {}, [], [alice], undefined, undefined, [
+    {
+      id: `reaction:${mine.id}`,
+      channelId: "old",
+      message: folded,
+      createdAt: 100,
+      events: [
+        signed(fan, {
+          kind: 7,
+          content: "🎉",
+          created_at: 10,
+          tags: [["e", mine.id]],
+        }),
+      ],
+    },
+  ]);
+  await userEvent.click(screen.getByRole("tab", { name: "Reactions" }));
+  const list = screen.getByRole("list", { name: "Reactions" });
+  const rows = within(list).getAllByRole("listitem");
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toHaveTextContent("Shipped it");
+  await userEvent.click(within(rows[0] as HTMLElement).getByRole("button"));
+  expect(open).toHaveBeenCalledWith(
+    expect.objectContaining({
+      kind: "conversation",
+      channelId: "old",
+      messageId: mine.id,
+    }),
+  );
+});
+
+test("Reactions says so when there are none", async () => {
+  setup();
+  await userEvent.click(screen.getByRole("tab", { name: "Reactions" }));
+  expect(screen.getByText("No reactions yet.")).toBeInTheDocument();
 });

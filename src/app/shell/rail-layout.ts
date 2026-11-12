@@ -44,8 +44,7 @@ function readLayout(scope: string): RailLayout {
           section:
             !saved &&
             (item.section === "plugins" || item.section === "navigation") &&
-            (entry.id === "buzz.inbox/inbox" ||
-              entry.id === "buzz.drafts-and-sent/drafts-sent")
+            entry.id === "buzz.drafts-and-sent/drafts-sent"
               ? "messages"
               : item.section === "plugins"
                 ? "navigation"

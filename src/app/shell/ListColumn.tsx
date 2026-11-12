@@ -45,7 +45,7 @@ export function ListColumn({
   const controls = useId();
   const [frame, setFrame] = useState<HTMLElement | null>(null);
   const [narrow, setNarrow] = useState(false);
-  const page = useRef<HTMLDivElement>(null);
+  const page = useRef<HTMLElement>(null);
   const motion = useRef<Animation | null>(null);
   const prior = useRef<
     { open: boolean; left: number; narrow: boolean } | undefined
@@ -150,9 +150,14 @@ export function ListColumn({
               </div>
             </ResizableSidebar>
           )}
-          <div ref={page} className={styles.page} data-list-page="">
+          <section
+            ref={page}
+            className={styles.page}
+            aria-label={list ? "Conversation detail" : undefined}
+            data-list-page=""
+          >
             {children}
-          </div>
+          </section>
         </div>
       </section>
     </ConversationListVisibility>

@@ -1,4 +1,10 @@
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { Navigation } from "../../features/navigation/controller";
 import type { OpenTarget } from "../../features/navigation/targets";
 import { isSidebarSectionRoute } from "../../features/channel-navigation/sidebar-section-route";
@@ -49,10 +55,11 @@ type Saved = Pick<ListColumn, "open" | "section">;
 const closed: ListColumn = { open: false, section: undefined, animate: false };
 
 /**
- * The one owner of the list column's state. A visit keeps the list as the
- * previous one left it, with three exceptions: a section address opens that
- * section, traversal restores what the visit last showed, and the sidebar
- * closes it before opening a destination directly.
+ * The one owner of the list column's state. A section address opens that
+ * section's list. An open from the list keeps the list and one from the
+ * sidebar closes it, whichever visit navigation lands on. Back and Forward
+ * restore what a visit last showed, and any other visit leaves the list as it
+ * is.
  */
 export function useListColumn(navigator: Navigation | undefined) {
   const visit = useSyncExternalStore(
@@ -65,16 +72,35 @@ export function useListColumn(navigator: Navigation | undefined) {
     entryId: string | undefined;
     list: ListColumn;
   }>({ entryId: undefined, list: closed });
+  // What an open in flight asked of the visit it lands on. Navigation may
+  // return to a visit it already holds, which would otherwise look like Back.
+  const asked = useRef<
+    | { from: string | undefined; attempt: string | undefined; list: Saved }
+    | undefined
+  >(undefined);
+  // An open that stayed on its visit starts a new attempt there: it asked
+  // nothing of any later visit.
+  if (
+    asked.current &&
+    asked.current.from === entryId &&
+    asked.current.attempt !== visit?.attempt.id
+  )
+    asked.current = undefined;
   let list = state.list;
   if (state.entryId !== entryId) {
     const target = visit?.entry.target;
     const section = target && routedSection(target);
     const prior = entryId ? saved.current.get(entryId) : undefined;
-    list =
-      visit?.attempt.traversal && prior
-        ? { ...prior, animate: false }
-        : section
-          ? { open: true, section, animate: false }
+    const request = asked.current;
+    const intent =
+      request && request.from === state.entryId ? request.list : undefined;
+    asked.current = undefined;
+    list = section
+      ? { open: true, section, animate: false }
+      : intent
+        ? { ...intent, animate: false }
+        : visit?.attempt.traversal && prior
+          ? { ...prior, animate: false }
           : {
               open: state.list.open,
               section: (target && draftSection(target)) ?? state.list.section,
@@ -91,12 +117,28 @@ export function useListColumn(navigator: Navigation | undefined) {
       })),
     [],
   );
-  /** The sidebar opens a destination directly: no list, no remembered section. */
-  const reset = useCallback(
-    () => setState((current) => ({ ...current, list: closed })),
-    [],
+  const latest = useRef({ entryId, list });
+  useLayoutEffect(() => {
+    latest.current = { entryId, list };
+  });
+  /**
+   * Call before opening: the visit that open lands on shows the list as it is
+   * (opens from the list), or closed (the sidebar opens destinations directly).
+   */
+  const ask = useCallback(
+    (next: "keep" | "close") => {
+      asked.current = {
+        from: latest.current.entryId,
+        attempt: navigator?.snapshot().attempt.id,
+        list: next === "keep" ? latest.current.list : closed,
+      };
+      // Closing applies at once, even when the destination is already open.
+      if (next === "close")
+        setState((current) => ({ ...current, list: closed }));
+    },
+    [navigator],
   );
-  return { list, setOpen, reset };
+  return { list, setOpen, ask };
 }
 
 function remember(saved: Map<string, Saved>, entryId: string, list: Saved) {

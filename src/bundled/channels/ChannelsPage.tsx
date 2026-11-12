@@ -392,6 +392,9 @@ function ChannelWorkspace({
           ? draftRoute.section
           : undefined;
   const composingTeam = draftRoute === "compose" || (!!home && home !== "solo");
+  // A section's address is a place to come back to, drafted or not; a draft
+  // opened on its own is a Back stop only once it holds something.
+  const draftVisit = home ? undefined : navigation;
   const composingMessage = composingTeam || draftRoute === "new-message";
   const draft = useMemo(
     () =>
@@ -2304,7 +2307,7 @@ function ChannelWorkspace({
               host={{ relay, panels, navigation: navigator }}
               session={queries}
               scope={scope}
-              visit={navigation}
+              visit={draftVisit}
               extensions={extensions}
               onPreparing={(pubkeys) => handoff?.prepareDm(pubkeys)}
               onOpenThread={openChannelThread}
@@ -2360,7 +2363,7 @@ function ChannelWorkspace({
               region={draft.region}
               lead={draft.lead}
               source={linkedSource}
-              visit={navigation}
+              visit={draftVisit}
               focusRequest={
                 navigation?.focus === "preserve" ||
                 (retiredSoloDraft.generation > 0 &&

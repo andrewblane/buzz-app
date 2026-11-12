@@ -234,11 +234,8 @@ export function useAppNavigation(
             ),
         )?.manifest
       : undefined;
-  const homeWaiting =
-    startup === "loading" ||
-    plugins.activation["buzz.inbox"]?.status === "starting";
-  const activityHome = pages.some((page) => page.key === "buzz.inbox/inbox");
-  // Legacy Home resolves to Activity (Messages when Activity is turned off); version-1 placeholder routes resolve to
+  const homeWaiting = startup === "loading";
+  // Legacy Home resolves to Team; version-1 placeholder routes resolve to
   // their standalone plugins. Preserve scope so normalization never grants access.
   // Resolve in place before paint: links and history share one policy.
   // Keep the caller and visit rather than adding a redirect to browser history.
@@ -247,8 +244,8 @@ export function useAppNavigation(
       services.navigationHost.resolve(state.attempt, {
         version: 1,
         kind: "page",
-        pluginId: activityHome ? "buzz.inbox" : "buzz.channels",
-        pageId: activityHome ? "inbox" : "channels",
+        pluginId: "buzz.channels",
+        pageId: "channels",
       });
     else if (legacyPage)
       services.navigationHost.resolve(state.attempt, legacyPage);
@@ -267,7 +264,6 @@ export function useAppNavigation(
     state.attempt,
     legacyHome,
     homeWaiting,
-    activityHome,
     legacyPage,
     legacyMessagesSettings,
     target,
@@ -600,21 +596,30 @@ function legacyPageTarget(
     "scope" in target && target.scope !== undefined
       ? { scope: target.scope }
       : {};
+  const team = {
+    version: 1,
+    kind: "page",
+    pluginId: "buzz.channels",
+    pageId: "channels",
+    ...scope,
+  } as const;
+  // Activity (once Inbox) is now Team's list: its own address and the
+  // placeholder route before it both open Team.
+  if (
+    target.kind === "page" &&
+    target.pluginId === "buzz.inbox" &&
+    target.pageId === "inbox"
+  )
+    return team;
   if (
     target.kind === "page" &&
     target.pluginId === "buzz.channels" &&
     target.pageId === "channels" &&
-    target.route?.version === 1 &&
-    (target.route.params === "Inbox" || target.route.params === "Bestie")
+    target.route?.version === 1
   ) {
-    const page = target.route.params.toLowerCase();
-    return {
-      version: 1,
-      kind: "page",
-      pluginId: `buzz.${page}`,
-      pageId: page,
-      ...scope,
-    };
+    if (target.route.params === "Inbox") return team;
+    if (target.route.params === "Bestie")
+      return { ...team, pluginId: "buzz.bestie", pageId: "bestie" };
   }
   // Drafts & sent was briefly a Messages route, before that its own plugin.
   if (

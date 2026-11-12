@@ -35,7 +35,7 @@ import activityStyles from "../../features/agents/ActivityRows.module.css";
 import { AgentActivityRow } from "../../features/agents/AgentActivityRow";
 import { workingAgentDetails } from "./working-agents";
 import { avatarMedia } from "../../shared/avatar-source";
-import { incompletePreview } from "../inbox/InboxRow";
+import { incompletePreview } from "../../features/conversation/incomplete-preview";
 
 const elapsed = (createdAt: number, now = Date.now()) => {
   const seconds = Math.max(0, Math.floor(now / 1000) - createdAt);

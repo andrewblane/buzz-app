@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useCallback, useRef, type ReactNode } from "react";
 import type { RelaySession } from "../../features/relay/session";
 import type { Navigation } from "../../features/navigation/controller";
 import type {
@@ -59,11 +59,11 @@ export function RailConversationList({
       conversations.set(destination.channelId, entry);
     else others.push(entry);
   }
-  // Rows keep one wrapper while mounted; it reads the current entries.
+  // Rows keep one wrapper while mounted; it reads the current entries. Rows
+  // render below this component in the same pass, so they must already see
+  // this pass's entries: an effect would hand a new row the previous ones.
   const current = useRef(conversations);
-  useLayoutEffect(() => {
-    current.current = conversations;
-  });
+  current.current = conversations;
   const wrapRow = useCallback(
     (item: ConversationListEntry, content: ReactNode) => {
       const original = current.current.get(item.target.channelId);

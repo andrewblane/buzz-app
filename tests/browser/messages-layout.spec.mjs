@@ -1124,8 +1124,9 @@ test.describe("Sidebar row limits", () => {
     await page.reload();
     await expect(list.locator("[data-rail-row]")).toHaveCount(6);
     await page.goBack();
+    // The app lands on Team.
     await expect(
-      page.getByRole("region", { name: "Activity", exact: true }),
+      page.getByRole("region", { name: "Team", exact: true }),
     ).toBeVisible();
     await page.goForward();
     await expect(list.locator("[data-rail-row]")).toHaveCount(6);
@@ -1232,13 +1233,12 @@ test.describe("Sidebar row limits", () => {
   });
 });
 
-test("Messages and Activity expose aligned view filters", async ({
+test("Team's list aligns its view filters with its rows", async ({
   page,
   app,
 }, testInfo) => {
   await page.goto(app.origin);
   const rail = page.getByRole("navigation", { name: "Apps", exact: true });
-  const activity = page.getByRole("region", { name: "Activity", exact: true });
   const checkAlignment = async (view) => {
     const row = view.locator("[data-conversation-row]").first();
     await expect(row).toBeVisible();
@@ -1247,13 +1247,12 @@ test("Messages and Activity expose aligned view filters", async ({
         element.getBoundingClientRect().left +
         Number.parseFloat(getComputedStyle(element).paddingInlineStart),
     );
-    const filter = await (view === activity
-      ? view.getByRole("button", { name: "From anyone", exact: true })
-      : view.getByRole("button", {
-          name: "Filter and sort conversations",
-          exact: true,
-        })
-    ).boundingBox();
+    const filter = await view
+      .getByRole("button", {
+        name: "Filter and sort conversations",
+        exact: true,
+      })
+      .boundingBox();
     expect(filter.x).toBeCloseTo(contentLeft, 0);
     const all = await view
       .getByRole("tab", { name: "All", exact: true })
@@ -1288,35 +1287,6 @@ test("Messages and Activity expose aligned view filters", async ({
     });
     expect(insets.right).toBeCloseTo(insets.left, 0);
   };
-  const activityViews = activity.getByRole("tablist", {
-    name: "Activity views",
-    exact: true,
-  });
-  await checkAlignment(activity);
-  for (const name of ["Channels", "Direct", "Working", "Waiting", "All"]) {
-    const choice = activityViews.getByRole("tab", { name, exact: true });
-    await choice.click();
-    await expect(choice).toHaveAttribute("aria-selected", "true");
-  }
-  await checkAlignment(activity);
-  await activityViews.evaluate(async (element) => {
-    await Promise.all(
-      element
-        .getAnimations({ subtree: true })
-        .map((animation) => animation.finished),
-    );
-  });
-  await page.screenshot({
-    path: testInfo.outputPath("activity-visible-filters.png"),
-  });
-  await activity
-    .getByRole("button", { name: "New message", exact: true })
-    .click();
-  const activityDraft = activity.getByRole("region", {
-    name: "New message",
-    exact: true,
-  });
-  await expect(activityDraft.getByRole("textbox")).toBeEditable();
   await rail.getByRole("button", { name: "Open Team", exact: true }).click();
   const messages = page.getByRole("region", { name: "Team", exact: true });
   const previewText =
@@ -1481,7 +1451,7 @@ test.describe("group DM pins", () => {
     await page.reload();
     await expect(avatars.locator('[title="Alice Fixture"]')).toHaveCount(1);
     await expect(avatars.locator('[title="Bob Fixture"]')).toHaveCount(1);
-    await rail.getByRole("button", { name: "Activity", exact: true }).click();
+    await rail.getByRole("button", { name: "Open Team", exact: true }).click();
     await pin.click();
     await expect(
       page.locator('[data-channel-timeline="dm-group"]'),
