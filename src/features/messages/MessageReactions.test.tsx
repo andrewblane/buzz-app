@@ -1007,3 +1007,30 @@ it.each([false, true])(
     else expect(screen.queryByTestId("inline-add-reaction")).toBeNull();
   },
 );
+it("keeps the raw emoji when the name table fails to load, and the next reveal retries", async () => {
+  const h = harness([react(other)]);
+  render(<h.Controls />);
+  const pill = screen.getByRole("button", {
+    name: `👍: ${other.pubkey.slice(0, 10)}`,
+  });
+  // A navigation cancels the chunk in flight, so the import rejects.
+  vi.doMock("./reaction-name", () =>
+    Promise.reject(new TypeError("Importing a module script failed.")),
+  );
+  const unhandled = vi.fn();
+  process.on("unhandledRejection", unhandled);
+  try {
+    fireEvent.mouseEnter(pill);
+    fireEvent.mouseMove(pill);
+    const preview = await screen.findByRole("tooltip", {}, { timeout: 2500 });
+    await act(flush);
+    expect(preview.textContent).not.toContain(":+1:");
+    expect(unhandled).not.toHaveBeenCalled();
+    vi.doUnmock("./reaction-name");
+    act(() => pill.focus());
+    await waitFor(() => expect(preview.textContent).toContain(":+1:"));
+  } finally {
+    vi.doUnmock("./reaction-name");
+    process.off("unhandledRejection", unhandled);
+  }
+});

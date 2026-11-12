@@ -9,10 +9,15 @@ export function useReactionName(load = true) {
   useEffect(() => {
     if (!load) return;
     let live = true;
-    void import("./reaction-name").then(({ reactionName }) => {
-      loaded = reactionName;
-      if (live) setLoaded(true);
-    });
+    // A failed load (a navigation cancelled the chunk, or it is gone) leaves
+    // the name unresolved; the next mount tries again.
+    void import("./reaction-name").then(
+      ({ reactionName }) => {
+        loaded = reactionName;
+        if (live) setLoaded(true);
+      },
+      () => {},
+    );
     return () => {
       live = false;
     };
