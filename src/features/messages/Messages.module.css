@@ -769,7 +769,9 @@ html[data-keyboard-navigation] .attachmentImage:focus-visible {
   position: relative;
   z-index: var(--layer-dialog);
 }
-:has(> .detailsSheetLayer) > .composer {
+/* A channel's composer can sit inside the conversation body beside the layer. */
+:has(> .detailsSheetLayer) > .composer,
+:has(> .detailsSheetLayer) > :not(.detailsSheetLayer) > .composer {
   z-index: 2;
 }
 /* Keep the source editor painted while the thread resolves its scoped editor,
