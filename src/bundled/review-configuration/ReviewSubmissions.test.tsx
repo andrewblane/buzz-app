@@ -1,3 +1,5 @@
+import type { LiveListener } from "../../features/relay/incoming";
+import { describeTool } from "../../buzz-mcp/session-tools";
 // @vitest-environment jsdom
 import {
   act,
@@ -92,7 +94,14 @@ function fixture(
     pending: false,
     archives: { status: "ready" },
   };
+  let live: LiveListener | undefined;
   const session = {
+    subscribeLive: (listener: LiveListener) => {
+      live = listener;
+      return () => {
+        live = undefined;
+      };
+    },
     viewer,
     agentChoices: {
       subscribe: () => () => {},
@@ -123,10 +132,13 @@ function fixture(
       onOpenThread={onOpenThread}
       readPull={readPull}
       readStatus={readStatus}
+      describeTool={describeTool}
     />,
   );
   return {
     ...view,
+    emit: (events: Parameters<LiveListener>[0]["events"]) =>
+      act(() => live?.({ events })),
     session,
     readPull,
     readStatus,
@@ -289,7 +301,7 @@ it("shows all PRs in a table without submission controls, and deletion requires 
   expect(deleteSubmission).toHaveBeenCalledWith(
     test.session,
     "channel",
-    record,
+    expect.objectContaining(record),
     expect.any(AbortSignal),
   );
   expect(submitReview).not.toHaveBeenCalled();
@@ -378,6 +390,7 @@ it("reminds from a row, guards duplicate clicks and reports success or failure",
     await new Promise<void>((resolve) => {
       finish = resolve;
     });
+    return record;
   });
   const test = fixture("all");
   const button = await screen.findByRole("button", {
@@ -397,9 +410,10 @@ it("reminds from a row, guards duplicate clicks and reports success or failure",
   expect(remindSubmission).toHaveBeenCalledWith(
     test.session,
     "channel",
-    record,
+    expect.objectContaining(record),
     expect.any(AbortSignal),
     expect.any(Function),
+    expect.stringContaining("pr_review_status_update"),
   );
   expect(submitReview).not.toHaveBeenCalled();
   vi.mocked(remindSubmission).mockRejectedValueOnce(
@@ -422,6 +436,7 @@ it("aborts pending reminders when leaving the page", async () => {
       await new Promise<void>((resolve) => {
         finish = resolve;
       });
+      return record;
     },
   );
   const test = fixture("all");
@@ -504,4 +519,67 @@ it("limits status reads and aborts queued work when leaving the list", async () 
     for (const resolve of finish) resolve();
   });
   expect(readStatus).toHaveBeenCalledTimes(4);
+});
+
+it("recovers a report received while a reminder is still sending", async () => {
+  const request = "11111111-1111-4111-8111-111111111111";
+  const next: SavedSubmission = {
+    ...record,
+    revision: "f".repeat(64),
+    value: {
+      ...record.value,
+      threads: [{ ...record.value.threads[0], request }],
+    },
+  };
+  const report = {
+    id: "1".repeat(64),
+    kind: 9,
+    created_at: 100,
+    pubkey: "a".repeat(64),
+    content: "Review status: Done.",
+    tags: [
+      ["h", "channel"],
+      ["t", "buzz.review.status"],
+      ["r", request],
+      ["review", record.artifactId, "0"],
+      ["e", "e".repeat(64), "", "reply"],
+      ["status", "done"],
+      ["review-sequence", "1"],
+    ],
+  } as import("../../features/relay/events").RelayEvent;
+  vi.mocked(loadSubmissions)
+    .mockResolvedValueOnce({ rows: [record], warning: "" })
+    .mockResolvedValue({
+      rows: [{ ...next, reviewReports: [report], reviewStates: ["done"] }],
+      warning: "",
+    });
+  let finish: ((value: SavedSubmission) => void) | undefined;
+  vi.mocked(remindSubmission).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const test = fixture("all");
+  const row = (
+    await screen.findByRole("link", { name: "example-org/project#42" })
+  ).closest("tr");
+  if (!row) throw new Error("Missing PR row");
+  await waitFor(() => expect(test.readStatus).toHaveBeenCalledOnce());
+  await test.user.click(
+    within(row).getByRole("button", {
+      name: "Remind reviewers for example-org/project#42",
+    }),
+  );
+  test.emit([report]);
+  await act(async () => finish?.(next));
+  await waitFor(() =>
+    expect(
+      within(row).getAllByText("Done", { exact: true }).length,
+    ).toBeGreaterThan(0),
+  );
+  expect(loadSubmissions).toHaveBeenCalledTimes(2);
+  const reads = vi.mocked(test.readStatus).mock.calls.length;
+  test.emit([report]);
+  expect(vi.mocked(test.readStatus).mock.calls.length).toBe(reads);
 });

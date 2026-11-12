@@ -192,7 +192,12 @@ import {
 } from "./catch-up";
 import { readInterrupted, writeInterrupted } from "./interrupted";
 import { AttentionSources, type AttentionProducer } from "./attention-sources";
-import { type AddedTool, BUZZ_SESSION } from "../../buzz-mcp/session-tools";
+import {
+  type AddedTool,
+  BUZZ_SESSION,
+  describeTool,
+  type ToolDescription,
+} from "../../buzz-mcp/session-tools";
 import { nameSoloChat } from "./solo-chat-name";
 import { visibleTeams } from "./visible-teams";
 import {
@@ -1316,6 +1321,8 @@ export type Agents = {
   addTool(tool: AddedTool): void;
   /** The tools active plugins add now. A name is only ever one plugin's. */
   tools(): readonly AddedTool[];
+  /** Current tool documentation, without a handler. Includes built-in tools. */
+  describeTool(name: string): ToolDescription | undefined;
   /** The Buzz side of a turn for an agent type a plugin brings: where a
    * delivery goes, the bundled harnesses' prompts, the agent's Buzz tools as
    * an MCP handler, and its replies. */
@@ -2723,6 +2730,9 @@ export class AgentsService extends Service implements Agents {
       this.toolNames.add(tool.name);
       return () => this.toolNames.delete(tool.name);
     });
+  }
+  describeTool(name: string) {
+    return describeTool(name, this.tools());
   }
   addAttentionSource(source: import("./attention-sources").AttentionSource) {
     const plugin = this.ctx.pluginOwner?.id;

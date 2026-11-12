@@ -1175,6 +1175,7 @@ confirmation. **Delete team** asks first; it doesn't delete the team's agents.
   Submitting an existing PR reuses its saved reviewers and threads and mentions
   them again in those threads. Incomplete initial delivery resumes from the original
   browser profile. An interrupted notification retries its saved messages.
+  Internal **Review status** is separate from GitHub status: Needs review, Waiting on author, or Done. Reviewers report through `pr_review_status_update` using only `done` or `wait_author`; Buzz supplies the review thread. The request includes instructions fetched from that tool. Remind and resubmitting an existing PR reset the lanes to Needs review. Reviews of a PR run sequentially in the same lane threads. Incoming reports update the table; Reload catches missed updates. Reporting requires native Codex thread sessions, a compatible shared harness, or a standalone MCP process bound to that thread by its host. An unsupported host refuses the update; a chat reply alone does not record a result.
   The separate Submit PR form has a **Back to Review Configuration** button. All pages remember the selected
   review channel. Reviewers must be owned by the signed-in identity and already
   belong to the channel. A connected agent runtime is needed for replies;

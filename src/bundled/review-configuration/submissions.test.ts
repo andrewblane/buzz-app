@@ -166,6 +166,7 @@ async function fixture() {
   return {
     owner,
     agent,
+    profile,
     heads,
     messages,
     session,
@@ -230,7 +231,11 @@ it("saves the instruction snapshot and creates only distinct lane threads, witho
   expect(
     (await loadSubmissions(f.session, channel, new AbortController().signal))
       .rows[0],
-  ).toEqual(record);
+  ).toEqual({
+    ...record,
+    reviewStates: ["need_review", "need_review"],
+    reviewReports: [],
+  });
   await f.run();
   expect(f.publish).toHaveBeenCalledTimes(2);
 });
@@ -364,7 +369,7 @@ it("can resume after a proven rejection before enqueue", async () => {
   const saved = (
     await loadSubmissions(f.session, channel, new AbortController().signal)
   ).rows[0];
-  expect(saved?.value.threads[0]).toEqual({});
+  expect(saved?.value.threads[0]).toEqual({ request: expect.any(String) });
   await f.run("123", undefined, true);
   expect(f.messages.size).toBe(2);
 });
@@ -495,7 +500,7 @@ it("infers a canonical repository only from a valid full PR URL", () => {
     expect(() => pullRepository(input)).toThrow();
 });
 
-it("explicit resubmission notifies saved reviewers in existing threads without new artifacts or GitHub reads", async () => {
+it("explicit resubmission resets review requests in existing threads without GitHub reads", async () => {
   const test = await fixture();
   const first = await test.run();
   const writes = test.artifactPublish.mock.calls.length;
@@ -517,8 +522,13 @@ it("explicit resubmission notifies saved reviewers in existing threads without n
       existing,
     );
   const result = await again();
-  expect(result.value.threads).toEqual(first.value.threads);
-  expect(test.artifactPublish).toHaveBeenCalledTimes(writes);
+  expect(result.value.threads.map((thread) => thread.id)).toEqual(
+    first.value.threads.map((thread) => thread.id),
+  );
+  expect(result.value.threads[0]?.request).not.toBe(
+    first.value.threads[0]?.request,
+  );
+  expect(test.artifactPublish).toHaveBeenCalledTimes(writes + 2);
   expect(facts).not.toHaveBeenCalled();
   expect(existing).toHaveBeenCalledOnce();
   const replies = [...test.messages.values()].filter((event) =>
@@ -644,7 +654,9 @@ it("retries a partially delivered notification batch with the same message ident
       event.tags.some((tag) => tag[0] === "subject"),
     ),
   ).toHaveLength(2);
-  expect((await test.run()).value.threads).toEqual(first.value.threads);
+  expect((await test.run()).value.threads.map((thread) => thread.id)).toEqual(
+    first.value.threads.map((thread) => thread.id),
+  );
 });
 
 it("deletes from the shared list and starts fresh threads using current routing after reload", async () => {
@@ -822,11 +834,11 @@ it("refuses a foreign submitter replacing a deleted record", async () => {
   expect(f.messages.size).toBe(2);
 });
 
-it("reminds saved reviewers without replacing threads or writing artifacts", async () => {
+it("reminds saved reviewers and resets requests without replacing threads", async () => {
   const test = await fixture();
   const first = await test.run();
   const writes = test.artifactPublish.mock.calls.length;
-  await remindSubmission(
+  const updated = await remindSubmission(
     test.session,
     channel,
     first,
@@ -847,11 +859,11 @@ it("reminds saved reviewers without replacing threads or writing artifacts", asy
     expect(reply.tags).toContainEqual(["p", test.agent.pubkey]);
     expect(reply.content).toContain("Review reminder.");
   }
-  expect(test.artifactPublish).toHaveBeenCalledTimes(writes);
+  expect(test.artifactPublish).toHaveBeenCalledTimes(writes + 2);
   await deleteSubmission(
     test.session,
     channel,
-    first,
+    updated,
     new AbortController().signal,
   );
   await expect(
@@ -881,10 +893,14 @@ it("retries interrupted reminder batches without duplicating accepted replies", 
       async () => "Open",
     ),
   ).rejects.toThrow("offline");
+  const reloaded = (
+    await loadSubmissions(test.session, channel, new AbortController().signal)
+  ).rows[0];
+  if (!reloaded) throw new Error("Missing reloaded submission");
   await remindSubmission(
     test.session,
     channel,
-    first,
+    reloaded,
     new AbortController().signal,
     async () => "Open",
   );
@@ -970,4 +986,159 @@ it("sends nothing when GitHub status cannot be confirmed", async () => {
     ),
   ).rejects.toThrow("GitHub unavailable");
   expect(test.publish).toHaveBeenCalledTimes(2);
+});
+
+it("completes the status-only review loop, resets on Remind, and ignores other reviewers", async () => {
+  const { callTool, TOOLS } = await import("../../buzz-mcp/tools");
+  const test = await fixture();
+  const first = await test.run();
+  const roots = first.value.threads.map((thread) => thread.id ?? "");
+  const snapshotRead = test.session.snapshotRead;
+  if (!snapshotRead) throw new Error("Missing reader");
+  const schema = TOOLS.find(
+    (tool) => tool.name === "pr_review_status_update",
+  )?.inputSchema;
+  expect(schema).toMatchObject({
+    additionalProperties: false,
+    required: ["status"],
+    properties: { status: { enum: ["done", "wait_author"] } },
+  });
+  expect(Object.keys(schema?.properties ?? {})).toEqual(["status"]);
+  const query = vi.fn(
+    async (filters: readonly import("../../buzz-mcp/client").Filter[]) => {
+      const filter = filters[0];
+      if (!filter) throw new Error("Missing filter");
+      const source = filter.artifact
+        ? [...test.heads.values()]
+        : [...test.messages.values()];
+      return source.filter((event) =>
+        Object.entries(filter).every(([key, value]) => {
+          if (key === "kinds") return (value as number[]).includes(event.kind);
+          if (key === "authors")
+            return (value as string[]).includes(event.pubkey);
+          if (key.startsWith("#"))
+            return event.tags.some(
+              (tag) =>
+                tag[0] === key.slice(1) &&
+                (value as string[]).includes(tag[1] ?? ""),
+            );
+          return true;
+        }),
+      );
+    },
+  );
+  const publish = vi.fn(
+    async (template: import("../../buzz-mcp/client").Template) => {
+      const event = signed(test.agent, {
+        ...template,
+        tags: template.tags.map((tag) => [...tag]),
+      });
+      test.messages.set(event.id, event);
+      return event;
+    },
+  );
+  const client = {
+    pubkey: test.agent.pubkey,
+    key: test.agent.pubkey,
+    query,
+    publish,
+  } as unknown as import("../../buzz-mcp/client").BuzzClient;
+  const report = (index: number, status: string, extra = {}) =>
+    callTool(
+      client,
+      {
+        review: { channel, root: roots[index] ?? "" },
+      },
+      "pr_review_status_update",
+      { status, ...extra },
+    );
+  // The dashboard reads the exact signed events published through the tool.
+  vi.mocked(snapshotRead).mockImplementation(
+    async (filters) =>
+      query(filters) as Promise<
+        import("../../features/relay/events").RelayEvent[]
+      >,
+  );
+  await expect(report(0, "waiting")).rejects.toThrow("Only status");
+  await expect(report(0, "done", { pr: 999 })).rejects.toThrow("Only status");
+  await expect(
+    callTool(client, {}, "pr_review_status_update", { status: "done" }),
+  ).rejects.toThrow("host has not supplied");
+  await expect(
+    callTool(
+      { ...client, pubkey: "f".repeat(64) },
+      { review: { channel, root: roots[0] ?? "" } },
+      "pr_review_status_update",
+      { status: "done" },
+    ),
+  ).rejects.toThrow("no unique active review");
+  expect(publish).not.toHaveBeenCalled();
+  await report(0, "wait_author");
+  await report(1, "done");
+  const read = () =>
+    loadSubmissions(test.session, channel, new AbortController().signal);
+  expect((await read()).rows[0]?.reviewStates).toEqual(["wait_author", "done"]);
+  await report(0, "wait_author");
+  expect(publish).toHaveBeenCalledTimes(2);
+  await report(0, "done");
+  expect((await read()).rows[0]?.reviewStates).toEqual(["done", "done"]);
+  vi.mocked(snapshotRead).mockImplementation(async (filters) =>
+    filters[0]?.kinds?.includes(0)
+      ? [test.profile]
+      : (query(filters) as Promise<
+          import("../../features/relay/events").RelayEvent[]
+        >),
+  );
+  const reset = await remindSubmission(
+    test.session,
+    channel,
+    first,
+    new AbortController().signal,
+    async () => "Open",
+    "Tool-owned instructions",
+  );
+  expect(reset.value.threads.map((thread) => thread.id)).toEqual(
+    first.value.threads.map((thread) => thread.id),
+  );
+  expect((await read()).rows[0]?.reviewStates).toEqual([
+    "need_review",
+    "need_review",
+  ]);
+  await report(0, "done");
+  expect((await read()).rows[0]?.reviewStates).toEqual(["done", "need_review"]);
+  const reminder = [...test.messages.values()].find((event) =>
+    event.content.includes("Review reminder."),
+  );
+  expect(reminder?.content).toContain("Tool-owned instructions");
+  await deleteSubmission(
+    test.session,
+    channel,
+    reset,
+    new AbortController().signal,
+  );
+  await expect(report(0, "done")).rejects.toThrow("no unique active review");
+});
+
+it("refuses a capped report snapshot instead of showing missing reports as needs review", async () => {
+  const test = await fixture();
+  await test.run();
+  const read = vi.mocked(
+    test.session.snapshotRead as NonNullable<RelaySession["snapshotRead"]>,
+  );
+  const original = read.getMockImplementation();
+  if (!original) throw new Error("Missing fixture reader");
+  read.mockImplementation(async (filters, options) =>
+    filters[0]?.["#t"]
+      ? Array.from({ length: 500 }, () =>
+          signed(test.agent, {
+            kind: 9,
+            content: "report",
+            tags: [["h", channel]],
+          }),
+        )
+      : original(filters, options),
+  );
+  await expect(
+    loadSubmissions(test.session, channel, new AbortController().signal),
+  ).rejects.toThrow("read reached its limit");
 });

@@ -1,3 +1,11 @@
+import {
+  REVIEW_REPORT,
+  REVIEW_SUBMISSION,
+  latestReport,
+  reportStatus,
+  reviewToken,
+  type ReviewState,
+} from "../../features/agents/pr-review";
 import type { ReadPullStatus } from "./pull-facts";
 import { laneMatches, type PullFacts } from "./routing";
 import { npubEncode } from "nostr-tools/nip19";
@@ -17,10 +25,15 @@ import {
   type SavedReviewConfig,
 } from "./configuration";
 
-const TYPE = "buzz.review.submission";
+const TYPE = REVIEW_SUBMISSION;
 const HEX = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f-]{36}$/;
-type Thread = { id?: string; started?: true; delivered?: true };
+type Thread = {
+  id?: string;
+  started?: true;
+  delivered?: true;
+  request?: string;
+};
 export type Submission = {
   version: 1 | 2 | 3;
   generation?: string;
@@ -31,11 +44,14 @@ export type Submission = {
   device: string;
   threads: Thread[];
   deleted?: true;
+  notifying?: true;
 };
 export type SavedSubmission = {
   value: Submission;
   artifactId: string;
   revision: string;
+  reviewStates?: ReviewState[];
+  reviewReports?: EventData[];
 };
 const tag = (event: EventData, name: string) =>
   event.tags.find((t) => t[0] === name)?.[1];
@@ -99,6 +115,7 @@ async function decode(
     !HEX.test(value.configRevision) ||
     !UUID.test(value.device) ||
     (value.deleted !== undefined && value.deleted !== true) ||
+    (value.notifying !== undefined && value.notifying !== true) ||
     config.lanes.some((lane) => lane.reviewers.length !== 1) ||
     !Array.isArray(value.threads) ||
     value.threads.length !==
@@ -107,6 +124,9 @@ async function decode(
       (thread) =>
         !thread ||
         (thread.started !== undefined && thread.started !== true) ||
+        (thread.request !== undefined &&
+          (typeof thread.request !== "string" ||
+            !reviewToken.test(thread.request))) ||
         (thread.id !== undefined && !HEX.test(thread.id)) ||
         (thread.delivered !== undefined &&
           (thread.delivered !== true || !thread.id)),
@@ -141,12 +161,40 @@ export async function loadSubmissions(
   const results = await Promise.allSettled(
     events.slice(0, 100).map((event) => decode(event, channel)),
   );
-  return {
-    rows: results.flatMap((result) =>
-      result.status === "fulfilled" && !result.value.value.deleted
-        ? [result.value]
-        : [],
+  const rows = results.flatMap((result) =>
+    result.status === "fulfilled" && !result.value.value.deleted
+      ? [result.value]
+      : [],
+  );
+  const requests = rows.flatMap((row) =>
+    row.value.threads.flatMap((thread) =>
+      thread.request ? [thread.request] : [],
     ),
+  );
+  const reports: EventData[] = [];
+  // The app reader caps a page at 500. Batch request tokens and refuse a full
+  // page rather than turning an incomplete snapshot into Needs review.
+  for (let offset = 0; offset < requests.length; offset += 100) {
+    const page = await session.snapshotRead(
+      [
+        {
+          kinds: [9],
+          "#h": [channel],
+          "#t": [REVIEW_REPORT],
+          "#r": requests.slice(offset, offset + 100),
+          limit: 500,
+        },
+      ],
+      { signal },
+    );
+    if (page.length >= 500)
+      throw new Error(
+        "Review report read reached its limit. Status could not be loaded completely.",
+      );
+    reports.push(...page);
+  }
+  return {
+    rows: rows.map((row) => applyReviewReports(row, channel, reports)),
     warning: [
       events.length > 100
         ? "Showing results from the latest 100 saved records, including deleted entries."
@@ -158,6 +206,33 @@ export async function loadSubmissions(
       .filter(Boolean)
       .join(" "),
   };
+}
+
+/** Shared projection for the initial snapshot and verified live reports. */
+export function applyReviewReports(
+  row: SavedSubmission,
+  channel: string,
+  events: readonly EventData[],
+): SavedSubmission {
+  const reports = [...(row.reviewReports ?? []), ...events];
+  const latest: EventData[] = [];
+  const reviewStates = row.value.threads.map((thread, index): ReviewState => {
+    const lane = submissionLane(row.value, index);
+    if (!thread.request || !thread.id || !lane) return "need_review";
+    const target = {
+      channel,
+      artifact: row.artifactId,
+      request: thread.request,
+      root: thread.id,
+      reviewer: lane.reviewers[0] ?? "",
+      index,
+    };
+    const report = latestReport(reports, target);
+    if (!report) return "need_review";
+    latest.push({ ...report, tags: report.tags.map((tag) => [...tag]) });
+    return reportStatus(report, target) ?? "need_review";
+  });
+  return { ...row, reviewStates, reviewReports: latest };
 }
 
 async function write(
@@ -264,6 +339,7 @@ export function threadMessage(
   channel: string,
   index: number,
   reviewerName = "Reviewer",
+  documentation = "",
 ) {
   const lane = submissionLane(value, index);
   const title = `${value.config.repository}#${value.pr}${lane ? ` · ${lane.name}` : " · Review"}`;
@@ -275,7 +351,7 @@ export function threadMessage(
       ...(lane ? [["p", lane.reviewers[0] ?? ""]] : []),
     ],
     content: lane
-      ? `Review request: ${prUrl(value)}\n\nReviewer: ${profileMentionLink(`@${reviewerName}`, `nostr:${npubEncode(lane.reviewers[0] ?? "")}`)}\nLane: ${lane.name}\n\n${lane.instructions}\n\nReply in this thread with the commit you reviewed, findings, and any blockers. Verify the current PR and repository before reviewing. This submission does not pin a commit or post a GitHub review.${value.version === 1 ? `\n\nOverview: ${threadUrl(channel, value.threads[0]?.id ?? "")}` : ""}`
+      ? `Review request: ${prUrl(value)}\n\nReviewer: ${profileMentionLink(`@${reviewerName}`, `nostr:${npubEncode(lane.reviewers[0] ?? "")}`)}\nLane: ${lane.name}\n\n${lane.instructions}${documentation ? `\n\n${documentation}` : ""}\n\nReply in this thread with the commit you reviewed, findings, and any blockers. Verify the current PR and repository before reviewing. This submission does not pin a commit or post a GitHub review.${value.version === 1 ? `\n\nOverview: ${threadUrl(channel, value.threads[0]?.id ?? "")}` : ""}`
       : `Review request: ${prUrl(value)}\n\nLanes: ${value.config.lanes.map((item) => item.name).join(", ")}\n\nLane threads and delivery status are listed in Review Configuration. A delivered request does not mean the reviewer has started. Automatic reminders are off.`,
   };
 }
@@ -372,16 +448,41 @@ async function notifyReviewers(
   record: SavedSubmission,
   signal: AbortSignal,
   reminder = false,
+  documentation = "",
 ) {
   const outbox = session.outbox;
   if (!outbox) throw new Error("Message delivery is unavailable.");
   await eligible(session, record.value, signal);
+  if (record.value.submitter !== session.viewer)
+    throw new Error("Only the original submitter can request another review.");
+  const device = deviceId(session.scope);
+  if (record.value.notifying && record.value.device !== device)
+    throw new Error(
+      "Resume the pending notification from its original browser profile.",
+    );
+  if (!record.value.notifying)
+    record = await write(
+      session,
+      channel,
+      {
+        ...record.value,
+        notifying: true,
+        device,
+        threads: record.value.threads.map((thread, index) =>
+          submissionLane(record.value, index)
+            ? { ...thread, request: crypto.randomUUID() }
+            : thread,
+        ),
+      },
+      record,
+      signal,
+    );
   const receipts: string[] = [];
   for (const [index, thread] of record.value.threads.entries()) {
     const lane = submissionLane(record.value, index);
     if (!lane || !thread.id) continue; // Older submissions also have an overview.
     signal.throwIfAborted();
-    const key = `review-notify:${record.artifactId}:${thread.id}`;
+    const key = `review-notify:${record.artifactId}:${thread.id}:${thread.request}`;
     const recovery = await outbox.recovery(key);
     const active = () => !signal.aborted;
     let id: string;
@@ -400,6 +501,7 @@ async function notifyReviewers(
           .snapshot()
           .selectable.find((choice) => choice.pubkey === lane.reviewers[0])
           ?.name,
+        documentation,
       );
       id = outbox.send(
         {
@@ -409,7 +511,7 @@ async function notifyReviewers(
             ["e", thread.id, "", "reply"],
             ["p", lane.reviewers[0] ?? ""],
           ],
-          content: `${reminder ? "Review reminder. Please review this PR and report your progress or blockers in this thread." : "This PR was submitted again. Please revisit the review in this thread."}\n\n${request.content}`,
+          content: `${reminder ? "Review reminder. Status changed to needs review. Please review this PR and report your findings in this thread." : "This PR was submitted again. Please revisit the review in this thread."}\n\n${request.content}`,
         },
         { key, value: record.artifactId },
         active,
@@ -418,7 +520,10 @@ async function notifyReviewers(
     await delivered(outbox, id, signal);
     receipts.push(id);
   }
+  const { notifying: _notifying, ...value } = record.value;
+  const completed = await write(session, channel, value, record, signal);
   for (const id of receipts) await outbox.acknowledge(id);
+  return completed;
 }
 
 /** An explicit reminder uses only the current, fully delivered submission. */
@@ -428,6 +533,7 @@ export async function remindSubmission(
   previous: SavedSubmission,
   signal: AbortSignal,
   readStatus: ReadPullStatus,
+  documentation = "",
 ) {
   const read = session.snapshotRead;
   const outbox = session.outbox;
@@ -477,7 +583,14 @@ export async function remindSubmission(
         throw new Error(
           "This PR is closed or merged. Reviewers were not reminded.",
         );
-      await notifyReviewers(session, channel, current, signal, true);
+      return notifyReviewers(
+        session,
+        channel,
+        current,
+        signal,
+        true,
+        documentation,
+      );
     },
   );
 }
@@ -494,6 +607,7 @@ export async function submitReview(
   resume = false,
   facts?: PullFacts | (() => Promise<PullFacts>),
   notifyExisting?: () => void,
+  documentation = "",
 ) {
   const outbox = session.outbox;
   const read = session.snapshotRead;
@@ -575,7 +689,9 @@ export async function submitReview(
           configRevision: saved.revision,
           submitter: viewer,
           device,
-          threads: Array.from({ length: config.lanes.length }, () => ({})),
+          threads: Array.from({ length: config.lanes.length }, () => ({
+            request: crypto.randomUUID(),
+          })),
         };
         await eligible(session, value, signal);
         record = await write(session, channel, value, previous, signal);
@@ -585,7 +701,14 @@ export async function submitReview(
       if (existing && !resume && !notifyExisting) return record;
       if (record.value.threads.every((thread) => thread.delivered)) {
         if (existing && notifyExisting)
-          await notifyReviewers(session, channel, record, signal);
+          record = await notifyReviewers(
+            session,
+            channel,
+            record,
+            signal,
+            false,
+            documentation,
+          );
         for (const thread of record.value.threads)
           if (thread.id) await outbox.acknowledge(thread.id);
         return record;
@@ -660,7 +783,13 @@ export async function submitReview(
               {
                 ...record.value,
                 threads: record.value.threads.map((item, i) =>
-                  i === index ? { started: true } : item,
+                  i === index
+                    ? {
+                        ...item,
+                        request: item.request ?? crypto.randomUUID(),
+                        started: true,
+                      }
+                    : item,
                 ),
               },
               record,
@@ -681,6 +810,7 @@ export async function submitReview(
                         choice.pubkey ===
                         submissionLane(record.value, index)?.reviewers[0],
                     )?.name,
+                  documentation,
                 ),
                 { key, value: artifactId },
                 active,
@@ -695,7 +825,11 @@ export async function submitReview(
                   {
                     ...record.value,
                     threads: record.value.threads.map((item, i) =>
-                      i === index ? {} : item,
+                      i === index
+                        ? item.request
+                          ? { request: item.request }
+                          : {}
+                        : item,
                     ),
                   },
                   record,
@@ -716,7 +850,7 @@ export async function submitReview(
               {
                 ...record.value,
                 threads: record.value.threads.map((item, i) =>
-                  i === index ? { id: sentId } : item,
+                  i === index ? { ...item, id: sentId } : item,
                 ),
               },
               record,
@@ -735,7 +869,9 @@ export async function submitReview(
           {
             ...record.value,
             threads: record.value.threads.map((item, i) =>
-              i === index ? { id: deliveredId, delivered: true } : item,
+              i === index
+                ? { ...item, id: deliveredId, delivered: true }
+                : item,
             ),
           },
           record,

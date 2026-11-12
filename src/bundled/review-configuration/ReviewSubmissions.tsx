@@ -1,3 +1,15 @@
+import type { EventData } from "../../features/relay/events";
+import type { ToolDescription } from "../../buzz-mcp/session-tools";
+import {
+  overallReviewStatus,
+  REVIEW_REPORT,
+  type ReviewState,
+} from "../../features/agents/pr-review";
+const reviewLabels: Record<ReviewState, string> = {
+  need_review: "Needs review",
+  done: "Done",
+  wait_author: "Waiting on author",
+};
 import { useEffect, useRef, useState } from "react";
 import { useAgentChoices } from "../../features/agents/use-choices";
 import type { RelaySession } from "../../features/relay/session";
@@ -20,6 +32,7 @@ import {
 } from "./pull-facts";
 import {
   loadSubmissions,
+  applyReviewReports,
   deleteSubmission,
   remindSubmission,
   prUrl,
@@ -42,6 +55,7 @@ export function ReviewSubmissions({
   onOpenThread,
   readPull = publicPullReader,
   readStatus = publicStatusReader,
+  describeTool,
 }: {
   session: RelaySession;
   mode?: "submit" | "all";
@@ -51,6 +65,7 @@ export function ReviewSubmissions({
   onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
   readPull?: ReadPull;
   readStatus?: ReadPullStatus;
+  describeTool?: ((name: string) => ToolDescription | undefined) | undefined;
 }) {
   const choices = useAgentChoices(session, true, true);
   const [pr, setPr] = useState("");
@@ -83,6 +98,23 @@ export function ReviewSubmissions({
     const controller = new AbortController();
     setListError("");
     setListLoading(true);
+    // Subscribe before reading so reports arriving during the snapshot are kept.
+    const pending: EventData[] = [];
+    let loaded = false;
+    const stop = session.subscribeLive?.(({ events }) => {
+      const reports = events.filter(
+        (event) =>
+          event.kind === 9 &&
+          event.tags.some((tag) => tag[0] === "h" && tag[1] === channel) &&
+          event.tags.some((tag) => tag[0] === "t" && tag[1] === REVIEW_REPORT),
+      );
+      if (!reports.length) return;
+      if (!loaded) pending.push(...reports);
+      else
+        setRows((rows) =>
+          rows.map((row) => applyReviewReports(row, channel, reports)),
+        );
+    });
     loadSubmissions(
       session,
       channel,
@@ -90,10 +122,16 @@ export function ReviewSubmissions({
     )
       .then((next) => {
         if (controller.signal.aborted) return;
-        setRows(next.rows);
+        loaded = true;
+        setRows(
+          next.rows.map((row) => applyReviewReports(row, channel, pending)),
+        );
+        pending.length = 0;
         setWarning(next.warning);
       })
       .catch((reason: unknown) => {
+        loaded = true;
+        pending.length = 0;
         if (!controller.signal.aborted)
           setListError(
             reason instanceof Error
@@ -104,9 +142,14 @@ export function ReviewSubmissions({
       .finally(() => {
         if (!controller.signal.aborted) setListLoading(false);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      stop?.();
+    };
   }, [session, channel, reload, mode]);
 
+  const statusRowsKey = rows.map((row) => row.revision).join(":");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Report updates preserve PR/revision; only saved-row changes and explicit Reload require GitHub reads.
   useEffect(() => {
     if (mode !== "all") return;
     const controller = new AbortController();
@@ -146,7 +189,7 @@ export function ReviewSubmissions({
     for (let index = 0; index < Math.min(rows.length, 4); index++)
       void worker();
     return () => controller.abort();
-  }, [rows, mode, readStatus]);
+  }, [statusRowsKey, mode, readStatus, reload]);
 
   async function submit() {
     if (operation.current || !writable) return;
@@ -198,6 +241,7 @@ export function ReviewSubmissions({
         () => {
           existing = true;
         },
+        toolDocumentation(),
       );
       if (controller.signal.aborted) return;
       setResult(record);
@@ -219,6 +263,15 @@ export function ReviewSubmissions({
     }
   }
 
+  function toolDocumentation() {
+    const tool = describeTool?.("pr_review_status_update");
+    if (!tool)
+      throw new Error(
+        "Review reporting is unavailable. Update Buzz before sending review requests.",
+      );
+    return `Tool: ${tool.name}\n${tool.description}\nArguments: ${JSON.stringify(tool.inputSchema)}`;
+  }
+
   async function remind(row: SavedSubmission) {
     if (operation.current || !writable) return;
     const controller = new AbortController();
@@ -228,7 +281,7 @@ export function ReviewSubmissions({
     const name = `${row.value.config.repository}#${row.value.pr}`;
     setStatus(`Reminding reviewers for ${name}…`);
     try {
-      await remindSubmission(
+      const updated = await remindSubmission(
         session,
         channel,
         row,
@@ -251,9 +304,22 @@ export function ReviewSubmissions({
             throw reason;
           }
         },
+        toolDocumentation(),
       );
-      if (!controller.signal.aborted)
-        setStatus(`Reviewers reminded for ${name} in their existing threads.`);
+      if (!controller.signal.aborted) {
+        // A reviewer may have reported while later lane notifications were pending.
+        // Reload captures those reports; the read effect buffers concurrent arrivals.
+        setReload((value) => value + 1);
+        if (updated)
+          setRows((rows) =>
+            rows.map((entry) =>
+              entry.artifactId === updated.artifactId ? updated : entry,
+            ),
+          );
+        setStatus(
+          `Reviewers reminded for ${name} in their existing threads. Status reset to needs review.`,
+        );
+      }
     } catch (reason) {
       if (!controller.signal.aborted) {
         setStatus("");
@@ -323,6 +389,11 @@ export function ReviewSubmissions({
                   />
                 ))}
               </div>
+              {lane && (
+                <span>
+                  {reviewLabels[row.reviewStates?.[index] ?? "need_review"]}
+                </span>
+              )}
               {thread.id ? (
                 <Button
                   size="sm"
@@ -364,6 +435,7 @@ export function ReviewSubmissions({
             <tr>
               <th scope="col">Pull request</th>
               {deletable && <th scope="col">Status</th>}
+              <th scope="col">Review status</th>
               <th scope="col">Delivery</th>
               <th scope="col">Reviewers &amp; threads</th>
               {deletable && <th scope="col">Actions</th>}
@@ -382,6 +454,19 @@ export function ReviewSubmissions({
                     {statuses[row.revision]?.value ?? "Loading…"}
                   </td>
                 )}
+                <td>
+                  {
+                    reviewLabels[
+                      overallReviewStatus(
+                        row.value.threads.flatMap((_thread, index) =>
+                          submissionLane(row.value, index)
+                            ? [row.reviewStates?.[index] ?? "need_review"]
+                            : [],
+                        ),
+                      )
+                    ]
+                  }
+                </td>
                 <td>
                   {row.value.threads.every((thread) => thread.delivered)
                     ? "Requests delivered"

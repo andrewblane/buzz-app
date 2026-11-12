@@ -1,4 +1,5 @@
 import { messageAuthor } from "../features/relay/fold";
+import { updateReviewStatus } from "./pr-review";
 // The Buzz tools: what an agent does in Buzz, in the wire formats the `buzz`
 // CLI writes. Names, arguments and descriptions are kept short because every
 // session pays for them in context. Each tool answers in plain text.
@@ -139,6 +140,13 @@ export async function captureToolBody(
 }
 
 export const TOOLS: readonly Tool[] = [
+  tool(
+    "pr_review_status_update",
+    "Record the result of the current PR review assigned to you in this thread. After posting findings, call with done when no author action remains, or wait_author when changes are needed. Buzz supplies the exact review request; never supply a PR, thread or request ID. Only consider status saved after success. Missing or stale review context is refused; explain the blocker in the thread if unavailable.",
+    { status: { type: "string", enum: ["done", "wait_author"] } },
+    ["status"],
+    { readOnlyHint: false, destructiveHint: false },
+  ),
   tool(
     "buzz_help",
     "Read the bundled guide to using Buzz: chats, communities, identity, agents, and settings.",
@@ -480,6 +488,8 @@ export function callTool(
 }
 
 const HANDLERS: Readonly<Record<string, Handler>> = {
+  pr_review_status_update: ({ client, context }, args) =>
+    updateReviewStatus(client, context, args),
   async buzz_help() {
     return buzzHelp.trim();
   },

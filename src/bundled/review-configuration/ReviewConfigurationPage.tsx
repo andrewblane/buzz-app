@@ -1,3 +1,4 @@
+import type { ToolDescription } from "../../buzz-mcp/session-tools";
 import {
   createPullReader,
   createPullStatusReader,
@@ -80,6 +81,7 @@ export function ReviewConfigurationPage({
   navigator,
   readPull = publicPullReader,
   readStatus = publicStatusReader,
+  describeTool,
   page = "configuration",
 }: {
   page?: ReviewPage;
@@ -87,6 +89,7 @@ export function ReviewConfigurationPage({
   navigator?: Navigation;
   readPull?: ReadPull;
   readStatus?: ReadPullStatus;
+  describeTool?: ((name: string) => ToolDescription | undefined) | undefined;
 }) {
   const connection = useRelayConnection(relay);
   if (connection.status === "ready")
@@ -97,6 +100,7 @@ export function ReviewConfigurationPage({
         page={page}
         readPull={readPull}
         readStatus={readStatus}
+        describeTool={describeTool}
         onNavigate={
           navigator
             ? async (page) => {
@@ -153,12 +157,14 @@ export function ReviewConfigurationCommunity({
   onNavigate,
   readPull = publicPullReader,
   readStatus = publicStatusReader,
+  describeTool,
   page = "configuration",
 }: {
   session: RelaySession;
   page?: ReviewPage;
   readPull?: ReadPull;
   readStatus?: ReadPullStatus;
+  describeTool?: ((name: string) => ToolDescription | undefined) | undefined;
   onNavigate?: ((page: ReviewPage) => Promise<void>) | undefined;
   onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
 }) {
@@ -278,6 +284,7 @@ export function ReviewConfigurationCommunity({
             onOpenThread={onOpenThread}
             readPull={readPull}
             readStatus={readStatus}
+            describeTool={describeTool}
           />
         ) : (
           <ChannelConfiguration

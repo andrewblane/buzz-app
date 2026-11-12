@@ -17,7 +17,7 @@ The separate **Pull requests** page shows previous submissions in a bordered tab
 
 Submitting an already-delivered PR sends a reviewer mention in each saved lane
 thread. It preserves the saved reviewers and instructions and creates no new
-threads or review rounds. Incomplete original submissions resume delivery from
+threads. It resets each lane to Needs review. Incomplete original submissions resume delivery from
 the original browser profile instead. These actions run only on Submit; opening
 the page or a thread never dispatches messages.
 
@@ -132,8 +132,7 @@ A failed notification leaves existing thread buttons available and reports failu
 Opening Submit PR reads the latest 100 submissions once, with truncation/error
 feedback. Submit reads configurations and the current submission, then verifies
 reviewer profiles and ownership before dispatch. No polling or reconnect reads
-are added. No GitHub comments, verdict synchronization, scheduled reminders, or
-agent runtime are added.
+are added. No GitHub comments or scheduled reminders are added.
 
 Try a fresh test PR URL → Submit PR → Open a lane thread. Check its URL, reviewer
 mention, and complete instructions. Submit the same URL again: the same threads
@@ -157,3 +156,42 @@ public API without credentials, so private PRs and rate-limited requests need th
 desktop host. The reader rejects incomplete/changing metadata and supports at
 most 3,000 changed files and 100 labels; it never routes on a truncated file list.
 Metadata is fetched during new submission only; there is no poller.
+
+
+## Internal review status (POC)
+
+Each lane starts at **Needs review**. Its assigned reviewer calls the standard
+Buzz tool `pr_review_status_update` with only `status: "done"` or
+`status: "wait_author"`. The host supplies the review thread outside the model's
+arguments; the tool resolves its current assignment and checks the reviewer.
+One review is active per PR; re-reviews happen sequentially in the saved lane
+threads. This POC does not bind a late call from an older turn to an older round.
+
+**Remind** and resubmitting a listed PR reset its lanes to **Needs review** and
+send updated requests in those same threads. Failed notification batches resume
+from the original browser profile without replacing accepted messages. Older
+submissions gain status reporting when reminded. Overall status is **Waiting on
+author** if any lane needs changes, **Needs review** if any lane is pending, and
+**Done** when all lanes are done. GitHub status remains separate.
+
+Signed kind-9 status messages are both the durable report and the thread
+notification. The tool and dashboard validate the assigned reviewer and current
+request token. These are application checks; the generic relay enforces its
+existing signature and channel-access rules. Report retries reuse the saved
+status; sequential updates use a sequence number for ordering within a second.
+The table applies incoming reports without polling. Reload reconciles shared
+submission changes and missed reports. A full snapshot uses one artifact read
+and up to twelve report reads, in batches of 100 current request tokens; capped
+report pages fail visibly rather than supplying incomplete statuses.
+
+The plugin obtains the tool's description and schema with
+`agents.describeTool("pr_review_status_update")` when composing a request and
+appends them after lane instructions. It maintains no copy of that documentation.
+
+Native Codex thread sessions and the shared HarnessKit provide review context.
+A standalone MCP host can set `BUZZ_CHANNEL` and `BUZZ_REVIEW_THREAD` when starting
+a process dedicated to that thread. Never reuse that process across threads.
+Channel-wide sessions, external MCP, and adapters without this host wiring refuse
+status updates. Merely including a thread ID in the prompt does not enable it.
+The existing standalone ACP lab launcher still needs that environment wiring;
+this feature does not add it to every adapter automatically.

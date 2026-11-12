@@ -7,7 +7,7 @@ import {
   type ReviewPage,
 } from "./ReviewConfigurationPage";
 
-export const inject = ["pages", "relay", "navigation", "host"];
+export const inject = ["pages", "relay", "navigation", "host", "agents"];
 export const apply: PluginModule["apply"] = (ctx) => {
   const { relay, navigation: navigator } = ctx;
   const gh = gitHubCli(ctx.host);
@@ -27,6 +27,7 @@ export const apply: PluginModule["apply"] = (ctx) => {
           navigator={navigator}
           readPull={readPull}
           readStatus={readStatus}
+          describeTool={(name) => ctx.agents.describeTool(name)}
         />
       ),
     });

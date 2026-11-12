@@ -115,7 +115,7 @@
 }
 .review-config-table {
   width: 100%;
-  min-width: 44rem;
+  min-width: 56rem;
   border-collapse: collapse;
   background: var(--surface-panel);
 }
@@ -124,6 +124,10 @@
   text-align: left;
   vertical-align: top;
   padding: var(--space-3);
+  overflow-wrap: normal;
+}
+.review-config-table th:first-child {
+  min-width: 12rem;
   overflow-wrap: anywhere;
 }
 .review-config-table thead {
