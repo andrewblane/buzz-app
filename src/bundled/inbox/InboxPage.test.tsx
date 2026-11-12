@@ -1224,7 +1224,8 @@ function fixture(
       subscribers.add(listener);
       return () => subscribers.delete(listener);
     },
-    retry: retryConnection,
+    retry() {},
+    tryAgain: retryConnection,
     disconnect() {},
     clearCache: owner.clearCache,
   };
@@ -5156,6 +5157,29 @@ it("retries failed reaction settlement from the hover card", async () => {
   await waitFor(() =>
     expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
   );
+});
+
+it("never shows an emoji shortcode as text in a reaction row", async () => {
+  const h = fixture();
+  const root = h.root;
+  if (!root) throw new Error("Missing root");
+  h.addEvent(
+    signed(h.alice, {
+      kind: 7,
+      content: ":approve:",
+      created_at: 30,
+      tags: [
+        ["e", root.id],
+        ["p", h.viewer.pubkey],
+      ],
+    }),
+  );
+  render(h.view);
+  const row = await screen.findByRole("button", {
+    name: /Alice reacted with :?approve:?/,
+  });
+  expect(row.querySelector("svg")).not.toBeNull();
+  expect(row.textContent).not.toContain(":approve:");
 });
 
 it("moves solo emoji into a shared row and back after a live removal", async () => {
