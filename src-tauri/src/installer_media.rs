@@ -139,6 +139,40 @@ fn is_running_bundle(bundle_path: &Path, installed: &Path) -> bool {
     normalized_bundle_path(bundle_path) == normalized_bundle_path(installed)
 }
 
+/// Check that this user can replace the copy at `target`, before anything is
+/// copied or asked to quit. Adding the new copy needs write access to the
+/// folder. Moving an installed copy to the Trash needs write access to that
+/// copy as well, because a directory can only be moved to another folder by a
+/// user who can write to it, and a copy put there by a software-management
+/// tool is usually owned by root. `access` can't see everything (an ACL can
+/// still deny the delete), so the Trash step stays the backstop.
+#[cfg(unix)]
+fn check_can_replace(target: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+
+    let writable = |path: &Path| {
+        std::ffi::CString::new(path.as_os_str().as_bytes())
+            // SAFETY: `path` is a NUL-terminated string that outlives the call.
+            .is_ok_and(|path| unsafe { libc::access(path.as_ptr(), libc::W_OK) } == 0)
+    };
+    let denied = |message| std::io::Error::new(std::io::ErrorKind::PermissionDenied, message);
+    let folder = target.parent().unwrap_or(target);
+    if !writable(folder) {
+        return Err(denied(format!(
+            "you don't have permission to add apps to {}",
+            folder.display()
+        )));
+    }
+    // Only a real directory: a symlink moves without touching what it names.
+    if target.symlink_metadata().is_ok_and(|meta| meta.is_dir()) && !writable(target) {
+        return Err(denied(format!(
+            "you don't have permission to replace {}",
+            target.display()
+        )));
+    }
+    Ok(())
+}
+
 /// Where a move stages its copy before renaming it over `target`:
 /// `/Applications/.Buzz.app.staging`. Beside the target, so the final rename
 /// is same-volume and atomic; hidden, and not an `.app`, so Launch Services
@@ -633,6 +667,10 @@ mod macos {
         let target = installed_copy_path(bundle_path)
             .ok_or_else(|| std::io::Error::other("app bundle path has no file name"))?;
 
+        // Stop before copying or quitting anything if the replacement can't
+        // succeed, as with an installed copy owned by root.
+        check_can_replace(&target)?;
+
         // Stage the copy under a hidden name on the same volume as the
         // target, so a failed or interrupted `ditto` (disk full, killed
         // mid-copy) can never leave a working installed copy trashed and the
@@ -660,13 +698,14 @@ mod macos {
         // The copy is complete and on the target's volume, so the remaining
         // steps are fast and the rename is atomic. An installed copy, if one
         // exists, goes to the Trash (recoverable and Finder-undoable) rather
-        // than being overwritten in place. If trashing fails (e.g. a
-        // read-only /Applications) we stop before the rename and discard the
-        // staged copy, leaving the existing install untouched; if a later
-        // step fails, the trashed copy is put back. Any running instance of
-        // the installed bundle is asked to quit first, without waiting for
-        // it: trashing a running bundle still succeeds, so a copy that is
-        // still quitting, or won't quit, never blocks the move.
+        // than being overwritten in place. If trashing still fails after the
+        // write-access check above (e.g. an ACL denies the delete) we stop
+        // before the rename and discard the staged copy, leaving the existing
+        // install untouched; if a later step fails, the trashed copy is put
+        // back. Any running instance of the installed bundle is asked to quit
+        // first, without waiting for it: trashing a running bundle still
+        // succeeds, so a copy that is still quitting, or won't quit, never
+        // blocks the move.
         let detach_mount =
             matches!(location, RunLocation::DiskImage).then(|| volume.mount_point.clone());
         replace_installed_copy(
@@ -994,6 +1033,82 @@ mod tests {
             &running,
             &dir.path().join("Missing/Buzz.app")
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_can_replace_accepts_a_writable_folder_and_copy() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("Buzz.app");
+        std::fs::create_dir(&target).expect("create installed copy");
+
+        check_can_replace(&target).expect("a writable copy can be replaced");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_can_replace_accepts_a_missing_copy() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        check_can_replace(&dir.path().join("Buzz.app")).expect("nothing to replace");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_can_replace_fails_for_a_copy_that_is_not_writable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("Buzz.app");
+        std::fs::create_dir(&target).expect("create installed copy");
+        // As a software-management tool leaves it: readable, not writable.
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o555))
+            .expect("lock installed copy");
+        let link = dir.path().join("Linked.app");
+        std::os::unix::fs::symlink(&target, &link).expect("symlink");
+
+        let error = check_can_replace(&target).expect_err("the copy can't be moved to the Trash");
+        assert_eq!(
+            error.kind(),
+            std::io::ErrorKind::PermissionDenied,
+            "{error}"
+        );
+        assert_eq!(
+            error.to_string(),
+            format!("you don't have permission to replace {}", target.display())
+        );
+        // A symlink to that copy can be: only the link itself would move.
+        check_can_replace(&link).expect("a symlink can be replaced");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_can_replace_fails_for_a_folder_that_is_not_writable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let applications = dir.path().join("Applications");
+        let target = applications.join("Buzz.app");
+        std::fs::create_dir_all(&target).expect("create installed copy");
+        std::fs::set_permissions(&applications, std::fs::Permissions::from_mode(0o555))
+            .expect("lock folder");
+        let result = check_can_replace(&target);
+        std::fs::set_permissions(&applications, std::fs::Permissions::from_mode(0o755))
+            .expect("unlock folder");
+
+        let error = result.expect_err("nothing can be added to the folder");
+        assert_eq!(
+            error.kind(),
+            std::io::ErrorKind::PermissionDenied,
+            "{error}"
+        );
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "you don't have permission to add apps to {}",
+                applications.display()
+            )
+        );
     }
 
     #[test]
