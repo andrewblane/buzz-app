@@ -1,3 +1,4 @@
+import { validateRouting, type LaneRouting } from "./routing";
 import {
   ARTIFACT_KIND,
   uuidv5,
@@ -11,6 +12,7 @@ export type ReviewLane = Readonly<{
   name: string;
   instructions: string;
   reviewers: readonly string[];
+  routing?: LaneRouting;
 }>;
 export type ReviewConfig = Readonly<{
   version: 1;
@@ -95,6 +97,9 @@ export function validateConfig(value: unknown): ReviewConfig {
       name,
       instructions: lane.instructions.trim(),
       reviewers: reviewers as string[],
+      ...(lane.routing === undefined
+        ? {}
+        : { routing: validateRouting(lane.routing) }),
     };
   });
   const config: ReviewConfig = {

@@ -3,5 +3,17 @@
   "name": "Review Configuration",
   "apiVersion": 1,
   "description": "Save repository and lane settings for review workflows.",
-  "discovery": { "category": "productivity", "tags": ["code", "tasks"] }
+  "discovery": {
+    "category": "productivity",
+    "tags": ["code", "tasks"]
+  },
+  "host": {
+    "processes": [
+      {
+        "id": "graphql",
+        "program": "gh",
+        "args": ["api", "graphql", "--hostname", "github.com", "--input", "-"]
+      }
+    ]
+  }
 }

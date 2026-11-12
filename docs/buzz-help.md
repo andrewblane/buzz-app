@@ -1162,14 +1162,20 @@ confirmation. **Delete team** asks first; it doesn't delete the team's agents.
   visible to channel readers; members who can post can edit them. A conflicting
   edit preserves your draft: copy your changes before cancelling and reloading.
   **Submit PR** accepts a PR number or URL for a saved repository and one reviewer
-  per lane. **Start review threads** saves the instructions and creates an overview
-  plus a thread for each lane, mentioning its reviewer. The list retains delivery
+  per matching lane. Optional all/any rules match title text, exact labels, changed-file
+  counts, and path patterns such as `src/**/*.tsx`. No rules matches every PR.
+  **Load PR details** previews matching lanes; zero matches sends nothing.
+  **Start review threads** rechecks the PR, saves the instructions, and creates
+  one thread per matching lane, mentioning its reviewer. Earlier submissions
+  retain their existing overview links. The page remembers your selected channel. The list retains delivery
   status and **Open thread** actions. Repeating a PR reuses its saved submission;
   **Resume submission** retries interrupted delivery from the original browser
   profile. Reviewers must be owned by the signed-in identity and already belong
   to the channel. A connected desktop agent runtime is needed for replies; delivery
-  alone does not mean a review started. GitHub metadata, pinned commits, review
-  verdicts, resubmission rounds, and the planned 15-minute reminders are not implemented.
+  alone does not mean a review started. Desktop uses signed-in GitHub access;
+  browser metadata reads support public PRs only and may hit GitHub rate limits.
+  PRs above 3,000 changed files or 100 labels are unsupported. Pinned reviewer
+  checkouts, review verdicts, resubmission rounds, and reminders are not implemented.
 - A plugin's details in Manage plugins link to the Settings sections that hold
   its settings: sections it adds, such as GitHub comment authors, and Decisions
   API for a decision provider, such as TypeSafe. Only sections the Settings

@@ -1,3 +1,6 @@
+import { createPullReader, type ReadPull } from "./pull-facts";
+const publicPullReader = createPullReader();
+import { LaneRules } from "./LaneRules";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAgentChoices } from "../../features/agents/use-choices";
 import { ReviewSubmissions } from "./ReviewSubmissions";
@@ -52,9 +55,11 @@ function Frame({ children }: { children: ReactNode }) {
 export function ReviewConfigurationPage({
   relay,
   navigator,
+  readPull = publicPullReader,
 }: {
   relay: RelayData;
   navigator?: Navigation;
+  readPull?: ReadPull;
 }) {
   const connection = useRelayConnection(relay);
   if (connection.status === "ready")
@@ -62,6 +67,7 @@ export function ReviewConfigurationPage({
       <ReviewConfigurationCommunity
         key={`${connection.scope}:${connection.generation}`}
         session={connection.session}
+        readPull={readPull}
         onOpenThread={async (channelId, id) => {
           const scope = splitPartition(connection.scope ?? "");
           if (!navigator || !scope)
@@ -99,12 +105,21 @@ export function ReviewConfigurationPage({
 export function ReviewConfigurationCommunity({
   session,
   onOpenThread,
+  readPull = publicPullReader,
 }: {
   session: RelaySession;
+  readPull?: ReadPull;
   onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
 }) {
   const list = useChannelList(session.channels);
-  const [channel, setChannel] = useState("");
+  const selectionKey = `buzz.review.channel:${session.scope}`;
+  const [channel, setChannel] = useState(() => {
+    try {
+      return localStorage.getItem(selectionKey) ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [editing, setEditing] = useState(false);
   const channels = list.channels.filter(
     (item) =>
@@ -114,6 +129,21 @@ export function ReviewConfigurationCommunity({
       !item.pending &&
       (item.channelType === "stream" || item.channelType === "forum"),
   );
+  useEffect(() => {
+    if (list.status !== "ready" || list.coverage === "partial" || editing)
+      return;
+    if (list.channels.some((item) => item.metadataPending)) return;
+    if (channel && channels.some((item) => item.id === channel)) return;
+    setChannel(channels.length === 1 ? (channels[0]?.id ?? "") : "");
+  }, [list.status, list.coverage, list.channels, channels, channel, editing]);
+  useEffect(() => {
+    try {
+      if (channel) localStorage.setItem(selectionKey, channel);
+      else localStorage.removeItem(selectionKey);
+    } catch {
+      /* Storage may be unavailable; selection still works for this visit. */
+    }
+  }, [selectionKey, channel]);
   const selected = channels.find((item) => item.id === channel);
   const writable =
     !!selected &&
@@ -164,6 +194,7 @@ export function ReviewConfigurationCommunity({
           writable={writable}
           onEditingChange={setEditing}
           onOpenThread={onOpenThread}
+          readPull={readPull}
         />
       )}
     </Frame>
@@ -176,8 +207,10 @@ function ChannelConfiguration({
   writable,
   onEditingChange,
   onOpenThread,
+  readPull,
 }: {
   session: RelaySession;
+  readPull: ReadPull;
   channel: string;
   writable: boolean;
   onEditingChange: (editing: boolean) => void;
@@ -365,6 +398,7 @@ function ChannelConfiguration({
         writable={writable}
         onEditingChange={setSubmitting}
         onOpenThread={onOpenThread}
+        readPull={readPull}
       />
     </>
   );
@@ -544,6 +578,19 @@ function ConfigurationEditor({
                 }
               />
             </Field>
+            <LaneRules
+              lane={index + 1}
+              value={lane.routing}
+              disabled={busy}
+              onChange={(routing) =>
+                setDraft({
+                  ...draft,
+                  lanes: draft.lanes.map((item) =>
+                    item.id === lane.id ? { ...item, routing } : item,
+                  ),
+                })
+              }
+            />
             <LaneReviewers
               lane={index + 1}
               reviewers={lane.reviewers}

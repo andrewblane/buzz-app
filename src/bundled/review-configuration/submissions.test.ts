@@ -205,34 +205,34 @@ it("validates canonical PR input and refuses other repositories or non-PR URLs",
     expect(() => pullRequest(input, "example-org/project")).toThrow();
 });
 
-it("saves the instruction snapshot and creates one overview plus distinct lane threads", async () => {
+it("saves the instruction snapshot and creates only distinct lane threads, without an overview", async () => {
   const f = await fixture();
   const record = await f.run();
   expect(record.value.threads.every((thread) => thread.delivered)).toBe(true);
-  expect(f.messages.size).toBe(3);
+  expect(f.messages.size).toBe(2);
   const messages = [...f.messages.values()];
-  expect(messages[0]?.tags.some((tag) => tag[0] === "p")).toBe(false);
-  for (const [index, message] of messages.slice(1).entries()) {
+  expect(record.value.version).toBe(2);
+  for (const [index, message] of messages.entries()) {
     expect(message.tags).toContainEqual(["p", f.agent.pubkey]);
     expect(message.tags.some((tag) => tag[0] === "e")).toBe(false);
     expect(message.content).toContain(
       f.config.config.lanes[index]?.instructions,
     );
-    expect(message.content).toContain(record.value.threads[0]?.id);
+    expect(message.content).not.toContain("Overview:");
   }
   expect(
     (await loadSubmissions(f.session, channel, new AbortController().signal))
       .rows[0],
   ).toEqual(record);
   await f.run();
-  expect(f.publish).toHaveBeenCalledTimes(3);
+  expect(f.publish).toHaveBeenCalledTimes(2);
 });
 
 it("serializes simultaneous submissions of the same PR", async () => {
   const f = await fixture();
   const [first, second] = await Promise.all([f.run(), f.run()]);
   expect(first.value.threads).toEqual(second.value.threads);
-  expect(f.messages.size).toBe(3);
+  expect(f.messages.size).toBe(2);
 });
 
 it("retries the same signed event after ambiguous publication without duplicating threads", async () => {
@@ -245,7 +245,7 @@ it("retries the same signed event after ambiguous publication without duplicatin
   const firstId = f.publish.mock.calls[0]?.[0].id;
   await f.run("123", undefined, true);
   expect(f.publish.mock.calls[1]?.[0].id).toBe(firstId);
-  expect(f.messages.size).toBe(3);
+  expect(f.messages.size).toBe(2);
 });
 
 it("recovers a send whose artifact update failed before its ID was saved", async () => {
@@ -258,8 +258,8 @@ it("recovers a send whose artifact update failed before its ID was saved", async
     .mockRejectedValueOnce(new Error("save interrupted"));
   await expect(f.run()).rejects.toThrow("save interrupted");
   await f.run("123", undefined, true);
-  expect(f.messages.size).toBe(3);
-  expect(f.publish).toHaveBeenCalledTimes(3);
+  expect(f.messages.size).toBe(2);
+  expect(f.publish).toHaveBeenCalledTimes(2);
 });
 
 it("does not take over incomplete delivery after browser recovery storage is lost", async () => {
@@ -295,7 +295,7 @@ it("stops on cancellation and resumes only the saved message IDs", async () => {
   const firstId = f.publish.mock.calls[0]?.[0].id;
   await f.run("123", undefined, true);
   expect(f.messages.has(firstId ?? "")).toBe(true);
-  expect(f.messages.size).toBe(3);
+  expect(f.messages.size).toBe(2);
 });
 
 it("opens an existing incomplete record without sending a changed preview", async () => {
@@ -359,5 +359,117 @@ it("can resume after a proven rejection before enqueue", async () => {
   ).rows[0];
   expect(saved?.value.threads[0]).toEqual({});
   await f.run("123", undefined, true);
-  expect(f.messages.size).toBe(3);
+  expect(f.messages.size).toBe(2);
+});
+
+it("routes to every matching lane and refuses to send when no lane matches", async () => {
+  const f = await fixture();
+  const facts = {
+    repository: "example-org/project",
+    pr: 124,
+    title: "UI fix",
+    labels: [],
+    changedFiles: 1,
+    paths: ["ui/form.tsx"],
+    head: "a".repeat(40),
+    base: "b".repeat(40),
+  };
+  const saved: SavedReviewConfig = {
+    ...f.config,
+    config: {
+      ...f.config.config,
+      lanes: f.config.config.lanes.map((lane) => ({
+        ...lane,
+        routing: {
+          mode: "all",
+          rules: [
+            {
+              id: lane.id,
+              field: "path",
+              operator: "matches",
+              value: `${lane.id}/**`,
+            },
+          ],
+        },
+      })),
+    },
+  };
+  await expect(
+    submitReview(
+      f.session,
+      channel,
+      saved,
+      "124",
+      [f.agent.pubkey, f.agent.pubkey],
+      new AbortController().signal,
+      () => {},
+    ),
+  ).rejects.toThrow("Load PR details");
+  expect(f.heads.size).toBe(0);
+  const record = await submitReview(
+    f.session,
+    channel,
+    saved,
+    "124",
+    [f.agent.pubkey, f.agent.pubkey],
+    new AbortController().signal,
+    () => {},
+    false,
+    facts,
+  );
+  expect(record.value.config.lanes.map((lane) => lane.name)).toEqual(["UI"]);
+  expect(f.messages.size).toBe(1);
+  expect([...f.messages.values()][0]?.content).toContain(
+    "Check keyboard access.",
+  );
+  await expect(
+    submitReview(
+      f.session,
+      channel,
+      saved,
+      "125",
+      [f.agent.pubkey, f.agent.pubkey],
+      new AbortController().signal,
+      () => {},
+      false,
+      { ...facts, pr: 125, paths: ["docs/a.md"] },
+    ),
+  ).rejects.toThrow("No lanes match");
+  expect(f.messages.size).toBe(1);
+});
+
+it("retains old overview and lane IDs when reloading and resuming a version-one record", async () => {
+  const f = await fixture();
+  const record = await f.run();
+  const head = f.heads.get(record.artifactId);
+  if (!head) throw new Error("Missing fixture head");
+  const overview = signed(f.owner, {
+    kind: 9,
+    content: "Earlier overview",
+    tags: [["h", channel]],
+  });
+  f.messages.set(overview.id, overview);
+  const value = {
+    ...record.value,
+    version: 1,
+    threads: [
+      { id: overview.id, delivered: true },
+      ...record.value.threads.map((thread) => ({ id: thread.id })),
+    ],
+  };
+  f.heads.set(
+    record.artifactId,
+    signed(f.owner, {
+      kind: head.kind,
+      content: JSON.stringify(value),
+      tags: head.tags,
+    }),
+  );
+  const resumed = await f.run("123", undefined, true);
+  expect(resumed.value.version).toBe(1);
+  expect(resumed.value.threads.map((thread) => thread.id)).toEqual(
+    value.threads.map((thread) => thread.id),
+  );
+  expect(resumed.value.threads.every((thread) => thread.delivered)).toBe(true);
+  expect(f.publish).toHaveBeenCalledTimes(2);
 });

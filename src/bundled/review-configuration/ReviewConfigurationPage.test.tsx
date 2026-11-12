@@ -9,7 +9,10 @@ import type { EventData } from "../../features/relay/events";
 import { keypair, signed } from "../../features/relay/testing";
 import { ReviewConfigurationCommunity } from "./ReviewConfigurationPage";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 const channel = "11111111-1111-4111-8111-111111111111";
 function fixture() {
   const key = keypair();
@@ -45,6 +48,7 @@ function fixture() {
     return event.id;
   });
   const session = {
+    scope: "review-test-scope",
     agentChoices: {
       snapshot: () => choices,
       subscribe: (listener: () => void) => {
@@ -81,6 +85,10 @@ function fixture() {
     session,
     publish,
     snapshotRead,
+    setChannels(channels: ChannelSummary[]) {
+      list = { ...list, channels };
+      for (const listener of listeners) listener();
+    },
     failAgents() {
       choices = {
         ...choices,
@@ -360,4 +368,133 @@ it("refreshes failed agent and archive reads without discarding the draft", asyn
     JSON.parse(test.publish.mock.calls[0]?.[0].content ?? "null").lanes[0]
       .reviewers,
   ).toEqual(["a".repeat(64)]);
+});
+
+it("selects the only channel, remembers another selection, and scopes it to the session", async () => {
+  const test = fixture();
+  const view = render(<ReviewConfigurationCommunity session={test.session} />);
+  await screen.findByRole("button", { name: "Register repository" });
+  expect(localStorage.getItem("buzz.review.channel:review-test-scope")).toBe(
+    channel,
+  );
+  const second = "22222222-2222-4222-8222-222222222222";
+  act(() =>
+    test.setChannels([
+      { id: channel, name: "Reviews", channelType: "stream" } as ChannelSummary,
+      {
+        id: second,
+        name: "Other reviews",
+        channelType: "stream",
+      } as ChannelSummary,
+    ]),
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Review channel" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Other reviews" }),
+  );
+  expect(localStorage.getItem("buzz.review.channel:review-test-scope")).toBe(
+    second,
+  );
+  view.unmount();
+  const restored = render(
+    <ReviewConfigurationCommunity session={test.session} />,
+  );
+  expect(
+    screen.getByRole("combobox", { name: "Review channel" }).textContent,
+  ).toContain("Other reviews");
+  restored.unmount();
+  render(
+    <ReviewConfigurationCommunity
+      session={{ ...test.session, scope: "another-scope" } as RelaySession}
+    />,
+  );
+  expect(
+    screen.queryByRole("button", { name: "Register repository" }),
+  ).toBeNull();
+  expect(localStorage.getItem("buzz.review.channel:review-test-scope")).toBe(
+    second,
+  );
+});
+
+it("saves path rules through field changes and preserves them after reload", async () => {
+  const test = fixture();
+  render(<ReviewConfigurationCommunity session={test.session} />);
+  const user = await openDraft();
+  await user.click(screen.getByRole("button", { name: "Add rule to lane 1" }));
+  await user.click(
+    screen.getByRole("combobox", { name: "Lane 1 rule 1 field" }),
+  );
+  await user.click(
+    await screen.findByRole("option", { name: "Changed file path" }),
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Lane 1 rule 1 value" }),
+    "src/**/*.tsx",
+  );
+  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await screen.findByText(
+    "Saved example-org/project. Use Submit PR to start review threads.",
+  );
+  const saved = JSON.parse(test.publish.mock.calls[0]?.[0].content ?? "{}")
+    .lanes[0].routing;
+  expect(saved.rules[0]).toMatchObject({
+    field: "path",
+    operator: "matches",
+    value: "src/**/*.tsx",
+    id: expect.any(String),
+  });
+  await user.click(screen.getByRole("button", { name: "Reload" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Edit example-org/project" }),
+  );
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Lane 1 rule 1 value",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("src/**/*.tsx");
+  await user.click(
+    screen.getByRole("button", { name: "Remove rule 1 from lane 1" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await screen.findByText(
+    "Saved example-org/project. Use Submit PR to start review threads.",
+  );
+  expect(
+    JSON.parse(test.publish.mock.calls[1]?.[0].content ?? "{}").lanes[0].routing
+      .rules,
+  ).toEqual([]);
+});
+
+it("preserves the remembered channel until pending metadata finishes", async () => {
+  const test = fixture();
+  const second = "22222222-2222-4222-8222-222222222222";
+  localStorage.setItem("buzz.review.channel:review-test-scope", second);
+  test.setChannels([
+    { id: channel, name: "Reviews", channelType: "stream" } as ChannelSummary,
+    { id: second, metadataPending: true } as ChannelSummary,
+  ]);
+  render(<ReviewConfigurationCommunity session={test.session} />);
+  expect(localStorage.getItem("buzz.review.channel:review-test-scope")).toBe(
+    second,
+  );
+  act(() =>
+    test.setChannels([
+      { id: channel, name: "Reviews", channelType: "stream" } as ChannelSummary,
+      {
+        id: second,
+        name: "Remembered reviews",
+        channelType: "stream",
+      } as ChannelSummary,
+    ]),
+  );
+  await screen.findByRole("button", { name: "Register repository" });
+  expect(
+    screen.getByRole("combobox", { name: "Review channel" }).textContent,
+  ).toContain("Remembered reviews");
+  expect(localStorage.getItem("buzz.review.channel:review-test-scope")).toBe(
+    second,
+  );
 });

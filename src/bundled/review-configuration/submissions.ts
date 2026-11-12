@@ -1,3 +1,4 @@
+import { laneMatches, type PullFacts } from "./routing";
 import { npubEncode } from "nostr-tools/nip19";
 import { profileMentionLink } from "../../features/messages/message-edit";
 import {
@@ -20,7 +21,7 @@ const HEX = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f-]{36}$/;
 type Thread = { id?: string; started?: true; delivered?: true };
 export type Submission = {
-  version: 1;
+  version: 1 | 2;
   pr: number;
   config: ReviewConfig;
   configRevision: string;
@@ -73,7 +74,7 @@ async function decode(
   const value = JSON.parse(event.content) as Submission;
   const config = validateConfig(value.config);
   if (
-    value.version !== 1 ||
+    (value.version !== 1 && value.version !== 2) ||
     !Number.isSafeInteger(value.pr) ||
     value.pr < 1 ||
     value.submitter !== event.pubkey ||
@@ -81,7 +82,8 @@ async function decode(
     !UUID.test(value.device) ||
     config.lanes.some((lane) => lane.reviewers.length !== 1) ||
     !Array.isArray(value.threads) ||
-    value.threads.length !== config.lanes.length + 1 ||
+    value.threads.length !==
+      config.lanes.length + (value.version === 1 ? 1 : 0) ||
     value.threads.some(
       (thread) =>
         !thread ||
@@ -182,13 +184,17 @@ function deviceId(scope: string) {
   return value;
 }
 
+export function submissionLane(value: Submission, index: number) {
+  return value.config.lanes[index - (value.version === 1 ? 1 : 0)];
+}
+
 export function threadMessage(
   value: Submission,
   channel: string,
   index: number,
   reviewerName = "Reviewer",
 ) {
-  const lane = value.config.lanes[index - 1];
+  const lane = submissionLane(value, index);
   const title = `${value.config.repository}#${value.pr}${lane ? ` · ${lane.name}` : " · Review"}`;
   return {
     kind: 9,
@@ -198,7 +204,7 @@ export function threadMessage(
       ...(lane ? [["p", lane.reviewers[0] ?? ""]] : []),
     ],
     content: lane
-      ? `Review request: ${prUrl(value)}\n\nReviewer: ${profileMentionLink(`@${reviewerName}`, `nostr:${npubEncode(lane.reviewers[0] ?? "")}`)}\nLane: ${lane.name}\n\n${lane.instructions}\n\nReply in this thread with the commit you reviewed, findings, and any blockers. Verify the current PR and repository before reviewing. This submission does not pin a commit or post a GitHub review.\n\nOverview: ${threadUrl(channel, value.threads[0]?.id ?? "")}`
+      ? `Review request: ${prUrl(value)}\n\nReviewer: ${profileMentionLink(`@${reviewerName}`, `nostr:${npubEncode(lane.reviewers[0] ?? "")}`)}\nLane: ${lane.name}\n\n${lane.instructions}\n\nReply in this thread with the commit you reviewed, findings, and any blockers. Verify the current PR and repository before reviewing. This submission does not pin a commit or post a GitHub review.${value.version === 1 ? `\n\nOverview: ${threadUrl(channel, value.threads[0]?.id ?? "")}` : ""}`
       : `Review request: ${prUrl(value)}\n\nLanes: ${value.config.lanes.map((item) => item.name).join(", ")}\n\nLane threads and delivery status are listed in Review Configuration. A delivered request does not mean the reviewer has started. Automatic reminders are off.`,
   };
 }
@@ -297,6 +303,7 @@ export async function submitReview(
   signal: AbortSignal,
   onProgress: (value: SavedSubmission) => void,
   resume = false,
+  facts?: PullFacts,
 ) {
   const outbox = session.outbox;
   const read = session.snapshotRead;
@@ -330,9 +337,26 @@ export async function submitReview(
       const head = events[0];
       if (head) record = await decode(head, channel);
       else {
+        if (
+          facts &&
+          (facts.repository !== saved.config.repository || facts.pr !== pr)
+        )
+          throw new Error("The loaded PR does not match this submission.");
+        if (
+          !facts &&
+          saved.config.lanes.some((lane) => lane.routing?.rules.length)
+        )
+          throw new Error("Load PR details before routing this submission.");
+        const matched = saved.config.lanes.flatMap((lane, i) =>
+          !facts || laneMatches(lane.routing, facts) ? [{ lane, i }] : [],
+        );
+        if (!matched.length)
+          throw new Error(
+            "No lanes match this PR. No review requests were sent.",
+          );
         const config = validateConfig({
           ...saved.config,
-          lanes: saved.config.lanes.map((lane, i) => {
+          lanes: matched.map(({ lane, i }) => {
             const reviewer = reviewers[i];
             if (!reviewer || !lane.reviewers.includes(reviewer))
               throw new Error(`Choose a configured reviewer for ${lane.name}.`);
@@ -340,13 +364,13 @@ export async function submitReview(
           }),
         });
         const value: Submission = {
-          version: 1,
+          version: 2,
           pr,
           config,
           configRevision: saved.revision,
           submitter: viewer,
           device,
-          threads: Array.from({ length: config.lanes.length + 1 }, () => ({})),
+          threads: Array.from({ length: config.lanes.length }, () => ({})),
         };
         await eligible(session, value, signal);
         record = await write(session, channel, value, undefined, signal);
@@ -444,7 +468,7 @@ export async function submitReview(
                     .selectable.find(
                       (choice) =>
                         choice.pubkey ===
-                        record.value.config.lanes[index - 1]?.reviewers[0],
+                        submissionLane(record.value, index)?.reviewers[0],
                     )?.name,
                 ),
                 { key, value: artifactId },
