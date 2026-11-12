@@ -25,7 +25,12 @@ function fixture() {
   };
   const listeners = new Set<() => void>();
   const agents = [
-    { pubkey: "a".repeat(64), name: "Backend reviewer", managed: true },
+    {
+      pubkey: "a".repeat(64),
+      name: "Backend reviewer",
+      managed: true,
+      avatar: "https://example.org/agent.png",
+    },
     { pubkey: "b".repeat(64), name: "UI reviewer", managed: true },
   ];
   let choices = {
@@ -131,12 +136,11 @@ async function openDraft() {
     screen.getByRole("textbox", { name: "GitHub repository" }),
     "example-org/project",
   );
-  if (!screen.queryByRole("textbox", { name: "Lane 1 instructions" }))
-    await user.click(screen.getByRole("button", { name: /^General/ }));
   await user.type(
-    screen.getByRole("textbox", { name: "Lane 1 instructions" }),
+    screen.getByRole("textbox", { name: "Instructions" }),
     "Check authorization and keyboard navigation.",
   );
+  await user.type(screen.getByRole("textbox", { name: "Value" }), "review");
   return user;
 }
 
@@ -144,34 +148,24 @@ it("registers, reloads and edits a repository through the real form and artifact
   const test = fixture();
   render(<ReviewConfigurationCommunity session={test.session} />);
   const user = await openDraft();
-  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
   await user.click(screen.getByRole("button", { name: "Reload" }));
-  await screen.findByRole("button", { name: "Edit example-org/project" });
-  await user.click(
-    screen.getByRole("button", { name: "Edit example-org/project" }),
-  );
-  if (!screen.queryByRole("textbox", { name: "Lane 1 instructions" }))
-    await userEvent
-      .setup()
-      .click(screen.getByRole("button", { name: /^General/ }));
+  await screen.findByRole("button", { name: "Edit General lane" });
+  await user.click(screen.getByRole("button", { name: "Edit General lane" }));
   expect(
     (
       screen.getByRole("textbox", {
-        name: "Lane 1 instructions",
+        name: "Instructions",
       }) as HTMLTextAreaElement
     ).value,
   ).toBe("Check authorization and keyboard navigation.");
-  await user.clear(
-    screen.getByRole("textbox", { name: "Lane 1 instructions" }),
-  );
-  if (!screen.queryByRole("textbox", { name: "Lane 1 instructions" }))
-    await user.click(screen.getByRole("button", { name: /^General/ }));
+  await user.clear(screen.getByRole("textbox", { name: "Instructions" }));
   await user.type(
-    screen.getByRole("textbox", { name: "Lane 1 instructions" }),
+    screen.getByRole("textbox", { name: "Instructions" }),
     "Check database migrations.",
   );
-  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
   expect(test.publish).toHaveBeenCalledTimes(2);
   expect(test.publish.mock.calls[1]?.[0].tags).toContainEqual([
@@ -191,7 +185,7 @@ it("keeps the draft on rejection, prevents duplicate submissions, and recovers",
   );
   render(<ReviewConfigurationCommunity session={test.session} />);
   const user = await openDraft();
-  await user.dblClick(screen.getByRole("button", { name: "Save settings" }));
+  await user.dblClick(screen.getByRole("button", { name: "Save lane" }));
   await waitFor(() => expect(test.publish).toHaveBeenCalledTimes(1));
   expect(
     (screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
@@ -201,18 +195,14 @@ it("keeps the draft on rejection, prevents duplicate submissions, and recovers",
   expect((await screen.findByRole("alert")).textContent).toContain(
     "Your draft is still here",
   );
-  if (!screen.queryByRole("textbox", { name: "Lane 1 instructions" }))
-    await userEvent
-      .setup()
-      .click(screen.getByRole("button", { name: /^General/ }));
   expect(
     (
       screen.getByRole("textbox", {
-        name: "Lane 1 instructions",
+        name: "Instructions",
       }) as HTMLTextAreaElement
     ).value,
   ).toContain("keyboard navigation");
-  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
 });
 
@@ -222,33 +212,25 @@ it("preserves the draft while channel authorization reconfirms, but gates Save",
   await openDraft();
   act(() => test.metadataCached(true));
   expect(
-    (screen.getByRole("button", { name: "Save settings" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "Save lane" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
-  if (!screen.queryByRole("textbox", { name: "Lane 1 instructions" }))
-    await userEvent
-      .setup()
-      .click(screen.getByRole("button", { name: /^General/ }));
   expect(
     (
       screen.getByRole("textbox", {
-        name: "Lane 1 instructions",
+        name: "Instructions",
       }) as HTMLTextAreaElement
     ).value,
   ).toContain("keyboard navigation");
   act(() => test.metadataCached(false));
   expect(
-    (screen.getByRole("button", { name: "Save settings" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "Save lane" }) as HTMLButtonElement)
       .disabled,
   ).toBe(false);
-  if (!screen.queryByRole("textbox", { name: "Lane 1 instructions" }))
-    await userEvent
-      .setup()
-      .click(screen.getByRole("button", { name: /^General/ }));
   expect(
     (
       screen.getByRole("textbox", {
-        name: "Lane 1 instructions",
+        name: "Instructions",
       }) as HTMLTextAreaElement
     ).value,
   ).toContain("keyboard navigation");
@@ -269,7 +251,7 @@ it("aborts an unfinished write when the page leaves its session", async () => {
   } as RelaySession;
   const view = render(<ReviewConfigurationCommunity session={session} />);
   const user = await openDraft();
-  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
   await waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
   view.unmount();
   expect(publish.mock.calls[0]?.[1].aborted).toBe(true);
@@ -301,15 +283,16 @@ it("counts unreadable records toward the limit when a new repository is saved", 
     screen.getByRole("textbox", { name: "GitHub repository" }),
     "example-org/project",
   );
-  if (!screen.queryByRole("textbox", { name: "Lane 1 instructions" }))
-    await user.click(screen.getByRole("button", { name: /^General/ }));
   await user.type(
-    screen.getByRole("textbox", { name: "Lane 1 instructions" }),
+    screen.getByRole("textbox", { name: "Instructions" }),
     "Check tests.",
   );
-  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await user.type(screen.getByRole("textbox", { name: "Value" }), "review");
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
-  await user.click(screen.getByRole("button", { name: "All repositories" }));
+  await user.click(
+    screen.getByRole("button", { name: "Back to repositories" }),
+  );
   expect(
     (
       screen.getByRole("button", {
@@ -323,15 +306,15 @@ it("saves multiple lane reviewers, reloads their identities, and preserves unava
   const test = fixture();
   render(<ReviewConfigurationCommunity session={test.session} />);
   const user = await openDraft();
-  await user.click(screen.getByRole("combobox", { name: "Lane 1 reviewers" }));
+  await user.click(screen.getByRole("combobox", { name: "Agents" }));
   await user.click(
     await screen.findByRole("option", { name: "Backend reviewer (aaaaaaaa)" }),
   );
-  await user.click(screen.getByRole("combobox", { name: "Lane 1 reviewers" }));
+  await user.click(screen.getByRole("combobox", { name: "Agents" }));
   await user.click(
     await screen.findByRole("option", { name: "UI reviewer (bbbbbbbb)" }),
   );
-  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
   const content = test.publish.mock.calls[0]?.[0].content;
   expect(JSON.parse(content ?? "{}").lanes[0].reviewers).toEqual([
@@ -340,9 +323,8 @@ it("saves multiple lane reviewers, reloads their identities, and preserves unava
   ]);
   await user.click(screen.getByRole("button", { name: "Reload" }));
   await user.click(
-    await screen.findByRole("button", { name: "Edit example-org/project" }),
+    await screen.findByRole("button", { name: "Edit General lane" }),
   );
-  await user.click(screen.getByRole("button", { name: /^General/ }));
   await screen.findByRole("button", {
     name: "Remove Backend reviewer from lane 1",
   });
@@ -351,7 +333,7 @@ it("saves multiple lane reviewers, reloads their identities, and preserves unava
   await user.click(
     screen.getByRole("button", { name: "Remove Backend reviewer from lane 1" }),
   );
-  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
   expect(
     JSON.parse(test.publish.mock.calls[1]?.[0].content ?? "{}").lanes[0]
@@ -368,11 +350,11 @@ it("refreshes failed agent and archive reads without discarding the draft", asyn
   expect(screen.getByText(/Archive read failed/)).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Refresh agents" }));
   expect(test.session.agentChoices.refresh).toHaveBeenCalledWith(true);
-  await user.click(screen.getByRole("combobox", { name: "Lane 1 reviewers" }));
+  await user.click(screen.getByRole("combobox", { name: "Agents" }));
   await user.click(
     await screen.findByRole("option", { name: "Backend reviewer (aaaaaaaa)" }),
   );
-  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
   expect(
     JSON.parse(test.publish.mock.calls[0]?.[0].content ?? "null").lanes[0]
@@ -431,19 +413,15 @@ it("saves path rules through field changes and preserves them after reload", asy
   const test = fixture();
   render(<ReviewConfigurationCommunity session={test.session} />);
   const user = await openDraft();
-  await user.click(screen.getByRole("button", { name: /^Routing rules/ }));
-  await user.click(screen.getByRole("button", { name: "Add rule to lane 1" }));
-  await user.click(
-    screen.getByRole("combobox", { name: "Lane 1 rule 1 field" }),
-  );
+  await user.click(screen.getByRole("combobox", { name: "Field" }));
   await user.click(
     await screen.findByRole("option", { name: "Changed file path" }),
   );
   await user.type(
-    screen.getByRole("textbox", { name: "Lane 1 rule 1 value" }),
+    screen.getByRole("textbox", { name: "Value" }),
     "src/**/*.tsx",
   );
-  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
   const saved = JSON.parse(test.publish.mock.calls[0]?.[0].content ?? "{}")
     .lanes[0].routing;
@@ -455,26 +433,23 @@ it("saves path rules through field changes and preserves them after reload", asy
   });
   await user.click(screen.getByRole("button", { name: "Reload" }));
   await user.click(
-    await screen.findByRole("button", { name: "Edit example-org/project" }),
+    await screen.findByRole("button", { name: "Edit General lane" }),
   );
-  await user.click(screen.getByRole("button", { name: /^General/ }));
-  await user.click(screen.getByRole("button", { name: /^Routing rules/ }));
   expect(
     (
       screen.getByRole("textbox", {
-        name: "Lane 1 rule 1 value",
+        name: "Value",
       }) as HTMLInputElement
     ).value,
   ).toBe("src/**/*.tsx");
-  await user.click(
-    screen.getByRole("button", { name: "Remove rule 1 from lane 1" }),
-  );
-  await user.click(screen.getByRole("button", { name: "Save settings" }));
-  await screen.findByText("Saved example-org/project.");
   expect(
-    JSON.parse(test.publish.mock.calls[1]?.[0].content ?? "{}").lanes[0].routing
-      .rules,
-  ).toEqual([]);
+    (
+      screen.getByRole("button", {
+        name: "Remove rule 1 from lane 1",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(test.publish).toHaveBeenCalledTimes(1);
 });
 
 it("preserves the remembered channel until pending metadata finishes", async () => {
@@ -512,13 +487,13 @@ it("separates a repository's PR activity and guards drafts before switching view
   const test = fixture();
   render(<ReviewConfigurationCommunity session={test.session} />);
   const user = await openDraft();
-  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
   expect(screen.queryByRole("region", { name: "PR submissions" })).toBeNull();
   await user.click(screen.getByRole("tab", { name: "Pull requests" }));
   await screen.findByRole("button", { name: "Submit PR" });
   expect(
-    screen.queryByRole("button", { name: "Edit example-org/project" }),
+    screen.queryByRole("button", { name: "Edit General lane" }),
   ).toBeNull();
   await user.click(screen.getByRole("button", { name: "Submit PR" }));
   expect(
@@ -532,35 +507,32 @@ it("separates a repository's PR activity and guards drafts before switching view
   expect(
     (
       screen.getByRole("button", {
-        name: "All repositories",
+        name: "Back to repositories",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   await user.click(screen.getByRole("tab", { name: "Configuration" }));
-  await user.click(
-    screen.getByRole("button", { name: "Edit example-org/project" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Edit General lane" }));
   expect(
     screen
       .getByRole("tab", { name: "Pull requests" })
       .getAttribute("aria-disabled"),
   ).toBe("true");
-  await user.click(screen.getByRole("button", { name: /^General/ }));
-  const field = screen.getByRole("textbox", { name: "Lane 1 instructions" });
+  const field = screen.getByRole("textbox", { name: "Instructions" });
   await user.clear(field);
   await user.type(field, "Preserve collapsed drafts");
-  await user.click(screen.getByRole("button", { name: /^General/ }));
-  await user.click(screen.getByRole("button", { name: /^General/ }));
   expect(
     (
       screen.getByRole("textbox", {
-        name: "Lane 1 instructions",
+        name: "Instructions",
       }) as HTMLTextAreaElement
     ).value,
   ).toBe("Preserve collapsed drafts");
   await user.click(screen.getByRole("button", { name: "Cancel" }));
-  await user.click(screen.getByRole("button", { name: "All repositories" }));
+  await user.click(
+    screen.getByRole("button", { name: "Back to repositories" }),
+  );
   await user.click(
     screen.getByRole("button", { name: "Open example-org/project" }),
   );
@@ -575,7 +547,7 @@ it("blocks editor entry while a reload can replace the repository", async () => 
   const test = fixture();
   render(<ReviewConfigurationCommunity session={test.session} />);
   const user = await openDraft();
-  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
   let finish!: (events: EventData[]) => void;
   test.snapshotRead.mockImplementationOnce(
@@ -589,7 +561,7 @@ it("blocks editor entry while a reload can replace the repository", async () => 
     expect(
       (
         screen.getByRole("button", {
-          name: "Edit example-org/project",
+          name: "Edit General lane",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
@@ -622,9 +594,11 @@ it("maps a pasted URL to its configured repository and keeps unknown URLs editab
     <ReviewConfigurationCommunity session={test.session} readPull={readPull} />,
   );
   const user = await openDraft();
-  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
-  await user.click(screen.getByRole("button", { name: "All repositories" }));
+  await user.click(
+    screen.getByRole("button", { name: "Back to repositories" }),
+  );
   await user.click(screen.getByRole("button", { name: "Submit PR" }));
   const input = screen.getByRole("textbox", { name: "GitHub PR URL" });
   await user.type(input, "https://github.com/example-org/unknown/pull/42");
@@ -655,4 +629,97 @@ it("maps a pasted URL to its configured repository and keeps unknown URLs editab
   await user.click(screen.getByRole("tab", { name: "Configuration" }));
   await user.click(screen.getByRole("tab", { name: "Pull requests" }));
   expect(screen.queryByRole("textbox", { name: "Pull request" })).toBeNull();
+});
+
+it("requires a routing value and saves each lane before allowing another", async () => {
+  const test = fixture();
+  render(<ReviewConfigurationCommunity session={test.session} />);
+  const user = await openDraft();
+  const value = screen.getByRole("textbox", { name: "Value" });
+  await user.clear(value);
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Each routing rule needs",
+  );
+  expect(test.publish).not.toHaveBeenCalled();
+  expect(
+    (screen.getByRole("button", { name: "Add lane" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  await user.type(value, "review");
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
+  await screen.findByText("Saved example-org/project.");
+  await user.click(screen.getByRole("button", { name: "Add lane" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Lane name" }),
+    "Backend",
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Instructions" }),
+    "Check quantity validation.",
+  );
+  await user.type(screen.getByRole("textbox", { name: "Value" }), "backend");
+  expect(
+    (screen.getByRole("button", { name: "Add lane" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  await user.click(screen.getByRole("combobox", { name: "Agents" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Backend reviewer (aaaaaaaa)" }),
+  );
+  expect(
+    screen.getByRole("img", { name: "Backend reviewer avatar" }),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
+  await screen.findByRole("region", { name: "Backend lane" });
+  const saved = JSON.parse(test.publish.mock.calls[1]?.[0].content ?? "{}");
+  expect(saved.lanes.map((lane: { name: string }) => lane.name)).toEqual([
+    "General",
+    "Backend",
+  ]);
+  expect(test.publish.mock.calls[1]?.[0].tags).toContainEqual([
+    "prev",
+    test.publish.mock.calls[0]?.[0].id,
+  ]);
+  await user.click(screen.getByRole("button", { name: "Edit Backend lane" }));
+  expect(
+    (screen.getByRole("textbox", { name: "Value" }) as HTMLInputElement).value,
+  ).toBe("backend");
+  await user.click(screen.getByRole("button", { name: "Back to lanes" }));
+  expect(screen.getByRole("button", { name: "Edit Backend lane" })).toBe(
+    document.activeElement,
+  );
+  expect(test.publish).toHaveBeenCalledTimes(2);
+});
+
+it("returns focus to the lane region after removing the edited lane", async () => {
+  const test = fixture();
+  render(<ReviewConfigurationCommunity session={test.session} />);
+  const user = await openDraft();
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
+  await screen.findByText("Saved example-org/project.");
+  await user.click(screen.getByRole("button", { name: "Add lane" }));
+  await user.type(screen.getByRole("textbox", { name: "Lane name" }), "Second");
+  await user.type(
+    screen.getByRole("textbox", { name: "Instructions" }),
+    "Review tests",
+  );
+  await user.type(screen.getByRole("textbox", { name: "Value" }), "tests");
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Edit Second lane" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Remove lane" }));
+  expect(test.publish).toHaveBeenCalledTimes(2);
+  await user.click(screen.getByRole("button", { name: "Confirm remove lane" }));
+  await waitFor(() =>
+    expect(
+      screen.getByRole("region", { name: "Repository configuration" }),
+    ).toBe(document.activeElement),
+  );
+  expect(
+    JSON.parse(test.publish.mock.calls[2]?.[0].content ?? "{}").lanes.map(
+      (lane: { name: string }) => lane.name,
+    ),
+  ).toEqual(["General"]);
 });

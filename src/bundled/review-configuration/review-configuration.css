@@ -26,7 +26,7 @@
 .review-config-content p {
   margin: 0;
 }
-.review-config-reviewers span {
+.review-config-agent-row > span:not(.buzz-avatar-status) {
   overflow-wrap: anywhere;
   min-width: 0;
 }
@@ -71,4 +71,34 @@
   .review-config-rule {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.review-config-lane-card,
+.review-config-rule-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-block: var(--space-4);
+  min-width: 0;
+}
+.review-config-rule-heading,
+.review-config-agent-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.review-config-rule-heading {
+  justify-content: space-between;
+}
+.review-config-agent-row > .buzz-button {
+  margin-inline-start: auto;
+}
+.review-config-summary-section {
+  display: grid;
+  gap: var(--space-2);
+}
+.review-config-summary-section ul {
+  margin: 0;
+  padding-inline-start: var(--space-5);
 }

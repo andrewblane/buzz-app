@@ -5,7 +5,9 @@ settings. Enable **Review Configuration** in Settings → Plugins → Manage plu
 Choose a channel, register a GitHub repository, add named lanes, reviewer agents, and instructions,
 and save. Open a repository row to work with one repository at a time. Its **Configuration**
 section contains lane settings; **Pull requests** contains Submit PR and Existing PRs.
-Lane editors and routing rules expand on demand. Cancel or save a draft before
+Saved lane cards show their agents, instructions, and rules. **Edit lane** opens one lane;
+**Save lane** persists it before another can be added with the bottom **Add lane** button.
+**Back to lanes** cancels the editor; **Back to repositories** returns to the list. Cancel or save a draft before
 switching sections or repositories. These are local page sections: reload returns
 to the repository list; they do not create separate shell tabs or history visits. The page
 remembers your channel per identity/community and selects it automatically when
@@ -28,7 +30,7 @@ or reviewing. No model process or reminder timer is started by this plugin.
 
 Enable this plugin in **Settings → Plugins → Manage plugins**, then open its
 sidebar entry. Choose a channel and register a repository. For each lane, select
-reviewer agents and enter instructions, then save. Open its Configuration section to edit settings.
+reviewer agents, enter instructions, and configure at least one routing rule, then save. Open its Configuration section to edit settings.
 These selections do not start reviews or grant agents access to the channel.
 
 ---
@@ -135,8 +137,8 @@ synchronization, and new review rounds remain future work.
 
 ## Routing rules
 
-Each lane accepts up to 12 rules, combined with **Match all rules** or **Match any
-rule**. No rules matches every PR. A PR can match several lanes; zero matches
+New or edited lanes require 1–12 rules, combined with **Match all rules** or **Match any
+rule**. Earlier rule-free lanes remain readable and match every PR until edited; editing one requires adding a rule. A PR can match several lanes; zero matches
 prevents submission. Title contains/does-not-contain and exact label matching
 ignore case. File counts support inclusive minimum and maximum values. Paths are
 case-sensitive and relative to the repository: `*` and `?` match within a path

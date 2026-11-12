@@ -187,6 +187,18 @@ export async function saveConfiguration(
   if (!writer)
     throw new Error("This connection cannot save review configuration.");
   const config = validateConfig(draft);
+  for (const lane of config.lanes) {
+    const saved = previous?.config.lanes.find((item) => item.id === lane.id);
+    // Preserve readable legacy lanes until they are edited; new/changed lanes require rules.
+    if (
+      !lane.routing?.rules.length &&
+      JSON.stringify(saved) !== JSON.stringify(lane)
+    )
+      throw new Error(
+        `Add at least one routing rule to ${lane.name} before saving.`,
+      );
+  }
+
   const artifactId = await identity(channel, config.repository);
   if (
     previous &&

@@ -24,9 +24,18 @@ const config: ReviewConfig = {
       name: "General",
       instructions: "Check authorization and tests.",
       reviewers: ["a".repeat(64)],
+      routing: {
+        mode: "all",
+        rules: [
+          { id: "rule", field: "files", operator: "at-least", value: "0" },
+        ],
+      },
     },
   ],
 };
+
+const firstLane = config.lanes[0];
+if (!firstLane) throw new Error("Missing lane fixture");
 
 function host() {
   const key = keypair();
@@ -74,7 +83,7 @@ it("creates and reloads a signed configuration, then updates the loaded revision
     ...config,
     lanes: [
       {
-        ...{ id: "general", name: "General", instructions: "", reviewers: [] },
+        ...firstLane,
         instructions: "Check keyboard navigation.",
       },
     ],
@@ -247,4 +256,39 @@ it("validates reviewer identities and reads earlier drafts without reviewers", (
       lanes: [{ ...config.lanes[0], reviewers: undefined }],
     }).lanes[0]?.reviewers,
   ).toEqual([]);
+});
+
+it("requires rules on new or edited lanes while keeping legacy configurations readable", async () => {
+  const test = host();
+  const legacy = {
+    ...config,
+    lanes: config.lanes.map(({ routing: _, ...lane }) => lane),
+  };
+  expect(validateConfig(legacy)).toEqual(legacy);
+  await expect(
+    saveConfiguration(test.session, channel, legacy, undefined, signal()),
+  ).rejects.toThrow("at least one routing rule");
+  expect(test.sign).not.toHaveBeenCalled();
+  const first = await saveConfiguration(
+    test.session,
+    channel,
+    config,
+    undefined,
+    signal(),
+  );
+  const previous = { ...first, config: legacy };
+  const added = {
+    ...legacy,
+    lanes: [...legacy.lanes, { ...firstLane, id: "second", name: "Second" }],
+  };
+  await expect(
+    saveConfiguration(test.session, channel, added, previous, signal()),
+  ).resolves.toMatchObject({ config: added });
+  const edited = {
+    ...legacy,
+    lanes: legacy.lanes.map((lane) => ({ ...lane, instructions: "Changed" })),
+  };
+  await expect(
+    saveConfiguration(test.session, channel, edited, previous, signal()),
+  ).rejects.toThrow("at least one routing rule");
 });

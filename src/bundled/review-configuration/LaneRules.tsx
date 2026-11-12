@@ -1,3 +1,5 @@
+import { SettingsGroup } from "../../shared/design-system/ui/SettingsGroup";
+import { InlineHeader } from "../../shared/design-system/ui/Header";
 import { Button } from "../../shared/design-system/ui/Button";
 import { Field } from "../../shared/design-system/ui/Field";
 import { Input } from "../../shared/design-system/ui/Input";
@@ -28,12 +30,15 @@ export function LaneRules({
     });
   return (
     <>
+      <InlineHeader
+        title="Routing rules"
+        subtitle="At least one rule is required. A PR can match several lanes."
+      />
       <Select
-        label={`Lane ${lane} routing`}
+        label="Match"
         variant="field"
         disabled={disabled}
         value={routing.mode}
-        description="No rules matches every PR. A PR can match several lanes."
         groups={[
           {
             label: "Match",
@@ -47,76 +52,91 @@ export function LaneRules({
           onChange({ ...routing, mode: mode as LaneRouting["mode"] })
         }
       />
-      {routing.rules.map((rule, index) => (
-        <div className="review-config-rule" key={rule.id}>
-          <Select
-            label={`Lane ${lane} rule ${index + 1} field`}
-            variant="field"
-            disabled={disabled}
-            value={rule.field}
-            groups={[{ label: "PR field", options: [...ruleFields] }]}
-            onValueChange={(raw) => {
-              const field = raw as LaneRule["field"];
-              update(index, {
-                id: rule.id,
-                field,
-                operator: ruleOperators[field][0].value,
-                value: "",
-              });
-            }}
-          />
-          <Select
-            label={`Lane ${lane} rule ${index + 1} comparison`}
-            variant="field"
-            disabled={disabled}
-            value={rule.operator}
-            groups={[
-              { label: "Comparison", options: [...ruleOperators[rule.field]] },
-            ]}
-            onValueChange={(operator) =>
-              update(index, {
-                ...rule,
-                operator: operator as LaneRule["operator"],
-              })
-            }
-          />
-          <Field
-            label={`Lane ${lane} rule ${index + 1} value`}
-            description={
-              rule.field === "path"
-                ? "Case-sensitive paths: src/**, **/*.tsx. * matches within a directory; ** matches directories. Renames use the new path."
-                : rule.field === "label"
-                  ? "Exact label name, ignoring case."
-                  : rule.field === "title"
-                    ? "Text to find in the title, ignoring case."
-                    : "Whole number, including zero."
-            }
+      <SettingsGroup layout="cards">
+        {routing.rules.map((rule, index) => (
+          <section
+            className="review-config-rule-card"
+            aria-label={`Rule ${index + 1}`}
+            key={rule.id}
           >
-            <Input
-              required
-              maxLength={200}
-              disabled={disabled}
-              value={rule.value}
-              inputMode={rule.field === "files" ? "numeric" : "text"}
-              onValueChange={(text) => update(index, { ...rule, value: text })}
-            />
-          </Field>
-          <div>
-            <Button
-              disabled={disabled}
-              aria-label={`Remove rule ${index + 1} from lane ${lane}`}
-              onClick={() =>
-                onChange({
-                  ...routing,
-                  rules: routing.rules.filter((_, i) => i !== index),
-                })
-              }
-            >
-              Remove
-            </Button>
-          </div>
-        </div>
-      ))}
+            <div className="review-config-rule-heading">
+              <span className="text-body-sm">Rule {index + 1}</span>
+              <Button
+                size="sm"
+                disabled={disabled || routing.rules.length === 1}
+                aria-label={`Remove rule ${index + 1} from lane ${lane}`}
+                onClick={() =>
+                  onChange({
+                    ...routing,
+                    rules: routing.rules.filter((_, i) => i !== index),
+                  })
+                }
+              >
+                Remove
+              </Button>
+            </div>
+            <div className="review-config-rule">
+              <Select
+                label="Field"
+                variant="field"
+                disabled={disabled}
+                value={rule.field}
+                groups={[{ label: "PR field", options: [...ruleFields] }]}
+                onValueChange={(raw) => {
+                  const field = raw as LaneRule["field"];
+                  update(index, {
+                    id: rule.id,
+                    field,
+                    operator: ruleOperators[field][0].value,
+                    value: "",
+                  });
+                }}
+              />
+              <Select
+                label="Comparison"
+                variant="field"
+                disabled={disabled}
+                value={rule.operator}
+                groups={[
+                  {
+                    label: "Comparison",
+                    options: [...ruleOperators[rule.field]],
+                  },
+                ]}
+                onValueChange={(operator) =>
+                  update(index, {
+                    ...rule,
+                    operator: operator as LaneRule["operator"],
+                  })
+                }
+              />
+              <Field
+                label="Value"
+                description={
+                  rule.field === "path"
+                    ? "Case-sensitive paths: src/**, **/*.tsx. * matches within a directory; ** matches directories. Renames use the new path."
+                    : rule.field === "label"
+                      ? "Exact label name, ignoring case."
+                      : rule.field === "title"
+                        ? "Text to find in the title, ignoring case."
+                        : "Whole number, including zero."
+                }
+              >
+                <Input
+                  required
+                  maxLength={200}
+                  disabled={disabled}
+                  value={rule.value}
+                  inputMode={rule.field === "files" ? "numeric" : "text"}
+                  onValueChange={(text) =>
+                    update(index, { ...rule, value: text })
+                  }
+                />
+              </Field>
+            </div>
+          </section>
+        ))}
+      </SettingsGroup>
       <div>
         <Button
           disabled={disabled || routing.rules.length >= 12}
@@ -135,9 +155,13 @@ export function LaneRules({
             })
           }
         >
-          Add rule to lane {lane}
+          Add rule
         </Button>
       </div>
     </>
   );
+}
+
+export function ruleDescription(rule: LaneRule) {
+  return `${ruleFields.find((field) => field.value === rule.field)?.label} ${ruleOperators[rule.field].find((operator) => operator.value === rule.operator)?.label} “${rule.value}”`;
 }

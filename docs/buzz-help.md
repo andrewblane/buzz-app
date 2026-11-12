@@ -1157,18 +1157,21 @@ confirmation. **Delete team** asks first; it doesn't delete the team's agents.
   plugins** to add its own Messages sidebar entry. Choose a review channel,
   register a GitHub repository, and save named lanes with reviewer agents and
   instructions. Each lane supports multiple reviewers. Saved
-  repositories appear in a table; **Edit** changes their settings and **Reload**
+  repositories appear in a list; open one to manage its lanes. **Reload**
   reads the latest saved versions. Settings live on the community relay and are
   visible to channel readers; members who can post can edit them. A conflicting
   edit preserves your draft: copy your changes before cancelling and reloading.
   **Submit PR** on the repository list finds the configured repository from a full
   GitHub PR URL, then opens its matching-lane preview flow.
-  Open one repository at a time. **Configuration** contains expandable lane settings;
+  Open one repository at a time. **Configuration** shows lane cards with agents, instructions, and rules;
   **Pull requests** contains **Submit PR** and that repository’s **Existing PRs**.
+  **Edit lane** opens one lane. **Save lane** persists it before **Add lane** can start another.
+  **Back to lanes** cancels the editor; **Back to repositories** returns to the list.
   Save or cancel an open draft before switching views.
   **Submit PR** accepts a PR number or URL for that repository and one reviewer
-  per matching lane. Optional all/any rules match title text, exact labels, changed-file
-  counts, and path patterns such as `src/**/*.tsx`. No rules matches every PR.
+  per matching lane. Every new or edited lane requires at least one all/any routing rule
+  matching title text, exact labels, changed-file counts, or path patterns such as `src/**/*.tsx`.
+  Earlier rule-free lanes still match every PR; editing them requires adding a rule.
   **Load PR details** previews matching lanes; zero matches sends nothing.
   **Start review threads** rechecks the PR, saves the instructions, and creates
   one thread per matching lane, mentioning its reviewer. Earlier submissions
