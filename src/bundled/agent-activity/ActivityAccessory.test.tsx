@@ -2806,3 +2806,69 @@ it("preserves separate working bubbles for actual Solo threads", () => {
     f.dispose();
   }
 });
+
+it("keeps the Solo follow-up bubble when older work belongs to an observed thread", () => {
+  const local = createLocalAgentActivity();
+  const f = fixture(local);
+  const first = { ...f.props.message, replyCount: 1 };
+  const second = { ...f.props.message, id: next, createdAt: 2 };
+  const rows = [first, second];
+  const session = {
+    ...f.props.session,
+    channels: {
+      window: () => ({ rows }),
+      subscribeWindow: () => () => {},
+    },
+  } as unknown as RelaySession;
+  local
+    .begin({
+      scope: "test",
+      channelId: "c",
+      threadRootId: root,
+      messageId: root,
+      agent: A,
+      soloChat: true,
+    })
+    .started();
+  local.begin({
+    scope: "test",
+    channelId: "c",
+    threadRootId: next,
+    messageId: next,
+    agent: A,
+    soloChat: true,
+  });
+  const view = render(
+    <>
+      <div data-testid="thread-root">
+        <ActivityAccessory
+          {...f.props}
+          session={session}
+          threadRootId={undefined}
+          messageLayout="timeline"
+          message={first}
+        />
+      </div>
+      <div data-testid="follow-up">
+        <ActivityAccessory
+          {...f.props}
+          session={session}
+          threadRootId={undefined}
+          messageLayout="timeline"
+          message={second}
+        />
+      </div>
+    </>,
+  );
+  try {
+    expect(screen.getByTestId("thread-root")).toBeEmptyDOMElement();
+    expect(
+      within(screen.getByTestId("follow-up")).getByRole("button", {
+        name: /^View agent activity: Blossom/,
+      }),
+    ).toBeInTheDocument();
+  } finally {
+    view.unmount();
+    f.dispose();
+  }
+});

@@ -73,6 +73,7 @@ const noSubscribe = () => () => {};
 export type ActivityAgents = WorkStopAgents;
 type ActivityProps = ComposerAccessoryProps & { agents?: ActivityAgents };
 const noWork: RequestWork[] = [];
+const noRows: readonly { id: string; replyCount: number }[] = [];
 /** Activity belongs to the exact triggering message, not the composer. Once an
  * agent has publicly replied, its outcome follows that reply instead. */
 export function ActivityAccessory(props: ActivityProps) {
@@ -127,6 +128,29 @@ function MessageActivity(
     hasWork ? session.agentActivity.subscribe : noSubscribe,
     session.agentActivity.snapshot,
   );
+  const threadScoped =
+    props.threadScoped ??
+    (props.messageLayout === "thread" || !!message?.threadRootId);
+  const subscribeChannel = useCallback(
+    (listener: () => void) =>
+      hasWork && !threadScoped
+        ? (session.channels?.subscribeWindow?.(channelId, listener) ??
+          noSubscribe())
+        : noSubscribe(),
+    [session, channelId, hasWork, threadScoped],
+  );
+  const channelRows = useSyncExternalStore(subscribeChannel, () =>
+    hasWork && !threadScoped
+      ? (session.channels?.window?.(channelId).rows ?? noRows)
+      : noRows,
+  );
+  const channelThreadRoots = useMemo(
+    () =>
+      new Set(
+        channelRows.filter((row) => row.replyCount > 0).map((row) => row.id),
+      ),
+    [channelRows],
+  );
   const work = useMemo(
     () =>
       messageId && hasWork
@@ -178,9 +202,6 @@ function MessageActivity(
   const visible = (entry: RequestWork) => {
     if (!canOpen(profileActivityViewTarget(entry.agent) ?? "")) return false;
     if (recorded.has(entry.agent)) return false;
-    const threadScoped =
-      props.threadScoped ??
-      (props.messageLayout === "thread" || !!message?.threadRootId);
     if (!threadScoped) {
       const local = (snapshot.local ?? []).filter(
         (work) =>
@@ -198,7 +219,10 @@ function MessageActivity(
           const current = localActivity(
             {
               local: (snapshot.local ?? []).filter(
-                (work) => work.soloChat && !work.thread,
+                (work) =>
+                  work.soloChat &&
+                  !work.thread &&
+                  !channelThreadRoots.has(work.threadRootId),
               ),
             },
             channelId,
