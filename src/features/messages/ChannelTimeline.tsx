@@ -1842,8 +1842,13 @@ function Timeline({
     if (scroller.current && scroller.current.scrollTop <= 0)
       loadNearTop(scroller.current);
   };
+  // Rows take one reply handler for as long as they are mounted: it reads the
+  // current rows, so a new message does not re-render every row.
+  const replying = useRef({ rowsById, onReply });
+  replying.current = { rowsById, onReply };
   const replyToMessage = useCallback(
     (id: string, deferFocus?: boolean) => {
+      const { rowsById, onReply } = replying.current;
       const row = rowsById.get(id);
       if (!row || !onReply) return;
       const element = scroller.current;
@@ -1886,7 +1891,7 @@ function Timeline({
         },
       };
     },
-    [onReply, rowsById, savePosition],
+    [savePosition],
   );
   return (
     <section

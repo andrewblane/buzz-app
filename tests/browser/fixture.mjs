@@ -87,9 +87,7 @@ export const test = base.extend({
   dmMembers: [{}, { option: true }],
   agentPeers: [false, { option: true }],
   inboxDm: [false, { option: true }],
-  inboxDmOldAnchor: [false, { option: true }],
   inboxThreadWindow: [false, { option: true }],
-  inboxSoloAgent: [false, { option: true }],
   tallMessages: [false, { option: true }],
   // Opt-in perf workload: chat-like Markdown (code, links, lists, mentions)
   // in most corpus rows instead of inert prose.
@@ -172,9 +170,7 @@ export const test = base.extend({
       dmMembers,
       agentPeers,
       inboxDm,
-      inboxDmOldAnchor,
       inboxThreadWindow,
-      inboxSoloAgent,
       tallMessages,
       markdownMessages,
       firstSeenHistory,
@@ -338,7 +334,7 @@ export const test = base.extend({
           )
         : dmLabels
           ? ["dm-peer", "dm-group"]
-          : inboxDm || inboxDmOldAnchor
+          : inboxDm
             ? ["dm-peer"]
             : [];
     const sortingIds = sortingSidebar ? ["cedar", "maple", "willow"] : [];
@@ -685,30 +681,6 @@ export const test = base.extend({
           ),
         ),
       );
-    }
-    let inboxDmAnchor;
-    if (inboxDmOldAnchor) {
-      inboxDmAnchor = sign(
-        9,
-        [["h", "dm-peer"]],
-        "Inbox old DM anchor",
-        peerKey,
-        1700000800,
-      );
-      histories
-        .get("primary/dm-peer")
-        .push(
-          inboxDmAnchor,
-          ...Array.from({ length: 24 }, (_, index) =>
-            sign(
-              9,
-              [["h", "dm-peer"]],
-              `Recent DM ${index}`,
-              userKey,
-              1700000810 + index,
-            ),
-          ),
-        );
     }
     if (inboxDm)
       histories
@@ -1591,9 +1563,7 @@ export const test = base.extend({
                 0,
                 [],
                 JSON.stringify({
-                  ...((agentPeers && key !== peerKey) || inboxSoloAgent
-                    ? { is_agent: true }
-                    : {}),
+                  ...(agentPeers && key !== peerKey ? { is_agent: true } : {}),
                   display_name: [
                     "Alice Fixture",
                     "Bob Fixture",
@@ -2696,21 +2666,6 @@ export const test = base.extend({
         },
         presenceThread,
         inboxWindow,
-        inboxDmAnchor,
-        deleteInboxAnchor(event) {
-          const deletion = sign(
-            5,
-            [
-              ["h", inboxWindow.channelId],
-              ["e", event.id],
-            ],
-            "",
-            peerKey,
-            event.created_at + 100,
-          );
-          targetEvents.push(deletion);
-          relay.publish("primary", deletion);
-        },
         exact,
         ownerAgentMessage,
         searchTarget,

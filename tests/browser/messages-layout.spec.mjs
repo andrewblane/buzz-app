@@ -79,8 +79,9 @@ test("the combined rail pins destinations and opens centered Messages", async ({
     page.getByRole("region", { name: "New message", exact: true }),
   ).toBeVisible();
   await page.goBack();
+  // The app lands on Team.
   await expect(
-    page.getByRole("region", { name: "Activity", exact: true }),
+    page.getByRole("region", { name: "Team", exact: true }),
   ).toBeVisible();
   const headerSearch = railHeader.getByRole("button", {
     name: "Search",
@@ -360,7 +361,7 @@ test("the combined rail pins destinations and opens centered Messages", async ({
   await expect(
     pinnedAlpha.getByRole("img", { name: "Unread", exact: true }),
   ).toHaveCount(0);
-  await rail.getByRole("button", { name: "Activity", exact: true }).click();
+  await rail.getByRole("button", { name: "Bestie", exact: true }).click();
   await expect.poll(() => app.relay.hasRoute("primary", "alpha")).toBe(true);
   app.append("primary", "alpha", "New sidebar unread message", true, false);
   await expect(
@@ -537,7 +538,7 @@ test("rail sections and rows can be arranged and a drop creates a named section"
   const beta = messages.getByRole("button", { name: "Beta", exact: true });
   await expect(beta).toBeVisible();
   const primary = rail.locator("section").filter({
-    has: page.getByRole("button", { name: "Activity", exact: true }),
+    has: page.getByRole("button", { name: "Workflows", exact: true }),
   });
   await expect(
     primary.getByRole("button", { name: "Open Plugins", exact: true }),
@@ -658,20 +659,20 @@ test("rail sections and rows can be arranged and a drop creates a named section"
   ).toBeVisible();
   await expect(movedBeta).toHaveCount(0);
   await navigation
-    .getByRole("button", { name: "Activity", exact: true })
+    .getByRole("button", { name: "Workflows", exact: true })
     .click({ button: "right" });
   await page
     .getByRole("menuitem", { name: "Project chats", exact: true })
     .click();
   await expect(
-    navigation.getByRole("button", { name: "Activity", exact: true }),
+    navigation.getByRole("button", { name: "Workflows", exact: true }),
   ).toHaveCount(0);
   await custom
-    .getByRole("button", { name: "Activity", exact: true })
+    .getByRole("button", { name: "Workflows", exact: true })
     .click({ button: "right" });
   await page.getByRole("menuitem", { name: "Plugins", exact: true }).click();
   await expect(
-    navigation.getByRole("button", { name: "Activity", exact: true }),
+    navigation.getByRole("button", { name: "Workflows", exact: true }),
   ).toBeVisible();
   await expect
     .poll(order)

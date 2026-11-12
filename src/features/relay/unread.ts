@@ -36,7 +36,7 @@ export type UnreadSnapshot = Readonly<{
   /** Latest verified content evidence, including read and self-authored messages. */
   latestMessage?: Readonly<{ id: string; createdAt: number }>;
   /** PROTOTYPE: the latest top-level message, not a thread reply or quiet
-   * agent coordination, for the Activity sidebar's order and preview. */
+   * agent coordination, for the conversation list's order and preview. */
   latestTopLevel?: Readonly<{
     id: string;
     createdAt: number;

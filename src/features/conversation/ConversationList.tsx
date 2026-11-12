@@ -1,5 +1,5 @@
 /**
- * Shared conversation inventory for Messages and the Activity sidebar.
+ * Shared conversation inventory for a section's list.
  * The session owns message projections; this list owns filtering and ordering.
  * Hosts choose how rows open and which conversation remains selected.
  */

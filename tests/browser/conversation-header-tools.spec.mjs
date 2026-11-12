@@ -109,27 +109,4 @@ test("conversation header opens its tools without moving history", async ({
     .first()
     .click();
   await expect(editor).toHaveText("Keep my draft when returning to Messages");
-  await page.setViewportSize({ width: 1440, height: 950 });
-  await page
-    .getByRole("navigation", { name: "Apps", exact: true })
-    .getByRole("button", { name: "Activity", exact: true })
-    .click();
-  const activity = page.getByRole("region", { name: "Activity", exact: true });
-  await activity.getByRole("tab", { name: "Channels", exact: true }).click();
-  await activity
-    .locator('[data-activity-row="alpha"] [data-conversation-row]')
-    .click();
-  await activity
-    .getByRole("button", { name: "Conversation actions", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "Open in Team", exact: true }),
-  ).toBeVisible();
-  await expect(page.locator(".buzz-popover-popup:visible")).toHaveCount(1);
-  await animationsSettled(page.locator(".buzz-popover-popup:visible"), {
-    subtree: true,
-  });
-  await page.screenshot({
-    path: testInfo.outputPath("activity-header-tools.png"),
-  });
 });

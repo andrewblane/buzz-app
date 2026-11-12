@@ -24,7 +24,6 @@ test("primary destinations keep their headers and bodies in one column", async (
     }, scale);
     let reference;
     for (const [title, pluginId, pageId] of [
-      ["Activity", "buzz.inbox", "inbox"],
       ["Reminders", "buzz.reminders", "reminders"],
       ["Drafts & sent", "buzz.drafts-and-sent", "drafts-sent"],
     ]) {
