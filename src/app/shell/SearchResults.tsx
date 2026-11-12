@@ -1215,7 +1215,13 @@ export function SearchResults({
             : channel.channelType === "solo"
               ? soloDetail(channel)
               : "Conversation",
-      icon: ChatCircleIcon,
+      icon: channelIcon(channel),
+      kind:
+        channel.channelType === "dm"
+          ? "person"
+          : channel.channelType === "solo"
+            ? "chat"
+            : "channel",
       peek: {
         kind: "channel",
         channelId: channel.id,
@@ -1432,14 +1438,12 @@ export function SearchResults({
         .ensure(threadAuthors.split(":"), "background")
         .catch(() => {});
   }, [session, threadAuthors, profileGeneration]);
+  // The preview beside the row shows its latest messages, so the row names
+  // its kind, as a search result does.
   const suggestion = (channel: ChannelSummary): SearchDestination => {
-    const destination = conversationDestination(channel);
+    const destination = channelDestination(channel);
     const thread = unreadThreads.get(channel.id);
-    if (!thread)
-      return {
-        ...destination,
-        ...(channel.preview ? { detail: channel.preview } : {}),
-      };
+    if (!thread) return destination;
     const displayId = thread.workflowOwnerId ?? thread.authorId;
     const resolved = resolveName(
       displayId,
@@ -1956,6 +1960,37 @@ export function SearchResults({
                         },
                       ]
                     : []),
+                  // Everything joined, by kind, from the list already held.
+                  ...(
+                    [
+                      ["Channels", "channel", HashIcon],
+                      ["Direct messages", "person", UsersIcon],
+                      ["Chats", "chat", ChatsCircleIcon],
+                    ] as const
+                  ).flatMap(([label, tone, icon]) => {
+                    const rows = suggestions
+                      .filter(
+                        ({ channelType }) =>
+                          (channelType === "dm"
+                            ? "person"
+                            : channelType === "solo"
+                              ? "chat"
+                              : "channel") === tone,
+                      )
+                      .map(channelDestination)
+                      .map((row) => ({ ...row, key: `browse:${row.key}` }));
+                    return rows.length
+                      ? [
+                          {
+                            label,
+                            tone,
+                            icon,
+                            browse: true,
+                            destinations: rows,
+                          },
+                        ]
+                      : [];
+                  }),
                   ...(recentSearches.length
                     ? [
                         {
@@ -1965,6 +2000,7 @@ export function SearchResults({
                               key: `recent:${text}`,
                               label: text,
                               icon: ClockIcon,
+                              kind: "page",
                               run: () => onQueryChange(text),
                             }),
                           ),
@@ -2102,12 +2138,7 @@ export function SearchResults({
         isAction={isSearchAction}
         footer={offline}
         peek={{
-          ranked:
-            !asking &&
-            !!query.trim() &&
-            !scopedChannelId &&
-            !hasOperator &&
-            resultsShown,
+          ranked: !asking && !scopedChannelId && !hasOperator && resultsShown,
           hints,
           busy: !!query.trim() && (messagesPending || directoryPending),
           onFreeze: () => setFrozenFor(query),
