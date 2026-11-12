@@ -875,6 +875,8 @@ readTest(
     try {
       expect(await openTarget(page, target(app))).toEqual({ status: "opened" });
       await seen;
+      // Opening marks nothing read locally, so nothing can have been published.
+      expect((await readJournal(page))?.state.frontiers ?? {}).toEqual({});
       expect(app.report.readPublications.length).toBe(before);
       await expect(
         thread(page).locator(`[data-message-id="${app.exact.target.id}"]`),
@@ -886,9 +888,14 @@ readTest(
     await expect(
       thread(page).locator(`[data-message-id="${app.exact.target.id}"]`),
     ).toBeFocused();
+    // Dwell marks read locally before the publish debounce even starts; the
+    // debounced, signed publication itself is covered by unread.spec.mjs.
     await expect
-      .poll(() => app.report.readPublications.length)
-      .toBeGreaterThan(before);
+      .poll(
+        async () =>
+          Object.keys((await readJournal(page))?.state.frontiers ?? {}).length,
+      )
+      .toBeGreaterThan(0);
   },
 );
 
