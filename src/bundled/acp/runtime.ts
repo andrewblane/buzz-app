@@ -58,6 +58,7 @@ import {
   systemPrompt,
   turnPrompt,
 } from "../claude-code/prompt";
+import { digest } from "../../features/agent-harness/acp/agent-sessions";
 import { standalonePrompt } from "../goose/runtime";
 import { type Config, config } from "./config";
 import { HarnessProcess, start } from "./harness";
@@ -90,25 +91,6 @@ type Snap = Readonly<{
   /** The tools plugins added, as `addedKey`. */
   added: string;
 }>;
-
-/** A short, stable digest of `text`, so a saved record holds no
- * instructions or launch details (53-bit cyrb53). */
-function digest(text: string) {
-  let h1 = 0xdeadbeef;
-  let h2 = 0x41c6ce57;
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i);
-    h1 = Math.imul(h1 ^ c, 2654435761);
-    h2 = Math.imul(h2 ^ c, 1597334677);
-  }
-  h1 =
-    Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^
-    Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 =
-    Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^
-    Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
-}
 
 /** Everything a session is opened with, so a saved one resumes only while
  * none of it changed. The launch counts by its confirmation digest, never
@@ -696,18 +678,15 @@ export class AcpRuntime {
         entry.config.workspace;
       const client = handle && {
         ...appClient(handle, {
-          // Stopping the turn cancels its added tools' calls.
-          ...(signal && { callSignal: signal }),
+          // The serving work's lifetime: nothing acts after it ends.
+          ...(signal && { signal, callSignal: signal }),
           relayAuthor: this.relay(agent)?.snapshot().session.relayAuthor,
           signingAuthority:
             this.relay(agent)?.snapshot().session.workflowAuthority,
           read: (path) => this.readFile(path, workspace),
           memories: (slug) => this.memories(agent, slug),
+          remembered: () => this.forgetMemories(agent),
         }),
-        remember: async (slug: string, body: string, after: number) => {
-          await handle.remember(slug, body, after);
-          this.forgetMemories(agent);
-        },
       };
       const context = (pinned && entry.places.get(pinned as Snap)) || {};
       return respond(client, context, message, this.added());

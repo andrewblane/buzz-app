@@ -16,6 +16,7 @@ import {
   type SavedConversation,
   ServerPool,
   SHARED_POOL,
+  digest,
 } from "./agent-sessions";
 import { AcpProcess, REQUEST_TIMEOUT_MS } from "./process";
 import { readTranscript } from "./transcript";
@@ -882,6 +883,9 @@ function pinnedSessions(
   return { sessions, settings, records, writes, holds, gate };
 }
 
+/** The saved context of a session opened on `ctx` with an empty prompt. */
+const SAVED = `ctx.${digest("")}`;
+
 /** Lets the fake harness run until `ready` holds. */
 async function until(ready: () => boolean) {
   for (let i = 0; i < 50 && !ready(); i++) await flush();
@@ -901,7 +905,7 @@ describe("a pinned session's record", () => {
       capabilities: { mcpCapabilities: { http: true }, loadSession: true },
     });
     const saved = {
-      chat: { at: 0, id: "saved-S", covered: 0, context: "ctx" },
+      chat: { at: 0, id: "saved-S", covered: 0, context: SAVED },
     };
     const { sessions, records, writes, holds } = pinnedSessions(harness, {
       saved,
@@ -952,7 +956,7 @@ describe("a pinned session's record", () => {
   });
 
   it("resumes a saved session whose context matches, and drops one that doesn't", async () => {
-    const saved = { chat: { at: 0, id: "old", covered: 4, context: "ctx" } };
+    const saved = { chat: { at: 0, id: "old", covered: 4, context: SAVED } };
     const harness = fakeHarness({
       capabilities: {
         mcpCapabilities: { http: true },
@@ -1073,7 +1077,7 @@ describe("shutdown after a pinned session is retired or not resumed", () => {
         refuse: [...refused, "session/close", "session/new"],
       });
       const saved = {
-        chat: { at: 0, id: "old", covered: 0, context: "ctx", ...record },
+        chat: { at: 0, id: "old", covered: 0, context: SAVED, ...record },
       };
       const { sessions, holds } = pinnedSessions(harness, {
         saved,
@@ -1488,7 +1492,7 @@ describe("a load's replayed options", () => {
     });
     const { sessions } = pinnedSessions(harness, {
       configOptions: true,
-      saved: { chat: { at: 0, id: "old", covered: 0, context: "ctx" } },
+      saved: { chat: { at: 0, id: "old", covered: 0, context: SAVED } },
     });
     await sessions.deliver("chat", "a", 1, { model: "smart", build: build(1) });
     expect(harness.sent("session/load")).toHaveLength(1);

@@ -278,7 +278,8 @@ describe("AcpRuntime", () => {
 
   it("keeps each community membership's handle for its own sessions' tools", async () => {
     const config = await confirmed();
-    const { fake, deliver, sync, session, awaySession } = setup();
+    // Both turns run through the tool calls: a call after its turn is refused.
+    const { fake, deliver, sync, session, awaySession } = setup({ hold: true });
     sync(config);
     await deliver(message("1", "@Opal hello"), config).run;
     await vi.waitFor(() => expect(fake.harnesses[0]?.turns).toHaveLength(1));
@@ -314,6 +315,52 @@ describe("AcpRuntime", () => {
     );
     expect(awaySession.agentMemories.read).toHaveBeenCalledTimes(1);
     expect(session.agentMemories.read).toHaveBeenCalledTimes(1);
+    home?.turns[0]?.finish();
+    awayHarness?.turns[0]?.finish();
+  });
+
+  it("refuses a Buzz tool call that arrives after its turn ended", async () => {
+    const config = await confirmed();
+    const { fake, deliver, sync, session } = setup();
+    sync(config);
+    await deliver(message("1", "@Opal hello"), config).run;
+    await vi.waitFor(() => expect(fake.harnesses[0]?.turns).toHaveLength(1));
+    const [harness] = fake.harnesses;
+    await flush(20);
+    const late = await harness?.mcp(
+      harness.turns[0]?.sessionId ?? "",
+      "tools/call",
+      { name: "mem_get", arguments: { slug: "notes" } },
+    );
+    expect(JSON.stringify(late)).toMatch(/error/i);
+    expect(session.agentMemories.read).not.toHaveBeenCalled();
+  });
+
+  it("refuses a read's result once Stop overtakes it", async () => {
+    const config = await confirmed();
+    const { fake, deliver, sync, session } = setup({ hold: true });
+    let answer!: (memories: { entries: [] }) => void;
+    session.agentMemories.read.mockImplementationOnce(
+      () => new Promise((resolve) => (answer = resolve)),
+    );
+    sync(config);
+    const interruptible = vi.fn<NonNullable<Delivery["interruptible"]>>();
+    await deliver(message("1", "@Opal hi"), config, undefined, {
+      interruptible,
+    }).run;
+    await vi.waitFor(() => expect(fake.harnesses[0]?.turns).toHaveLength(1));
+    const [harness] = fake.harnesses;
+    const call = harness?.mcp(harness.turns[0]?.sessionId ?? "", "tools/call", {
+      name: "mem_get",
+      arguments: { slug: "notes" },
+    });
+    await vi.waitFor(() =>
+      expect(session.agentMemories.read).toHaveBeenCalledTimes(1),
+    );
+    await interruptible.mock.calls[0]?.[0]();
+    answer({ entries: [] });
+    expect(JSON.stringify(await call)).toMatch(/turn has ended/i);
+    harness?.turns[0]?.finish("cancelled");
   });
 
   it("hands a Solo chat's Canvas to each turn, and a shared channel's to none", async () => {
@@ -526,6 +573,115 @@ describe("AcpRuntime", () => {
     await deliver(message("1", "@Opal hello"), config).run;
     await vi.waitFor(() => expect(fake.harnesses[0]?.turns).toHaveLength(1));
     expect(fake.harnesses[0]?.turns[0]?.text).toContain("Prefers tabs.");
+  });
+
+  describe("core memory", () => {
+    /** Two turns in one conversation, with core memory `before` then `after`
+     * when the second arrives. */
+    async function twoTurns(
+      before: string | null,
+      after: string | null,
+      options: Parameters<typeof fakeHarness>[0] = {},
+    ) {
+      let memory = before;
+      const config = await confirmed();
+      const { fake, deliver, sync } = setup(options, {
+        core: async () => memory,
+      });
+      sync(config);
+      const root = message("1", "@Opal one");
+      await deliver(root, config).run;
+      await vi.waitFor(() => expect(fake.harnesses[0]?.turns).toHaveLength(1));
+      // Changed meanwhile, from any conversation.
+      memory = after;
+      const reply = message("2", "@Opal two");
+      reply.tags.push(["e", root.id, "", "reply"]);
+      await deliver(reply, config).run;
+      return fake.harnesses[0] as NonNullable<(typeof fake.harnesses)[0]>;
+    }
+
+    it("reaches an open conversation at its next turn", async () => {
+      const harness = await twoTurns("Prefers tabs.", "Prefers spaces.");
+      await vi.waitFor(() => expect(harness.turns).toHaveLength(2));
+      expect(harness.turns[1]?.sessionId).not.toBe(harness.turns[0]?.sessionId);
+      expect(harness.turns[1]?.text).toContain("Prefers spaces.");
+      expect(harness.turns[1]?.text).not.toContain("Prefers tabs.");
+    });
+
+    it("leaves an open conversation in place while it is unchanged", async () => {
+      const harness = await twoTurns("Prefers tabs.", "Prefers tabs.");
+      await vi.waitFor(() => expect(harness.turns).toHaveLength(2));
+      expect(harness.turns[1]?.sessionId).toBe(harness.turns[0]?.sessionId);
+    });
+
+    it("drops cleared memory at the next turn", async () => {
+      const harness = await twoTurns("Prefers tabs.", null);
+      await vi.waitFor(() => expect(harness.turns).toHaveLength(2));
+      expect(harness.turns[1]?.sessionId).not.toBe(harness.turns[0]?.sessionId);
+      expect(harness.turns[1]?.text).not.toContain("Prefers tabs.");
+    });
+
+    it("keeps a turn queued behind running work on its session, and moves the next one", async () => {
+      const config = await confirmed();
+      let memory = "Prefers tabs.";
+      const { fake, deliver, sync } = setup(
+        { hold: true },
+        { core: async () => memory },
+      );
+      sync(config);
+      const root = message("1", "@Opal one");
+      await deliver(root, config).run;
+      await vi.waitFor(() => expect(fake.harnesses[0]?.turns).toHaveLength(1));
+      const harness = fake.harnesses[0] as NonNullable<
+        (typeof fake.harnesses)[0]
+      >;
+      memory = "Prefers spaces.";
+      const queued = message("2", "@Opal two");
+      queued.tags.push(["e", root.id, "", "reply"]);
+      await deliver(queued, config).run;
+      // Queued with the running work: a harness that can't be re-prompted in
+      // place keeps it on the session that work runs on, as on Goose's path.
+      harness.turns[0]?.finish();
+      await vi.waitFor(() => expect(harness.turns).toHaveLength(2));
+      expect(harness.turns[1]?.sessionId).toBe(harness.turns[0]?.sessionId);
+      harness.turns[1]?.finish();
+      await flush(20);
+      const next = message("3", "@Opal three");
+      next.tags.push(["e", root.id, "", "reply"]);
+      await deliver(next, config).run;
+      await vi.waitFor(() => expect(harness.turns).toHaveLength(3));
+      expect(harness.turns[2]?.sessionId).not.toBe(harness.turns[0]?.sessionId);
+      expect(harness.turns[2]?.text).toContain("Prefers spaces.");
+      harness.turns[2]?.finish();
+    });
+
+    it("never resumes a saved session opened on older memory", async () => {
+      const resumable = { mcpCapabilities: { http: true }, loadSession: true };
+      const config = await confirmed();
+      const runs = async (memory: string, storage?: Storage) => {
+        const run = setup(
+          { capabilities: resumable },
+          { core: async () => memory, ...(storage ? { storage } : {}) },
+        );
+        run.sync(config);
+        const reply = message(storage ? "2" : "1", "@Opal hello");
+        if (storage) reply.tags.push(["e", "1".repeat(64), "", "reply"]);
+        await run.deliver(reply, config).run;
+        await vi.waitFor(() =>
+          expect(run.fake.harnesses[0]?.turns).toHaveLength(1),
+        );
+        await flush(20);
+        run.runtime.dispose();
+        return run;
+      };
+      const one = await runs("Prefers tabs.");
+      const same = await runs("Prefers tabs.", one.storage);
+      expect(same.fake.harnesses[0]?.sent("session/load")).toHaveLength(1);
+      const changed = await runs("Prefers spaces.", one.storage);
+      const harness = changed.fake.harnesses[0];
+      expect(harness?.sent("session/load")).toHaveLength(0);
+      expect(harness?.turns[0]?.text).toContain("Prefers spaces.");
+    });
   });
 
   it("lists plugin-added tools, and reopens an idle session when they change", async () => {

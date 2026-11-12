@@ -243,7 +243,10 @@ export type SessionsOptions<S = unknown> = Readonly<{
 
 /** A conversation's current owner, with `pin`: the live or opening session
  * that alone may write its record. A retired one is no longer in `claims`. */
-type Claim<S> = Readonly<{ epoch: number; pinned: Pinned<S> }>;
+type Claim<S> = Readonly<{ epoch: number; pinned: Pinned<S> }> & {
+  /** The digest of the system prompt its session runs on. */
+  prompt?: string;
+};
 type Lease = Readonly<{ release(): void }>;
 
 type Live = {
@@ -446,10 +449,11 @@ export class AgentSessions<S = unknown> {
           break;
         }
         // A harness that cannot take a new prompt in place needs a new session.
-        if (!live.claim && !live.session.busy && !live.process.repromptable) {
-          const { systemPrompt } = await this.options.launch();
+        if (!live.session.busy && !live.process.repromptable) {
+          const { systemPrompt } = await this.launchOf(live.claim);
           if (this.live.get(key) !== live) continue;
           if (systemPrompt !== live.systemPrompt) {
+            if (live.claim) this.forget(key, live.claim);
             this.drop(key, live);
             continue;
           }
@@ -791,6 +795,13 @@ export class AgentSessions<S = unknown> {
   }
 
   /** Opened with old settings, which only a new session runs on. */
+  /** The launch a session runs on now: its claim's snapshot, read afresh. */
+  private launchOf(claim: Claim<unknown> | undefined) {
+    const { launchFor } = this.options;
+    return claim && launchFor
+      ? launchFor(claim.pinned.snapshot as S)
+      : this.options.launch();
+  }
   private stale(live: Live) {
     const { pin } = this.options;
     if (live.claim && pin) return live.claim.pinned.localKey !== pin().localKey;
@@ -959,15 +970,13 @@ export class AgentSessions<S = unknown> {
       fits(session: AcpSession): boolean;
     }>,
   ): Promise<Live> {
-    const { resolveDirectory, launchFor } = this.options;
+    const { resolveDirectory } = this.options;
     const { pool } = this;
     const claim = pinned?.claim;
     // Read before `launch` reads the settings, so it never describes newer ones.
     const fingerprint = claim ? "" : this.options.fingerprint();
-    const launch =
-      claim && launchFor
-        ? await launchFor(claim.pinned.snapshot)
-        : await this.options.launch();
+    const launch = await this.launchOf(claim);
+    if (claim) claim.prompt = digest(launch.systemPrompt);
     // Removed meanwhile: a process started now would outlive it.
     if (this.disposed) throw new Error(`${this.options.label} was stopped`);
     const [process, cwd] = await Promise.all([
@@ -1054,13 +1063,14 @@ export class AgentSessions<S = unknown> {
     // Each turn runs on the current prompt. The session runs these one at a
     // time, so an older prompt never lands after a newer one; a failure keeps
     // the session and is tried again at the next turn.
-    if (!claim && process.repromptable)
+    if (process.repromptable)
       session.beforeTurn = async () => {
-        const { systemPrompt } = await this.options.launch();
+        const { systemPrompt } = await this.launchOf(claim);
         if (systemPrompt === live.systemPrompt) return;
         try {
           await process.reprompt(session, systemPrompt);
           live.systemPrompt = systemPrompt;
+          if (claim) claim.prompt = digest(systemPrompt);
         } catch (error) {
           console.warn(`${this.options.label} kept its old prompt`, error);
         }
@@ -1103,7 +1113,7 @@ export class AgentSessions<S = unknown> {
     if (!this.options.resume || this.claims.get(key) !== claim) return;
     const saved = store?.load?.(key);
     if (!saved) return;
-    if (!saved.id || saved.context !== claim.pinned.context) {
+    if (!saved.id || saved.context !== savedContext(claim)) {
       this.forget(key, claim);
       return;
     }
@@ -1133,7 +1143,7 @@ export class AgentSessions<S = unknown> {
           store?.advance?.(key, {
             id: session.id,
             covered,
-            context: claim.pinned.context,
+            context: savedContext(claim),
             overridden: session.overridden,
           });
       },
@@ -1270,6 +1280,11 @@ export async function absolute(
   return absoluteWorkspace(workspace) ? workspace : resolveDirectory(workspace);
 }
 
+/** What a saved session must match to resume: its pinned context and the
+ * prompt it ran on, which also holds core memory. */
+const savedContext = (claim: Claim<unknown>) =>
+  `${claim.pinned.context}.${claim.prompt ?? ""}`;
+
 /** `work`, or a rejection with `signal`'s reason once it aborts. */
 export function abortable<T>(
   work: Promise<T>,
@@ -1288,4 +1303,23 @@ export function abortable<T>(
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** A short, stable digest of `text`, so a saved record holds no
+ * instructions or launch details (53-bit cyrb53). */
+export function digest(text: string) {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 =
+    Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^
+    Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 =
+    Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^
+    Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
