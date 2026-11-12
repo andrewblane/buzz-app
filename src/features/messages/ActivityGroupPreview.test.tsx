@@ -706,6 +706,36 @@ it("keeps the primary avatar on the activity bubble without repeating an anchore
   expect(screen.getByText("Studio assistant", { exact: true })).toBeVisible();
 });
 
+it("names everyone in the run in its byline, not only its first speaker", () => {
+  const view = (authors: string[]) => {
+    const group = activityPresentation(
+      authors.map((authorId, index) => ({ ...step, id: `${index}`, authorId })),
+      undefined,
+      new Set(authors),
+    ).groups[0];
+    if (!group) throw new Error("Missing group");
+    return (
+      <ActivityGroupPreview
+        group={group}
+        profiles={new Map(authors.map((id) => [id, { name: id }]))}
+        media={() => undefined}
+        expanded={false}
+        onToggle={() => {}}
+      />
+    );
+  };
+  const { rerender } = render(view(["Martha", "Leona"]));
+  expect(screen.getByText("Martha and Leona", { exact: true })).toBeVisible();
+  rerender(view(["Gordon", "Henry", "Darcy"]));
+  expect(
+    screen.getByText("Gordon, Henry, and Darcy", { exact: true }),
+  ).toBeVisible();
+  rerender(view(["Gordon", "Henry", "Darcy", "Catherine", "Gordon"]));
+  expect(
+    screen.getByText("Gordon, Henry, and 2 others", { exact: true }),
+  ).toBeVisible();
+});
+
 it("uses channel-qualified names for the excerpt and participant avatars", () => {
   const primary = keypair().pubkey;
   const helper = keypair().pubkey;
