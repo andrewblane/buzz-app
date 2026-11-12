@@ -802,12 +802,12 @@ it("replaces personal filing with a reveal chip and rejects a move selected just
   ).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Conversation actions" }));
   expect(
-    await screen.findByRole("menuitem", { name: "Chat settings" }),
+    await screen.findByRole("button", { name: "Chat settings" }),
   ).toBeInTheDocument();
   expect(
-    screen.getByRole("menuitem", { name: "Start a huddle" }),
+    screen.getByRole("button", { name: "Start a huddle" }),
   ).toBeInTheDocument();
-  const items = screen.getAllByRole("menuitem").map((item) => item.textContent);
+  const items = screen.getAllByRole("button").map((item) => item.textContent);
   expect(items.indexOf("Start a huddle")).toBeGreaterThan(
     items.indexOf("Chat settings"),
   );
@@ -815,10 +815,10 @@ it("replaces personal filing with a reveal chip and rejects a move selected just
     items.indexOf("Copy link"),
   );
   expect(
-    screen.queryByRole("menuitem", { name: "Move to" }),
+    screen.queryByRole("button", { name: "Move to" }),
   ).not.toBeInTheDocument();
   expect(
-    screen.queryByRole("menuitem", { name: /Convert/ }),
+    screen.queryByRole("button", { name: /Convert/ }),
   ).not.toBeInTheDocument();
   await userEvent.keyboard("{Escape}");
   fireEvent.click(screen.getByRole("button", { name: "Conversation actions" }));

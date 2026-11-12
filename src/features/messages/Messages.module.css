@@ -92,7 +92,6 @@
   width: min(100%, var(--timeline-measure));
   margin-inline: auto;
   /* ChannelTimeline measures this region for Virtua's pixel startMargin. */
-  padding-block-start: var(--history-leading-space, 0px);
   min-height: var(--space-4);
   box-sizing: border-box;
   display: flex;

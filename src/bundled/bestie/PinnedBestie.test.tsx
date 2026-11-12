@@ -1092,7 +1092,7 @@ it("offers the shared DM actions and channel details in Bestie", async () => {
   f.mount();
   await user.click(await headerAction("Conversation actions"));
   await user.click(
-    await screen.findByRole("menuitem", { name: "View channel details" }),
+    await screen.findByRole("button", { name: "View channel details" }),
   );
   expect(
     await screen.findByRole("tabpanel", { name: "Channel settings" }),
@@ -1125,9 +1125,7 @@ it("opens eligible plugin menu items in the Bestie workspace", async () => {
   ]);
   f.mount();
   await user.click(await headerAction("Conversation actions"));
-  await user.click(
-    await screen.findByRole("menuitem", { name: "View canvas" }),
-  );
+  await user.click(await screen.findByRole("button", { name: "View canvas" }));
   expect(await screen.findByText(`Canvas for ${pollenDM}`)).toBeVisible();
   expect(
     screen.getByRole("textbox", { name: "Message Pollen", hidden: true }),

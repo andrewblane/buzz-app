@@ -1134,7 +1134,7 @@ it.each([
     f.mount();
     const user = userEvent.setup();
     await user.click(await headerAction("Chat actions"));
-    await user.click(await screen.findByRole("menuitem", { name: label }));
+    await user.click(await screen.findByRole("button", { name: label }));
     // Archive is undoable from its result toast, so only Delete confirms.
     if (title) {
       const dialog = screen.getByRole("dialog", { name: title });
@@ -1193,7 +1193,12 @@ it.each([
     f.mountWithSidebar();
     const user = userEvent.setup();
     await user.click(await headerAction(trigger));
-    await user.click(await screen.findByRole("menuitem", { name: label }));
+    await user.click(
+      await screen.findByRole(
+        trigger === "Chat actions" ? "button" : "menuitem",
+        { name: label },
+      ),
+    );
     // Archive is undoable from its result toast, so only Delete confirms.
     if (title) {
       const dialog = await screen.findByRole("dialog", { name: title });
@@ -1253,7 +1258,10 @@ it.each([
     try {
       await user.click(await headerAction(trigger));
       await user.click(
-        await screen.findByRole("menuitem", { name: "Delete chat" }),
+        await screen.findByRole(
+          trigger === "Chat actions" ? "button" : "menuitem",
+          { name: "Delete chat" },
+        ),
       );
       const dialog = await screen.findByRole("dialog", {
         name: "Delete Planning?",
@@ -1293,13 +1301,18 @@ it("offers the header's chat actions from the sidebar row, plus inline Rename", 
   const user = userEvent.setup();
   const items = async (trigger: string) => {
     await user.click(await headerAction(trigger));
-    const menu = await screen.findByRole("menu", { name: trigger });
-    await within(menu).findByRole("menuitem", { name: "Delete chat" });
+    const role = trigger === "Chat actions" ? "button" : "menuitem";
+    const surface = trigger === "Chat actions" ? "dialog" : "menu";
+    const name = trigger === "Chat actions" ? "Conversation actions" : trigger;
+    const menu = await screen.findByRole(surface, { name });
+    await within(menu).findByRole(role, { name: "Delete chat" });
     const names = within(menu)
-      .getAllByRole("menuitem")
+      .getAllByRole(role)
       .map((item) => item.textContent);
     await user.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole(surface, { name })).toBeNull(),
+    );
     return names;
   };
   const header = await items("Chat actions");
@@ -1333,12 +1346,12 @@ it("runs the header's own chat actions and returns focus to Chat actions", async
   const user = userEvent.setup();
   const trigger = await headerAction("Chat actions");
   await user.click(trigger);
-  await user.click(await screen.findByRole("menuitem", { name: "Work" }));
+  await user.click(await screen.findByRole("button", { name: "Work" }));
   expect(assign).toHaveBeenCalledExactlyOnceWith(id, "work");
   await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   await user.click(trigger);
   await user.click(
-    await screen.findByRole("menuitem", { name: "Chat settings" }),
+    await screen.findByRole("button", { name: "Chat settings" }),
   );
   const dialog = await screen.findByRole("dialog", { name: "Edit chat" });
   await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -1391,7 +1404,7 @@ it("reports a failed header move beside the header and retries it", async () => 
   expect(screen.queryByText("Chat wasn’t moved")).toBeNull();
   act(() => publish(base));
   await user.click(await headerAction("Chat actions"));
-  await user.click(await screen.findByRole("menuitem", { name: "Work" }));
+  await user.click(await screen.findByRole("button", { name: "Work" }));
   expect(await screen.findByText("Chat wasn’t moved")).toBeVisible();
   // Toasts own swipe gestures, so press their buttons without a pointer.
   fireEvent.click(screen.getByRole("button", { name: "Retry move" }));
@@ -1408,9 +1421,7 @@ it("returns focus to Chat actions when its confirmation is cancelled", async () 
   const user = userEvent.setup();
   const trigger = await headerAction("Chat actions");
   await user.click(trigger);
-  await user.click(
-    await screen.findByRole("menuitem", { name: "Delete chat" }),
-  );
+  await user.click(await screen.findByRole("button", { name: "Delete chat" }));
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   expect(
     screen.queryByRole("dialog", { name: "Delete chat: Planning" }),
@@ -1513,9 +1524,9 @@ it("lets a joined Solo viewer cancel Leave and restores focus to Chat actions", 
   const user = userEvent.setup();
   const actions = await headerAction("Chat actions");
   await user.click(actions);
-  const leave = await screen.findByRole("menuitem", { name: "Leave chat" });
-  expect(screen.queryByRole("menuitem", { name: "Archive chat" })).toBeNull();
-  expect(screen.queryByRole("menuitem", { name: "Delete chat" })).toBeNull();
+  const leave = await screen.findByRole("button", { name: "Leave chat" });
+  expect(screen.queryByRole("button", { name: "Archive chat" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Delete chat" })).toBeNull();
   await user.click(leave);
   const dialog = await screen.findByRole("dialog", {
     name: "Leave chat: Planning",

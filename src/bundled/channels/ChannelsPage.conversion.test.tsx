@@ -214,7 +214,7 @@ async function openConversion() {
   const trigger = await headerAction("Chat actions");
   await user.click(trigger);
   await user.click(
-    await screen.findByRole("menuitem", { name: "Convert to channel" }),
+    await screen.findByRole("button", { name: "Convert to channel" }),
   );
   const dialog = await screen.findByRole("dialog", {
     name: "Convert to channel",
@@ -311,7 +311,7 @@ it("Messages header reopens unfiling recovery after confirmed metadata and a fai
   await user.click(closeButton);
   await user.click(await headerAction("Channel actions"));
   await user.click(
-    await screen.findByRole("menuitem", { name: "Finish conversion" }),
+    await screen.findByRole("button", { name: "Finish conversion" }),
   );
   const reopened = await screen.findByRole("dialog", {
     name: "Convert to channel",

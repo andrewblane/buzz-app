@@ -1686,6 +1686,10 @@
   .panel-header[data-history-overlay] > * {
     margin-block-start: var(--space-4);
   }
+  :where(.conversation-history-viewport > [data-message-scroller])
+    > :first-child {
+    padding-block-start: var(--history-leading-space, 0px);
+  }
   .conversation-history-viewport > [data-message-scroller] {
     padding-block-start: var(--history-header-inset, 0px);
     scroll-padding-block-start: var(--history-header-inset, 0px);

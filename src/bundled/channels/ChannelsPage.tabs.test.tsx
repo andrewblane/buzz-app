@@ -458,7 +458,7 @@ it("hands the community roster to Channel settings and follows the republished f
   const user = userEvent.setup();
   await user.click(await headerAction("Conversation actions"));
   await user.click(
-    await screen.findByRole("menuitem", { name: "View channel details" }),
+    await screen.findByRole("button", { name: "View channel details" }),
   );
   const control = await screen.findByRole("switch", {
     name: "Starter channel for new members",
