@@ -2154,6 +2154,39 @@ it("publishes an unconfirmed event the relay already holds", async () => {
   ]);
 });
 
+it("does not take another event for an unconfirmed one", async () => {
+  const { service, run, emit, native } = await setup();
+  await service.create({ type: "example/echo", name: "Echo" });
+  const id = "d".repeat(64);
+  native.publish.mockRejectedValueOnce(
+    new Error(
+      `Agent event ${id} unconfirmed; it may or may not have been accepted`,
+    ),
+  );
+  native.query.mockResolvedValue([
+    event("e".repeat(64), { tags: [["h", channel]] }),
+  ]);
+  const published = vi.fn();
+  run.mockImplementationOnce(async ({ agent }) => {
+    await expect(
+      agent.publish({ kind: 9, content: "hi", tags: [["h", channel]] }),
+    ).rejects.toThrow("may or may not have been accepted");
+    published();
+  });
+  emit({
+    events: [
+      event("mismatched-request", {
+        tags: [
+          ["h", channel],
+          ["p", bot],
+        ],
+      }),
+    ],
+    channelId: channel,
+  });
+  await vi.waitFor(() => expect(published).toHaveBeenCalled());
+});
+
 it("does not make ordinary work Solo when it publishes into a Solo chat", async () => {
   const { service, run, emit, session, activity } = await setup();
   await service.create({ type: "example/echo", name: "Echo" });
