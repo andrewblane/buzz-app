@@ -2150,7 +2150,7 @@ it("publishes an unconfirmed event the relay already holds", async () => {
     }),
   );
   expect(native.query).toHaveBeenCalledWith(member(bot), [
-    { ids: [id], limit: 1 },
+    { ids: [id], limit: 1, consistency: "strong" },
   ]);
 });
 

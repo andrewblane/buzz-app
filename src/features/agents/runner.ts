@@ -3443,7 +3443,9 @@ export class AgentRunners {
       const id = unconfirmedAgentEvent(error);
       const [landed] = id
         ? await native
-            .query(runner.member, [{ ids: [id], limit: 1 }])
+            .query(runner.member, [
+              { ids: [id], limit: 1, consistency: "strong" },
+            ])
             .catch(() => [])
         : [];
       if (landed) return landed;
