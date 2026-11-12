@@ -1103,6 +1103,15 @@
       #000 calc(100% - var(--scroll-fade)),
       transparent
     );
+    --scroll-fade-history: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(0 0 0 / 28%) var(--space-8),
+      rgb(0 0 0 / 65%) var(--space-16),
+      #000 calc(var(--space-16) + var(--space-8)),
+      #000 calc(100% - var(--space-2)),
+      transparent
+    );
     --scroll-fade-start: linear-gradient(
       to bottom,
       transparent,
@@ -1117,6 +1126,7 @@
   @media (forced-colors: active), (prefers-reduced-transparency: reduce) {
     :root {
       --scroll-fade-always: none;
+      --scroll-fade-history: none;
       --scroll-fade-start: none;
       --scroll-fade-end: none;
     }
@@ -1130,6 +1140,48 @@
   }
   [data-scroll-fade="scrolled"][data-overflow-end]:not([data-overflow-start]) {
     mask-image: var(--scroll-fade-end);
+  }
+
+  /* Fade the history and its transparent blur together, never the header or
+     composer. Three bounded layers soften progressively toward the top edge. */
+  .conversation-history-viewport {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    mask-image: var(--scroll-fade-history);
+  }
+  .conversation-history-blur {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    height: calc(var(--space-16) + var(--space-8));
+    pointer-events: none;
+    z-index: 1;
+  }
+  .conversation-history-blur > span {
+    position: absolute;
+    inset: 0;
+    -webkit-backdrop-filter: blur(var(--blur-sm));
+    backdrop-filter: blur(var(--blur-sm));
+    mask-image: linear-gradient(to bottom, #000 50%, transparent);
+  }
+  .conversation-history-blur > span:nth-child(2) {
+    -webkit-backdrop-filter: blur(var(--blur-md));
+    backdrop-filter: blur(var(--blur-md));
+    mask-image: linear-gradient(to bottom, #000 25%, transparent 75%);
+  }
+  .conversation-history-blur > span:nth-child(3) {
+    -webkit-backdrop-filter: blur(var(--blur-lg));
+    backdrop-filter: blur(var(--blur-lg));
+    mask-image: linear-gradient(to bottom, #000, transparent 50%);
+  }
+  @media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+    .conversation-history-blur {
+      display: none;
+    }
   }
 
   /* A scrolling strip fades out on each edge that has tabs past them, so a cut
@@ -1614,9 +1666,29 @@
 
   /* Chat identity and toolbar controls share a top edge. */
   .panel-header[data-variant="conversation"] {
+    padding-block-end: var(--space-2);
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
     align-items: start;
+  }
+  /* Keep the first message clear at rest; the inset scrolls away with history. */
+  :has(> .panel-header[data-history-overlay]) {
+    --history-header-inset: calc(var(--space-16) + var(--space-8));
+    --history-leading-space: var(--space-16);
+  }
+  .panel-header[data-history-overlay] {
+    height: 0;
+    min-height: 0;
+    padding-block: 0;
+    border-block-end: 0;
+    z-index: 2;
+  }
+  .panel-header[data-history-overlay] > * {
+    margin-block-start: var(--space-4);
+  }
+  .conversation-history-viewport > [data-message-scroller] {
+    padding-block-start: var(--history-header-inset, 0px);
+    scroll-padding-block-start: var(--history-header-inset, 0px);
   }
   .panel-header[data-variant="conversation"] > .panel-header-title {
     grid-area: 1 / 2;

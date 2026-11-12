@@ -1161,12 +1161,6 @@ details:not([open]) > summary .sectionChevron {
   background: var(--text-row-selected);
 }
 
-/* Feather only message history, with the shared always-on scroll fade; the
-   header and composer stay sharp. */
-.conversation [data-message-scroller] {
-  mask-image: var(--scroll-fade-always);
-}
-
 .conversationBody {
   display: flex;
   flex: 1;

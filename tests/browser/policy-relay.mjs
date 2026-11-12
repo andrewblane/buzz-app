@@ -433,7 +433,7 @@ export function policyRelay({
           const channels = [];
           for (const filter of filters) {
             expect(filter).toEqual({
-              kinds: [9],
+              kinds: [40002, 40008, 9],
               "#h": [expect.any(String)],
               top_level: true,
               limit: 1,

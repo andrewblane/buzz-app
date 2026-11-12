@@ -31,6 +31,13 @@ type Frames = {
         label: string;
         action: ReactNode;
         children: ReactNode;
+        items: readonly {
+          id: string;
+          label: string;
+          target: OpenTarget;
+          content: ReactNode;
+        }[];
+        note: ReactNode;
       }) => ReactNode)
     | undefined;
   renderRow?:
@@ -180,50 +187,61 @@ function Section({
       )}
     </>
   );
+  const items =
+    rowId || open || fullPage
+      ? rows
+          .filter((row) => !rowId || row.id === rowId)
+          .map((row) => {
+            const destination = entry.select(row);
+            const content = (
+              <NavigationItem
+                key={row.id}
+                label={row.label}
+                icon={row.icon ?? entry.icon}
+                selected={isSelectedDestination(
+                  destination,
+                  navigation.entry.target,
+                )}
+                trailing={
+                  (row.badge || row.status || row.count !== undefined) && (
+                    <span className="text-caption text-secondary">
+                      {row.badge ?? row.status ?? row.count}
+                    </span>
+                  )
+                }
+                onClick={() =>
+                  run(async () => {
+                    const result = await navigator.open(destination);
+                    if (result.status === "failed")
+                      throw new Error("Unavailable");
+                  })
+                }
+              />
+            );
+            return {
+              id: row.id,
+              label: row.label,
+              target: destination,
+              content,
+            };
+          })
+      : [];
+  const note = error && (
+    <p role="alert" className="text-caption text-danger">
+      {error}
+    </p>
+  );
   const children = [
     rowId && !rows.some((row) => row.id === rowId) && fallbackRow,
-    (rowId || open || fullPage) &&
-      rows
-        .filter((row) => !rowId || row.id === rowId)
-        .map((row) => {
-          const destination = entry.select(row);
-          const content = (
-            <NavigationItem
-              key={row.id}
-              label={row.label}
-              icon={row.icon ?? entry.icon}
-              selected={isSelectedDestination(
-                destination,
-                navigation.entry.target,
-              )}
-              trailing={
-                (row.badge || row.status || row.count !== undefined) && (
-                  <span className="text-caption text-secondary">
-                    {row.badge ?? row.status ?? row.count}
-                  </span>
-                )
-              }
-              onClick={() =>
-                run(async () => {
-                  const result = await navigator.open(destination);
-                  if (result.status === "failed")
-                    throw new Error("Unavailable");
-                })
-              }
-            />
-          );
-          return renderRow
-            ? renderRow(row.id, row.label, destination, content)
-            : content;
-        }),
-    error && (
-      <p role="alert" className="text-caption text-danger">
-        {error}
-      </p>
+    ...items.map((item) =>
+      renderRow
+        ? renderRow(item.id, item.label, item.target, item.content)
+        : item.content,
     ),
+    note,
   ];
   return renderSection ? (
-    renderSection({ label: entry.title, action, children })
+    renderSection({ label: entry.title, action, children, items, note })
   ) : (
     <NavigationSection label={entry.title} action={action}>
       {children}

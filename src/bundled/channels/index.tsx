@@ -168,6 +168,7 @@ export const apply: PluginModule["apply"] = (ctx) => {
           !!section);
       return (
         <MessagesIndex
+          sidebarSections={ctx.reflect.get("sidebarSections")}
           host={ctx}
           extensions={extensions}
           relay={relay}

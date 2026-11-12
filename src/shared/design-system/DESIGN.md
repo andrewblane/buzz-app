@@ -578,7 +578,14 @@ with the scroll fade instead of cutting rows at a hard line. Set
 history does. `scrolled` feathers only an edge with content past it, marked by
 `useScrollEdges("block")`, so a list at rest keeps its first row crisp; the
 sidebar uses it. A host whose scroller cannot carry the attribute applies
-`--scroll-fade-always`. Reduced transparency and forced colors remove the fade.
+`--scroll-fade-always`. ConversationTimeline wraps history in `conversation-history-viewport`: a
+96px opacity falloff with three transparent, progressively blurred layers at the
+top edge. Conversation identity headers float above the history, which scrolls behind
+the avatars and name. A 96px initial history inset scrolls away with the content.
+The header and composer stay sharp; blur increases from 4px to 16px toward the
+top. The layers intercept no pointer input and add no surface fill.
+Conversation headers use an 8px bottom inset. Reduced transparency and forced
+colors remove the fade.
 Tab strips keep their own wider horizontal fade.
 
 Every sidebar heading row, including collapsible channel groups and Solo

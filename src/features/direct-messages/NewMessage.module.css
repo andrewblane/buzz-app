@@ -17,7 +17,6 @@
   position: relative;
   z-index: 3;
   padding: var(--space-4) var(--space-6);
-  border-bottom: 1px solid var(--border-standard);
 }
 .page > .recipientHeader {
   width: calc(100% - 2 * var(--space-3));
@@ -29,6 +28,11 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
+}
+.recipientHeader[data-appearance="header"] .recipientRow {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--surface-rail-card);
 }
 .toField {
   display: flex;

@@ -322,12 +322,7 @@ it("opens the header's community switcher from Messages in Personal space", asyn
   );
   // Focus returns to the header trigger after the contextual opener closes.
   expect(
-    within(screen.getByRole("navigation", { name: "Apps" })).getByRole(
-      "button",
-      {
-        name: /^Community switcher: /,
-      },
-    ),
+    screen.getByRole("button", { name: /^Community switcher: / }),
   ).toHaveFocus();
 });
 
@@ -563,14 +558,12 @@ it("shows global routes in the rail and keeps the conversation mounted across se
   const draft = screen.getByRole("textbox", { name: "Message draft" });
   await user.type(draft, "Keep this draft");
   const rail = screen.getByRole("navigation", { name: "Apps" });
-  const header = screen
-    .getByRole("button", { name: "Your profile" })
-    .closest("header");
+  const header = document.querySelector<HTMLElement>(".shell-header");
   if (!header) throw new Error("Missing application toolbar");
   expect(
     within(rail).getByRole("button", { name: /^Community switcher:/ }),
   ).toBeVisible();
-  const profile = within(header).getByRole("button", { name: "Your profile" });
+  const profile = within(rail).getByRole("button", { name: "Your profile" });
   expect(profile).toBeVisible();
   expect(
     within(header).getByRole("button", { name: "Search Buzz" }),

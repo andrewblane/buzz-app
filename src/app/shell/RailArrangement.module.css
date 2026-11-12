@@ -189,7 +189,6 @@
   }
 }
 /* Keyboard and direct drag intent must never wait for decorative hover motion. */
-.grabber:focus-within,
 .group[data-dragging="true"] .grabber,
 html[data-keyboard-input] .group:focus-within .grabber {
   opacity: 1;

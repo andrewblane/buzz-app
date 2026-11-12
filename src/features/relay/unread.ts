@@ -1,3 +1,4 @@
+import { messageContentKind } from "./channel-kinds";
 import type { ProfileQueries } from "./profile-directory";
 import { workflowOwner } from "./workflow-attribution";
 import { agentAudience } from "./audience";
@@ -242,8 +243,7 @@ const REPAIR_LIMIT = 500;
 /** Rendered message order: effective ms, then event id. */
 const order = (a: RelayEvent, b: RelayEvent) =>
   eventMs(a) - eventMs(b) || a.id.localeCompare(b.id);
-const contentKind = (event: RelayEvent) =>
-  event.kind === 9 || event.kind === 40002 || event.kind === 40008;
+const contentKind = (event: RelayEvent) => messageContentKind(event.kind);
 /**
  * Live Inbox recompute window. Each recompute folds every channel (7-70 ms at
  * 100-1000 items), so a burst would otherwise cost that per message. 200 ms

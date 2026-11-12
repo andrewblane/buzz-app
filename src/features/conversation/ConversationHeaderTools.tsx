@@ -9,10 +9,10 @@ import {
 import { DotsThreeIcon } from "../../shared/design-system/icons";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import {
-  MenuRoot,
-  MenuTrigger,
-  MenuPopup,
-} from "../../shared/design-system/ui/Menu";
+  PopoverRoot,
+  PopoverTrigger,
+  PopoverPopup,
+} from "../../shared/design-system/ui/Popover";
 import { ActionList } from "../../shared/design-system/ui/ActionList";
 
 const HeaderToolsMenu = createContext<{
@@ -41,7 +41,7 @@ export function ConversationHeaderTools({
   const [visited, setVisited] = useState(false);
   if (!actions) return null;
   return (
-    <MenuRoot
+    <PopoverRoot
       open={open}
       onOpenChange={(open, details) => {
         if (open) {
@@ -78,7 +78,7 @@ export function ConversationHeaderTools({
         else setOpen(open);
       }}
     >
-      <MenuTrigger
+      <PopoverTrigger
         render={
           <IconButton
             ref={trigger}
@@ -90,26 +90,23 @@ export function ConversationHeaderTools({
           />
         }
       />
-      <MenuPopup
+      <PopoverPopup
         ref={popup}
         align="end"
         size="compact"
+        padding="list"
         keepMounted={visited}
         finalFocus={() =>
           finalFocus.current ? finalFocus.current() : (trigger.current ?? false)
         }
         aria-label={label}
-        onKeyDown={(event) => {
-          // Plugin buttons and the menu list share the native Tab order.
-          if (event.key === "Tab") event.preventBaseUIHandler();
-        }}
       >
         <HeaderToolsMenu
           value={{ trigger, finalFocus, open, close: () => setOpen(false) }}
         >
           <ActionList>{actions}</ActionList>
         </HeaderToolsMenu>
-      </MenuPopup>
-    </MenuRoot>
+      </PopoverPopup>
+    </PopoverRoot>
   );
 }

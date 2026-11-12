@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { AvatarArtworkContext } from "../../shared/design-system/ui/Avatar";
-import { PackedAgentAvatar } from "./PackedAgentAvatar";
 import { agentAvatars } from "./avatar-packs";
 
 const packsBySource = new Map(
@@ -21,23 +20,14 @@ function renderArtwork(src: string) {
   ) : null;
 }
 
-function renderAnimatedArtwork(src: string) {
-  const avatar = packsBySource.get(src);
-  return avatar ? <PackedAgentAvatar avatar={avatar} /> : null;
-}
-
-/** Shared avatars stay static unless their host explicitly opts into animation. */
+/** Shared avatars stay static; the Agents page opts into animated artwork directly. */
 export function AgentAvatarArtworkProvider({
   children,
-  animated = false,
 }: {
   children: ReactNode;
-  animated?: boolean;
 }) {
   return (
-    <AvatarArtworkContext
-      value={animated ? renderAnimatedArtwork : renderArtwork}
-    >
+    <AvatarArtworkContext value={renderArtwork}>
       {children}
     </AvatarArtworkContext>
   );

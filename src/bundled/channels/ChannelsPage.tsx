@@ -2286,33 +2286,23 @@ function ChannelWorkspace({
               onOpenChat={(channelId) => {
                 if (!behindSettings()) select(channelId);
               }}
-              renderSolo={(agent, focusRequest) => (
-                <SoloDraft
-                  key={agent}
-                  embedded
-                  agent={agent}
-                  focusRequest={focusRequest}
-                  session={queries}
-                  scope={scope}
-                  extensions={extensions}
-                  onStarted={(channelId) => {
-                    if (!behindSettings()) select(channelId);
-                  }}
-                  onFailed={(_channelId, message, retry) =>
-                    notify(
-                      message,
-                      "error",
-                      retry
-                        ? {
-                            label: "Retry restoring message",
-                            onClick: () => void retry(),
-                            timeout: Infinity,
-                          }
-                        : undefined,
-                    )
-                  }
-                />
-              )}
+              solo={{
+                onStarted: (channelId) => {
+                  if (!behindSettings()) select(channelId);
+                },
+                onFailed: (_channelId, message, retry) =>
+                  notify(
+                    message,
+                    "error",
+                    retry
+                      ? {
+                          label: "Retry restoring message",
+                          onClick: () => void retry(),
+                          timeout: Infinity,
+                        }
+                      : undefined,
+                  ),
+              }}
               onStarted={(channelId, id) => {
                 handoff?.clearPreparingDm();
                 if (behindSettings()) return;

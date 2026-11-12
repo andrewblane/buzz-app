@@ -67,7 +67,7 @@ test("conversation header opens its tools without moving history", async ({
   expect(triggerBox.x).toBeGreaterThan(identityBox.x + identityBox.width);
   await trigger.click();
   await expect(actions).toBeVisible();
-  await animationsSettled(page.locator(".buzz-menu-popup:visible"), {
+  await animationsSettled(page.locator(".buzz-popover-popup:visible"), {
     subtree: true,
   });
   expect((await history.boundingBox()).y).toBe(before.y);
@@ -77,13 +77,17 @@ test("conversation header opens its tools without moving history", async ({
   await expect(
     page.getByRole("button", { name: "Channel actions", exact: true }),
   ).toHaveCount(0);
-  await expect(page.locator(".buzz-menu-popup:visible")).toHaveCount(1);
+  await expect(page.locator(".buzz-popover-popup:visible")).toHaveCount(1);
   await actions.focus();
   await page.keyboard.press("Shift+Tab");
   await expect(
     page.getByRole("button", { name: "Toggle channel todos", exact: true }),
   ).toBeFocused();
   await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("menu", { name: "Channel actions", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("ArrowDown");
   await expect(actions).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(trigger).toBeFocused();
@@ -125,8 +129,8 @@ test("conversation header opens its tools without moving history", async ({
   await expect(
     page.getByRole("button", { name: "Open in Team", exact: true }),
   ).toBeVisible();
-  await expect(page.locator(".buzz-menu-popup:visible")).toHaveCount(1);
-  await animationsSettled(page.locator(".buzz-menu-popup:visible"), {
+  await expect(page.locator(".buzz-popover-popup:visible")).toHaveCount(1);
+  await animationsSettled(page.locator(".buzz-popover-popup:visible"), {
     subtree: true,
   });
   await page.screenshot({

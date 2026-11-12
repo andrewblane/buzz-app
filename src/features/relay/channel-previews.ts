@@ -1,3 +1,6 @@
+import { isTransientFailure } from "./errors";
+import { MESSAGE_CONTENT_KINDS, messageContentKind } from "./channel-kinds";
+import { RECOVERY_DELAYS_MS, type RecoverySource } from "./recovery";
 import type { RelayEvent } from "./events";
 import type { RelayReader } from "./reader";
 import { retryRead } from "./read-retry";
@@ -12,6 +15,7 @@ export type LatestMessage = Readonly<{
 }>;
 type Evidence = {
   asked: boolean;
+  failed?: boolean;
   complete: boolean;
   empty: boolean;
   /** A completed empty read supersedes this older canonical observation. */
@@ -72,7 +76,10 @@ export function createChannelPreviews({
     | { ids: readonly string[]; controller: AbortController }
     | undefined;
   let closed = false;
-  let scheduled = false;
+  let scheduled: ReturnType<typeof setTimeout> | undefined;
+  const announce = () => {
+    for (const listener of listeners) notify(listener);
+  };
   const same = (
     a: LatestMessage | null | undefined,
     b: LatestMessage | null | undefined,
@@ -110,7 +117,7 @@ export function createChannelPreviews({
       [...next].some(([id, value]) => !same(snapshot.get(id), value))
     ) {
       snapshot = next;
-      for (const listener of listeners) notify(listener);
+      announce();
     }
   }
   function prune() {
@@ -143,9 +150,13 @@ export function createChannelPreviews({
       if (ids.length === 4) break;
     }
     publish();
-    if (!ids.length) return;
+    if (!ids.length) {
+      announce();
+      return;
+    }
     const controller = new AbortController();
     active = { ids, controller };
+    announce();
     const signal = AbortSignal.any([
       controller.signal,
       AbortSignal.timeout(10_000),
@@ -155,7 +166,7 @@ export function createChannelPreviews({
         (signal) =>
           read(
             ids.map((id) => ({
-              kinds: [9],
+              kinds: MESSAGE_CONTENT_KINDS,
               "#h": [id],
               limit: 1,
               top_level: true,
@@ -172,44 +183,84 @@ export function createChannelPreviews({
         if (!held) continue;
         held.asked = true;
         held.complete = true;
+        held.failed = false;
         held.empty = !events.some(
           (event) =>
-            event.kind === 9 &&
+            messageContentKind(event.kind) &&
             !threadReference(event) &&
             event.tags.some(([name, value]) => name === "h" && value === id),
         );
         held.superseded = held.empty ? latest(id)?.id : undefined;
       }
       publish();
-    } catch {
-      // retryRead owns bounded, jittered recovery. A later consumer may retry;
-      // abandoned work must not complete or schedule detached timers.
-      for (const id of ids)
-        if (controller.signal.aborted || !demand.has(id)) {
-          const held = evidence.get(id);
-          if (held) held.asked = false;
-        }
+    } catch (error) {
+      for (const id of ids) {
+        const held = evidence.get(id);
+        if (!held) continue;
+        if (controller.signal.aborted || !demand.has(id)) held.asked = false;
+        else held.failed = signal.aborted || isTransientFailure(error);
+      }
     } finally {
       active = undefined;
+      announce();
       void drain();
     }
   }
   function schedule() {
-    if (closed || scheduled) return;
-    scheduled = true;
-    queueMicrotask(() => {
-      scheduled = false;
-      if (closed) return;
-      if (active && !active.ids.some((id) => demand.has(id)))
-        active.controller.abort();
-      void drain();
-    });
+    if (closed) return;
+    if (active && !active.ids.some((id) => demand.has(id)))
+      active.controller.abort();
+    if (!demand.size) {
+      clearTimeout(scheduled);
+      scheduled = undefined;
+      announce();
+      return;
+    }
+    if (scheduled !== undefined) return;
+    // Spread initial demand across clients. Subsequent batches share this one
+    // drain; exhausted reads return through session recovery, never a tight loop.
+    scheduled = setTimeout(
+      () => {
+        scheduled = undefined;
+        if (closed) return;
+        if (active && !active.ids.some((id) => demand.has(id)))
+          active.controller.abort();
+        void drain();
+      },
+      (RECOVERY_DELAYS_MS[0] ?? 1_000) * (0.25 + Math.random() / 4),
+    );
   }
+  const retry = () => {
+    for (const [id, held] of evidence)
+      if (demand.has(id) && !held.complete && !active?.ids.includes(id)) {
+        held.asked = false;
+        held.failed = false;
+      }
+    schedule();
+    announce();
+  };
+  const recovery: RecoverySource = {
+    status: () =>
+      active || scheduled !== undefined
+        ? "busy"
+        : [...evidence].some(([id, held]) => demand.has(id) && held.failed)
+          ? "failed"
+          : "settled",
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    retry,
+    reauthorize: retry,
+  };
   const changed = (_events?: readonly RelayEvent[]) => {
     publish(true);
     schedule();
   };
   return {
+    recovery,
     capability: {
       snapshot: () => snapshot,
       subscribe(listener: () => void) {
@@ -223,6 +274,13 @@ export function createChannelPreviews({
         const ids = [...new Set(wanted)];
         for (const id of ids) {
           demand.set(id, (demand.get(id) ?? 0) + 1);
+          const head = loaded(id);
+          if (head !== undefined && !active?.ids.includes(id))
+            evidence.set(id, {
+              asked: true,
+              complete: true,
+              empty: head === null,
+            });
           const held = evidence.get(id);
           if (
             held &&
@@ -259,6 +317,7 @@ export function createChannelPreviews({
     },
     dispose() {
       closed = true;
+      clearTimeout(scheduled);
       active?.controller.abort();
       demand.clear();
       evidence.clear();

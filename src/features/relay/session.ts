@@ -2394,6 +2394,7 @@ export function createRelaySession(
   const recovery = transport
     ? createRecovery([
         liveRecovery,
+        channelPreviews.recovery,
         recoverable(
           channelKit.capability.subscribe,
           () => loadState(channelKit.capability.snapshot()),

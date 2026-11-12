@@ -1,4 +1,3 @@
-import { createPortal } from "react-dom";
 import { Dialog as BaseDialog } from "@base-ui/react/dialog";
 import {
   AnimatePresence,
@@ -27,19 +26,9 @@ function positionAnchoredDialog(
   element: HTMLElement,
   anchor: HTMLElement,
   container?: HTMLElement | null,
-  placement?: "center" | "right" | "bottom" | "rail" | "workspace",
+  placement?: "center" | "right" | "bottom" | "rail",
 ) {
   const source = anchor.getBoundingClientRect();
-  if (placement === "workspace") {
-    for (const [name, value] of Object.entries({
-      left: source.left,
-      top: source.top,
-      width: source.width,
-      height: source.height,
-    }))
-      element.style.setProperty(`--dialog-workspace-${name}`, `${value}px`);
-    return;
-  }
   if (placement === "rail") {
     element.style.setProperty("--dialog-rail-top", `${source.top}px`);
     return;
@@ -103,12 +92,10 @@ export type DialogProps = {
   step?: { key: string; scale: number };
   leadingActions?: ReactNode;
   headerActions?: ReactNode;
-  /** Split hosts may place this dialog's chrome inside its conversation pane. */
-  headerContainer?: HTMLElement | null;
   /** Return true when an inner editor layer consumed Escape. */
   onEscape?: () => boolean;
-  /** Rail and workspace presentations leave the surrounding app interactive. */
-  placement?: "center" | "right" | "bottom" | "rail" | "workspace";
+  /** Rail presentations leave the surrounding app interactive. */
+  placement?: "center" | "right" | "bottom" | "rail";
   dismissOnOutsideClick?: boolean;
   closeLabel?: string;
   closePlacement?: "start" | "end";
@@ -151,7 +138,6 @@ export function Dialog({
   step,
   leadingActions,
   headerActions,
-  headerContainer,
   onEscape,
   placement = "center",
   dismissOnOutsideClick = true,
@@ -172,9 +158,8 @@ export function Dialog({
   const focus = useFinalFocusUnlessMoved(finalFocus, undefined);
   const surface = useRef<HTMLDivElement>(null);
   const [popup, setPopup] = useState<HTMLElement | null>(null);
-  const modal = placement !== "rail" && placement !== "workspace";
-  const anchored =
-    placement === "bottom" || placement === "rail" || placement === "workspace";
+  const modal = placement !== "rail";
+  const anchored = placement === "bottom" || placement === "rail";
   const popupRef = useCallback(
     (element: HTMLDivElement | null) => {
       if (element && anchor && anchored)
@@ -284,7 +269,7 @@ export function Dialog({
     );
   const contents = (
     <>
-      {headerContainer ? createPortal(header, headerContainer) : header}
+      {header}
       {((children != null && children !== false) || navigation) && (
         <div
           className="buzz-dialog-body buzz-dialog-content"

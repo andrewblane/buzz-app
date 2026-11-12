@@ -11,6 +11,7 @@ export function PanelHeader({
   actions,
   variant = "default",
   divider = false,
+  historyOverlay = false,
 }: {
   title: ReactNode;
   icon?: ReactNode;
@@ -19,6 +20,8 @@ export function PanelHeader({
   variant?: "default" | "compact" | "card" | "conversation";
   /** Keep the separator's space while omitting its visible line. */
   divider?: boolean;
+  /** Conversation history scrolls behind this floating identity. */
+  historyOverlay?: boolean;
 }) {
   return (
     <header
@@ -26,6 +29,7 @@ export function PanelHeader({
       className="panel-header"
       data-variant={variant}
       data-divider={divider ? undefined : "hidden"}
+      data-history-overlay={historyOverlay || undefined}
     >
       {navigation}
       <div className="panel-header-title">

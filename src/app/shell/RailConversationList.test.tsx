@@ -7,6 +7,7 @@ import { createRelaySession } from "../../features/relay/session";
 import type { Navigation } from "../../features/navigation/controller";
 import type { OpenTarget } from "../../features/navigation/targets";
 import type { RailEntry } from "./rail-pins";
+import { RailConversationItem } from "./RailConversationItem";
 import { RailConversationList } from "./RailConversationList";
 
 afterEach(() => {
@@ -56,6 +57,7 @@ test("moved exact destinations retain distinct targets and follow Direct and liv
     [roots[0], 1],
     [roots[1], 0],
     ["d".repeat(64), 1],
+    ["", 10],
   ]);
   const snapshots = new Map(
     [...counts].map(([id, observedCount]) => [
@@ -110,12 +112,25 @@ test("moved exact destinations retain distinct targets and follow Direct and liv
       renderOther={(entry) => {
         const destination = entry.target;
         return destination.kind === "person" ? null : (
-          <button type="button" onClick={() => void open(destination)}>
-            {entry.label}
-          </button>
+          <RailConversationItem
+            session={session}
+            channel={{ id: "one", name: "One", channelType: "stream" }}
+            destination={destination}
+            avatar={null}
+            place={entry.label}
+            aria-label={entry.label}
+            onClick={() => void open(destination)}
+          />
         );
       }}
     />,
+  );
+  expect(screen.getByRole("button", { name: "Thread 1" })).toHaveAttribute(
+    "aria-description",
+    "Unread messages",
+  );
+  expect(screen.getByRole("button", { name: "Thread 2" })).not.toHaveAttribute(
+    "aria-description",
   );
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Thread 1" }));

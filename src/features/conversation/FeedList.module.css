@@ -45,9 +45,3 @@
 .item {
   min-width: 0;
 }
-
-@container (max-width: 30rem) {
-  .list {
-    --conversation-row-avatar: var(--space-6);
-  }
-}

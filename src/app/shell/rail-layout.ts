@@ -13,10 +13,13 @@ export type RailLayout = {
   sections: { id: string; title: string }[];
   placements: Placement[];
 };
-const KEY = "navigation-layout:v1";
+const KEY = "navigation-layout:v2";
 
 function readLayout(scope: string): RailLayout {
-  const raw = readView<Partial<RailLayout> | null>(scope, KEY, null);
+  const saved = readView<Partial<RailLayout> | null>(scope, KEY, null);
+  const raw =
+    saved ??
+    readView<Partial<RailLayout> | null>(scope, "navigation-layout:v1", null);
   const sections = Array.isArray(raw?.sections)
     ? raw.sections.filter(
         (section) =>
@@ -27,6 +30,8 @@ function readLayout(scope: string): RailLayout {
       )
     : [];
   const placements: Placement[] = [];
+  // Upgrade old Plugins assignments to the Team defaults. Subsequent moves
+  // save under v2, so the person can still place these shortcuts elsewhere.
   if (Array.isArray(raw?.placements))
     for (const item of raw.placements) {
       const entry = parseRailEntries([item?.entry])[0];
@@ -36,7 +41,15 @@ function readLayout(scope: string): RailLayout {
         !placements.some((placed) => placed.entry.id === entry.id)
       )
         placements.push({
-          section: item.section === "plugins" ? "navigation" : item.section,
+          section:
+            !saved &&
+            (item.section === "plugins" || item.section === "navigation") &&
+            (entry.id === "buzz.inbox/inbox" ||
+              entry.id === "buzz.drafts-and-sent/drafts-sent")
+              ? "messages"
+              : item.section === "plugins"
+                ? "navigation"
+                : item.section,
           entry,
         });
     }

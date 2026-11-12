@@ -1,3 +1,8 @@
+import { MentionCompletion } from "../../bundled/mentions/MentionCompletion";
+import { mentionQuery } from "../../bundled/mentions/mention-query";
+import type { Contribution } from "../../plugins/contributions";
+import type { ComposerCompletion } from "../conversation/contracts";
+import { createRelaySession } from "../relay/session";
 import { SEARCH_DEBOUNCE_MS } from "../../shared/search-debounce";
 import type { ConversationHostServices } from "../conversation/ConversationHost";
 // @vitest-environment jsdom
@@ -57,6 +62,7 @@ const people = Array.from({ length: 10 }, (_, index) => ({
 }));
 const channel = "11111111-1111-4111-8111-111111111111";
 const play = vi.fn(async () => {});
+const baseStops: (() => void)[] = [];
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, "offsetParent", "get").mockImplementation(
     function (this: HTMLElement) {
@@ -102,14 +108,20 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  for (const stop of baseStops.splice(0)) stop();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 function setup() {
+  const base = createRelaySession(null);
+  baseStops.push(base.dispose);
   const empty: never[] = [];
   const emoji = { status: "ready", entries: empty };
   const profiles = new Map();
-  const channels: { channels: ChannelSummary[] } = { channels: [] };
+  const channels: { status: "ready"; channels: ChannelSummary[] } = {
+    status: "ready",
+    channels: [],
+  };
   const agents = { status: "ready", identities: empty };
   const directMessages = {
     available: true,
@@ -169,11 +181,14 @@ function setup() {
     }),
   };
   const session = {
+    ...base.session,
     viewer: "f".repeat(64),
     directMessages,
     messages,
     outbox,
+    channelWrites: { available: false },
     channels: {
+      ...base.session.channels,
       list: () => channels,
       subscribeList: () => () => {},
     },
@@ -230,7 +245,7 @@ function setup() {
     layout: "page" | "composer" = "page",
     options: Pick<
       ComponentProps<typeof NewMessage>,
-      "renderSolo" | "allowChannels"
+      "solo" | "allowChannels" | "extensions"
     > = {},
   ) =>
     render(
@@ -319,9 +334,94 @@ it("retains channel delivery recovery when saved-draft cleanup fails", async () 
   expect(t.directMessages.open).not.toHaveBeenCalled();
 });
 
+it("restores the edited channel after a refused send instead of the journal destination", async () => {
+  const t = setup();
+  const other = "22222222-2222-4222-8222-222222222222";
+  t.channels.channels = [
+    { id: channel, name: "Design", channelType: "stream" },
+    { id: other, name: "Other", channelType: "stream" },
+  ];
+  localStorage.setItem(
+    `buzz-view.v1:${JSON.stringify([scope, "direct-message:channel"])}`,
+    JSON.stringify(channel),
+  );
+  t.directMessages.delivered.mockRejectedValueOnce(new Error("Refused"));
+  const view = t.mount(undefined, "page", { allowChannels: true });
+  await act(() => t.outbox.ready());
+  await t.user.keyboard("{Escape}");
+  await t.user.type(
+    await screen.findByRole("textbox"),
+    "Keep this edited post",
+  );
+  await t.user.click(send());
+  await screen.findByRole("alert");
+  await t.user.click(recipient());
+  await t.user.type(recipient(), "Other");
+  await t.user.click(await screen.findByRole("option", { name: /Other/ }));
+  view.unmount();
+  t.mount(undefined, "page", { allowChannels: true });
+  await waitFor(() =>
+    expect(screen.getByRole("textbox")).toHaveAttribute(
+      "aria-label",
+      "Message #Other",
+    ),
+  );
+  await t.user.click(send());
+  await waitFor(() => expect(t.messages.send).toHaveBeenCalledTimes(2));
+  expect(t.messages.send.mock.calls[1]?.[0]).toBe(other);
+});
+
+it("channel-addressed composition offers its existing members as mentions", async () => {
+  const t = setup();
+  const person = people[0];
+  assert(person);
+  t.profiles.set(person.pubkey, { name: person.name });
+  t.channels.channels = [
+    {
+      id: channel,
+      name: "Design",
+      channelType: "stream",
+      members: [t.session.viewer ?? "", person.pubkey],
+    },
+  ];
+  localStorage.setItem(
+    `buzz-view.v1:${JSON.stringify([scope, "direct-message:channel"])}`,
+    JSON.stringify(channel),
+  );
+  const completions: readonly Contribution<ComposerCompletion>[] = [
+    {
+      id: "mentions",
+      key: "buzz.mentions/mentions",
+      pluginId: "buzz.mentions",
+      revision: "1",
+      title: "Mention",
+      match: ({ text, start }) => mentionQuery(text, start),
+      component: MentionCompletion,
+    },
+  ];
+  const emptyExtensions: readonly never[] = [];
+  const none = { snapshot: () => emptyExtensions, subscribe: () => () => {} };
+  t.mount(undefined, "page", {
+    allowChannels: true,
+    extensions: {
+      tools: none,
+      inline: none,
+      completions: { snapshot: () => completions, subscribe: () => () => {} },
+    },
+  });
+  await act(() => t.outbox.ready());
+  await t.user.keyboard("{Escape}");
+  await t.user.type(await screen.findByRole("textbox"), "@Per");
+  await t.user.click(await screen.findByRole("option", { name: "Person 1" }));
+  await t.user.type(screen.getByRole("textbox"), " hello");
+  await t.user.click(send());
+  await waitFor(() => expect(t.messages.send).toHaveBeenCalledOnce());
+  expect(t.messages.send.mock.calls[0]?.[2]).toEqual([person.pubkey]);
+});
+
 it("keeps a selected agent Team draft and pending DM in Team across remounts", async () => {
   const t = setup();
-  const options = { renderSolo: () => <div>Solo composer</div> };
+  const options = { solo: { onStarted: vi.fn() } };
   let view = t.mount(undefined, "page", options);
   await t.user.click(
     await screen.findByRole("option", { name: "Person 2, Agent" }),
@@ -331,9 +431,8 @@ it("keeps a selected agent Team draft and pending DM in Team across remounts", a
   view.unmount();
   view = t.mount(undefined, "page", options);
   await waitFor(() =>
-    expect(screen.queryByText("Solo composer")).not.toBeInTheDocument(),
+    expect(screen.getByRole("textbox")).toHaveTextContent("Keep this DM draft"),
   );
-  expect(screen.getByRole("textbox")).toHaveTextContent("Keep this DM draft");
   t.directMessages.delivery.mockReturnValue(undefined);
   t.directMessages.delivered.mockRejectedValueOnce(
     new Error("Delivery uncertain"),

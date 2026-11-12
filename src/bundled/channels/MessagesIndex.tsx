@@ -7,6 +7,7 @@ import {
   useState,
   useId,
   useCallback,
+  useSyncExternalStore,
 } from "react";
 import { ConversationListVisibility } from "../../features/conversation/ConversationListToggle";
 import { InboxSheet } from "../inbox/InboxSheet";
@@ -25,6 +26,8 @@ import { useChannelList, useRelayConnection } from "../../features/relay/react";
 import { EmptyState } from "../../shared/design-system/ui/EmptyState";
 import { ChatCircleIcon } from "../../shared/design-system/icons";
 import styles from "./MessagesIndex.module.css";
+import { railSections } from "../../app/shell/rail-sections";
+import type { SidebarSections } from "../../features/channel-navigation/sidebar-sections-service";
 import { useRailLayout } from "../../app/shell/rail-layout";
 import { useRailPins, type RailEntry } from "../../app/shell/rail-pins";
 
@@ -35,6 +38,7 @@ export function MessagesIndex({
   host,
   extensions,
   section,
+  sidebarSections,
   list,
   detail,
 }: {
@@ -44,6 +48,7 @@ export function MessagesIndex({
   host: ConversationHostServices;
   extensions: ConversationExtensions;
   section?: "messages" | "solo" | undefined;
+  sidebarSections?: SidebarSections | undefined;
   list(section: string, navigator: Navigation): ReactNode;
   detail?: ReactNode;
 }) {
@@ -73,21 +78,27 @@ export function MessagesIndex({
           selected.participants?.length === 1 &&
           selected.participants[0] === destination.pubkey;
   };
-  const availableSections = new Map([
-    ["messages", "Team"],
-    ["solo", "Solo"],
-    ["pins", "Pins"],
-    ["agents", "Agents"],
-    ["navigation", "Plugins"],
-    ...layout.sections.map(({ id, title }) => [id, title] as const),
-  ]);
+  const contributed = useSyncExternalStore(
+    sidebarSections?.subscribe ?? noSubscribe,
+    sidebarSections?.snapshot ?? noSections,
+  );
+  const membership = useMemo(
+    () =>
+      railSections(
+        layout,
+        contributed.map((section) => ({
+          id: section.key,
+          title: section.title,
+        })),
+      ),
+    [layout, contributed],
+  );
+  const availableSections = membership.sections;
   const savedSection =
     fromList.current?.entryId === navigation?.entryId
       ? fromList.current?.section
       : navigation?.position(sectionKey);
-  const assignedSection = layout.placements.find(
-    ({ section, entry }) => availableSections.has(section) && belongs(entry),
-  )?.section;
+  const assignedSection = membership.owner(belongs);
   const collection =
     section ??
     messageCollectionOf(target) ??
@@ -214,3 +225,7 @@ export function MessagesIndex({
     </ConversationListVisibility>
   );
 }
+
+const noSubscribe = () => () => {};
+const emptySections: readonly never[] = [];
+const noSections = () => emptySections;

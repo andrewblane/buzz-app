@@ -1,5 +1,6 @@
 import type { Context } from "@deepseek-ai/cordis";
 import {
+  createContext,
   useContext,
   useCallback,
   useEffect,
@@ -41,6 +42,12 @@ export type ConversationHostInteractions = ConversationInteractions & {
     returnFocus?: HTMLElement | null,
   ): boolean;
 };
+/** A containing workspace owns contextual detail tabs; standalone readers retain their fallback. */
+export const ConversationTabsContext = createContext<{
+  openLink(channelId: string, url: string, rootId?: string): boolean;
+  openPanel(entry: PanelOpening, returnFocus?: HTMLElement | null): boolean;
+} | null>(null);
+
 type ConversationHostProps = Pick<
   ThreadPanelProps,
   "session" | "scope" | "channelId" | "channelName"
@@ -79,6 +86,7 @@ export function ConversationHost({
 }: ConversationHostProps) {
   const presented = useConversationPresentation();
   const detailPane = useContext(ConversationDetailPane);
+  const tabs = useContext(ConversationTabsContext);
   const presentation = useRef(presented);
   const trigger = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -150,6 +158,7 @@ export function ConversationHost({
   /** Replacements stay in the opening message's thread, like Channels. */
   const open = (url: string, rootId?: string) => {
     if (!active()) return false;
+    if (tabs?.openLink(channelId, url, rootId)) return true;
     const target = buzzLinkTarget(url, { viewer, communityOrigin: relayUrl });
     if (target) {
       setOverlay(undefined);
@@ -196,6 +205,18 @@ export function ConversationHost({
           openPanel: (panel, target, returnFocus) => {
             if (!active() || !host.panels.snapshot().includes(panel))
               return false;
+            if (
+              tabs?.openPanel(
+                {
+                  panel,
+                  target,
+                  channelId,
+                  ...(threadId && { rootId: threadId }),
+                },
+                returnFocus,
+              )
+            )
+              return true;
             enter();
             if (returnFocus) trigger.current = returnFocus;
             setOverlay({

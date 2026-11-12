@@ -634,6 +634,7 @@ export function PanelWorkspace({
       {conversationIdentity && (
         <PanelHeader
           variant="conversation"
+          historyOverlay
           navigation={standaloneIdentity ? leadingActions : undefined}
           title={conversationTitle ?? label}
           icon={conversationIdentity}

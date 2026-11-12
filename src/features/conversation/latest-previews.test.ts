@@ -1,3 +1,4 @@
+import { createRecovery } from "../relay/recovery";
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
@@ -8,13 +9,14 @@ import {
 } from "../relay/channel-previews";
 import type { ChannelMessage, ChannelWindow } from "../relay/contracts";
 import type { RelayReader } from "../relay/reader";
-import { keypair, message, metadata, roster } from "../relay/testing";
+import { keypair, message, metadata, roster, signed } from "../relay/testing";
 import { useLatestMessages } from "./latest-previews";
 
 const stops: (() => void)[] = [];
 afterEach(() => {
   cleanup();
   for (const stop of stops.splice(0)) stop();
+  vi.useRealTimers();
 });
 function fixture(read: RelayReader["read"], ids = ["busy", "empty"]) {
   const viewer = keypair(),
@@ -68,14 +70,14 @@ test("visible demand asks for bounded top-level previews through canonical sessi
     read.mock.calls.find(([filters]) => previewFilter(filters))?.[0],
   ).toEqual([
     {
-      kinds: [9],
+      kinds: [40002, 40008, 9],
       "#h": ["busy"],
       limit: 1,
       top_level: true,
       include_aux: true,
     },
     {
-      kinds: [9],
+      kinds: [40002, 40008, 9],
       "#h": ["empty"],
       limit: 1,
       top_level: true,
@@ -223,3 +225,78 @@ test.each([
     expect(read).toHaveBeenCalledTimes(reads);
   },
 );
+
+test.each([40002, 40008])(
+  "previews retain canonical agent content (kind %s)",
+  async (kind) => {
+    const author = keypair();
+    const event = signed(author, {
+      kind,
+      tags: [["h", "busy"]],
+      content:
+        kind === 40002
+          ? JSON.stringify({ content: "Agent update" })
+          : "Agent update",
+      created_at: 100,
+    });
+    const read = vi.fn<RelayReader["read"]>(async (filters) =>
+      previewFilter(filters) &&
+      filters.some((filter) => filter.kinds?.includes(kind))
+        ? [event]
+        : [],
+    );
+    const session = fixture(read);
+    const { result } = renderHook(() => useLatestMessages(session, ["busy"]));
+    await waitFor(() =>
+      expect(result.current.get("busy")).toMatchObject({
+        id: event.id,
+        content: "Agent update",
+      }),
+    );
+  },
+);
+
+test("initial preview demand is spread before the first finite read", async () => {
+  vi.useFakeTimers();
+  const read = vi.fn<RelayReader["read"]>(async () => []);
+  const previews = createChannelPreviews({
+    read,
+    latest: () => undefined,
+    loaded: () => undefined,
+    readable: () => true,
+    notify: (listener) => listener(),
+  });
+  stops.push(previews.dispose);
+  previews.capability.retain(["busy"]);
+  await vi.advanceTimersByTimeAsync(249);
+  expect(read).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(251);
+  expect(previews.capability.snapshot().get("busy")).toBeNull();
+  expect(read).toHaveBeenCalledOnce();
+});
+
+test("session recovery retries failed preview demand without remounting its consumer", async () => {
+  vi.useFakeTimers();
+  const read = vi.fn<RelayReader["read"]>(async () => {
+    throw new TypeError("offline");
+  });
+  const previews = createChannelPreviews({
+    read,
+    latest: () => undefined,
+    loaded: () => undefined,
+    readable: () => true,
+    notify: (listener) => listener(),
+  });
+  stops.push(previews.dispose);
+  previews.capability.retain(["busy"]);
+  await vi.advanceTimersByTimeAsync(8_000);
+  expect(read).toHaveBeenCalledTimes(4);
+  expect(previews.recovery.status()).toBe("failed");
+  const recovery = createRecovery([previews.recovery]);
+  stops.push(recovery.dispose);
+  read.mockResolvedValue([]);
+  recovery.retryNow();
+  await vi.advanceTimersByTimeAsync(500);
+  expect(previews.capability.snapshot().get("busy")).toBeNull();
+  expect(recovery.snapshot().recovering).toBe(false);
+});

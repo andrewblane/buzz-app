@@ -199,6 +199,7 @@ export function SoloDraft({
   navigation,
   draftPrefix,
   onDraftChange,
+  onBusyChange,
 }: {
   lead?: boolean | undefined;
   region?: string | undefined;
@@ -208,6 +209,8 @@ export function SoloDraft({
   /** An embedded New message host can retain its draft when switching to Solo. */
   draftPrefix?: string;
   onDraftChange?: ((draft: MentionDraft) => void) | undefined;
+  /** The creation host locks destination changes throughout a Solo submission. */
+  onBusyChange?: ((busy: boolean) => void) | undefined;
   /** The visit presenting this draft, a Back stop only once drafted. */
   visit?: PageNavigation | undefined;
   linkedId?: string | undefined;
@@ -386,6 +389,7 @@ export function SoloDraft({
     if (submitting.current || !text.trim() || !available) return;
     submitting.current = true;
     setBusy(true);
+    onBusyChange?.(true);
     setError(undefined);
     const recipients = [
       ...new Set(
@@ -786,7 +790,10 @@ export function SoloDraft({
         setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       submitting.current = false;
-      if (mounted.current) setBusy(false);
+      if (mounted.current) {
+        setBusy(false);
+        onBusyChange?.(false);
+      }
     }
   }
   // The workspace control and `#` in the prompt both choose with this.

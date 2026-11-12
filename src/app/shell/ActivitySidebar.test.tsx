@@ -283,7 +283,13 @@ test("only visible conversation rows request missing previews", async () => {
   );
   await waitFor(() => expect(snapshotRead).toHaveBeenCalledTimes(1));
   expect(snapshotRead.mock.calls[0]?.[0]).toEqual([
-    { kinds: [9], "#h": ["new"], limit: 1, top_level: true, include_aux: true },
+    {
+      kinds: [9, 40002, 40008],
+      "#h": ["new"],
+      limit: 1,
+      top_level: true,
+      include_aux: true,
+    },
   ]);
 });
 

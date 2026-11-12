@@ -7,7 +7,10 @@ import type {
   PageTabsProps,
   PageTabTarget,
 } from "../../features/conversation/contracts";
-import type { ConversationHostServices } from "../../features/conversation/ConversationHost";
+import {
+  ConversationTabsContext,
+  type ConversationHostServices,
+} from "../../features/conversation/ConversationHost";
 import {
   buzzLinkTarget,
   isBuzzLink,
@@ -48,8 +51,14 @@ export function PageTabs({
   host,
   extensions,
   visits,
+  embedded = false,
+  closeReader,
 }: PageTabsProps & {
   host: ConversationHostServices;
+  /** The containing reader supplies its own header. Details remain side tabs. */
+  embedded?: boolean;
+  /** Embedded readers supply their existing guarded dismissal for native Close. */
+  closeReader?: (() => boolean) | undefined;
   extensions?: ConversationExtensions | undefined;
 }) {
   const tabState = useChannelTabState(session, undefined, `page:${id}`);
@@ -94,6 +103,22 @@ export function PageTabs({
           communityOrigin: scope.slice(0, -(viewer.length + 1)),
         });
       if (!target) return false;
+      if (
+        target.kind === "conversation" &&
+        target.scope.viewer === session.viewer &&
+        target.scope.communityOrigin === scope.slice(0, -(viewer.length + 1)) &&
+        opening.current(
+          {
+            channelId: target.channelId,
+            ...(target.messageId && { messageId: target.messageId }),
+            ...((target.threadRootId || target.messageId) && {
+              threadId: target.threadRootId ?? target.messageId,
+            }),
+          },
+          { keep: true },
+        )
+      )
+        return true;
       void host.navigation.open(target);
       return true;
     },
@@ -228,12 +253,25 @@ export function PageTabs({
         document.querySelector('dialog[open], [aria-modal="true"]')
       )
         return;
+      const active = event.type === "buzz:close-active-tab";
+      if (active && !workspace.contains(document.activeElement)) return;
+      const tab = secondary.items.find(
+        (item) => item.id === secondary.selectedTab,
+      );
       flushSync(() => {
-        if (closeAll()) event.preventDefault();
+        if (active && tab?.close) {
+          event.preventDefault();
+          tab.close();
+        } else if ((!active && closeAll()) || closeReader?.())
+          event.preventDefault();
       });
     };
     window.addEventListener("buzz:close-all-tabs", close);
-    return () => window.removeEventListener("buzz:close-all-tabs", close);
+    if (closeReader) window.addEventListener("buzz:close-active-tab", close);
+    return () => {
+      window.removeEventListener("buzz:close-all-tabs", close);
+      window.removeEventListener("buzz:close-active-tab", close);
+    };
   });
   // Surviving content keeps focus; a removed tab or closing menu returns it
   // to the page's own tab.
@@ -305,99 +343,124 @@ export function PageTabs({
     />
   );
   return (
-    <LinkThreadTabContext value={secondary.openLinkedThread}>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: Focus within records the control in use, restored if an update removes it. */}
-      <div
-        className={styles.root}
-        onFocus={({ target }) => {
-          const panel = target.closest('[role="tabpanel"]');
-          focused.current = {
-            node: target,
-            // A portalled dialog sits outside its tab's panel; it belongs to
-            // the tab focus came from.
-            tab: panel
-              ? panel.getAttribute("aria-labelledby")
-              : focused.current?.tab,
-          };
-        }}
-      >
+    <ConversationTabsContext
+      value={{
+        openLink: (channelId, url, rootId) =>
+          secondary.openConversationLink(
+            channelId,
+            url,
+            rootId ? { rootId } : undefined,
+          ),
+        openPanel: (entry, returnFocus) => {
+          if (!mounted.current || !host.panels.snapshot().includes(entry.panel))
+            return false;
+          if (returnFocus) secondary.panelTrigger.current = returnFocus;
+          secondary.open(entry, true);
+          return true;
+        },
+      }}
+    >
+      <LinkThreadTabContext value={secondary.openLinkedThread}>
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: Focus within records the control in use, restored if an update removes it. */}
         <div
-          ref={split.ref}
-          data-expando-scope=""
-          style={split.style}
-          data-reading-thread={readingTab ? "" : undefined}
-          className={`${styles.board} ${panelStyles.splitMotion}`}
+          className={styles.root}
+          onFocus={({ target }) => {
+            if (embedded && !target.closest("[data-panel-dock]")) return;
+            const panel = target.closest('[role="tabpanel"]');
+            focused.current = {
+              node: target,
+              // A portalled dialog sits outside its tab's panel; it belongs to
+              // the tab focus came from.
+              tab: panel
+                ? panel.getAttribute("aria-labelledby")
+                : focused.current?.tab,
+            };
+          }}
         >
           <div
-            ref={fallbackFocus}
-            tabIndex={-1}
-            className={styles.conversation}
-            inert={covered}
-            aria-hidden={covered || undefined}
+            ref={split.ref}
+            data-expando-scope=""
+            style={split.style}
+            data-reading-thread={readingTab ? "" : undefined}
+            className={`${styles.board} ${panelStyles.splitMotion}`}
           >
-            <PanelWorkspace
-              main
-              tabMenu={tabMenu}
-              drag={secondary.drag.main}
-              label={`${label} tabs`}
-              focusOnMount={false}
-              adoptSelection={closes}
-              value={secondary.selectedMain}
-              select={(tab) =>
-                tabState.selectMain(tab === "conversation" ? undefined : tab)
-              }
-              actions={
-                hasTabs &&
-                !showingPanel && (
-                  <span className={panelStyles.paneToggle}>
-                    {paneToggle(
-                      () => tabState.setPaneOpen(true),
-                      secondary.splitTrigger,
-                    )}
-                  </span>
-                )
-              }
-              items={[
-                {
-                  id: "conversation",
-                  label,
-                  icon,
-                  content: children(open, close, isOpen),
-                },
-                ...secondary.mainItems,
-              ]}
-            />
-          </div>
-          {secondary.drag.feedback}
-          {secondary.hosts}
-          <p role="status" className="sr-only">
-            {secondary.announcement}
-          </p>
-          <PanelDock
-            open={showingPanel}
-            keepMounted={
-              tabState.entries.length > 0 || (hasTabs && !tabState.paneOpen)
-            }
-            className={styles.panelStack}
-            resizeHandle={split.handle}
-          >
-            {hasTabs && (
-              <div className={styles.retainedPanel}>
+            <div
+              ref={fallbackFocus}
+              tabIndex={-1}
+              className={styles.conversation}
+              inert={covered}
+              aria-hidden={covered || undefined}
+            >
+              {embedded ? (
+                children(open, close, isOpen)
+              ) : (
                 <PanelWorkspace
-                  drag={secondary.drag.side}
-                  actions={paneToggle(secondary.closePane)}
+                  main
                   tabMenu={tabMenu}
-                  value={secondary.selectedTab}
-                  select={secondary.selectPanelTab}
-                  items={secondary.items}
-                  focusOnMount={continuing.current}
+                  drag={secondary.drag.main}
+                  label={`${label} tabs`}
+                  focusOnMount={false}
                   adoptSelection={closes}
+                  value={secondary.selectedMain}
+                  select={(tab) =>
+                    tabState.selectMain(
+                      tab === "conversation" ? undefined : tab,
+                    )
+                  }
+                  actions={
+                    hasTabs &&
+                    !showingPanel && (
+                      <span className={panelStyles.paneToggle}>
+                        {paneToggle(
+                          () => tabState.setPaneOpen(true),
+                          secondary.splitTrigger,
+                        )}
+                      </span>
+                    )
+                  }
+                  items={[
+                    {
+                      id: "conversation",
+                      label,
+                      icon,
+                      content: children(open, close, isOpen),
+                    },
+                    ...secondary.mainItems,
+                  ]}
                 />
-              </div>
-            )}
-          </PanelDock>
+              )}
+            </div>
+            {secondary.drag.feedback}
+            {secondary.hosts}
+            <p role="status" className="sr-only">
+              {secondary.announcement}
+            </p>
+            <PanelDock
+              open={showingPanel}
+              keepMounted={
+                tabState.entries.length > 0 || (hasTabs && !tabState.paneOpen)
+              }
+              className={styles.panelStack}
+              resizeHandle={split.handle}
+            >
+              {hasTabs && (
+                <div className={styles.retainedPanel}>
+                  <PanelWorkspace
+                    drag={secondary.drag.side}
+                    actions={!embedded && paneToggle(secondary.closePane)}
+                    tabMenu={tabMenu}
+                    value={secondary.selectedTab}
+                    select={secondary.selectPanelTab}
+                    items={secondary.items}
+                    focusOnMount={continuing.current}
+                    adoptSelection={closes}
+                  />
+                </div>
+              )}
+            </PanelDock>
+          </div>
         </div>
-      </div>
-    </LinkThreadTabContext>
+      </LinkThreadTabContext>
+    </ConversationTabsContext>
   );
 }

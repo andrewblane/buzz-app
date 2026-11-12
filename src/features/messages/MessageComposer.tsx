@@ -372,6 +372,8 @@ export type MessageComposerProps = {
   sendDisabled?: boolean;
   /** A new conversation owns persistence and delivery before a channel exists. */
   submission?: {
+    /** Existing-channel drafts retain canonical mention preparation before their owner sends. */
+    channel?: true | undefined;
     draftKey: string;
     initialDraft?: MentionDraft | string | undefined;
     /** A durable operation overrides disposable view state during recovery. */
@@ -397,6 +399,7 @@ export type MessageComposerProps = {
       picks?: MentionPicks,
       draftPicks?: DraftPicks,
       draftPicksRevision?: string | null,
+      references?: readonly string[],
     ) => void;
   };
 };
@@ -2735,7 +2738,9 @@ function Composer({
       );
       return;
     }
-    const savedRevision = revision.current;
+    const savedRevision = submission
+      ? viewRevision(scope, draftKey)
+      : revision.current;
     const attempt = new AbortController();
     sendAttempt.current = attempt;
     const captured = valueRef.current;
@@ -2834,7 +2839,7 @@ function Composer({
         throw new Error(
           "Only your available agents can be mentioned in Solo chats. Remove the unavailable recipient and retry.",
         );
-      if (submission) {
+      if (submission && !submission.channel) {
         // SoloDraft filters the captured choices against its final recipient set.
         submission.submit(
           captured,
@@ -2949,6 +2954,20 @@ function Composer({
       if (preparedRevision !== savedRevision) {
         diagnose("send-prepare-conflict", savedRevision, preparedRevision);
         setConflict(true);
+        return;
+      }
+      if (submission?.channel) {
+        submission.submit(
+          captured,
+          attachments.store,
+          capturedRecipients.filter((person) =>
+            recipients.includes(person.pubkey),
+          ),
+          undefined,
+          undefined,
+          undefined,
+          references,
+        );
         return;
       }
       const content =

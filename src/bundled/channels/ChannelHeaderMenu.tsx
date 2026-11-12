@@ -21,7 +21,7 @@ import {
   MenuRoot,
   MenuTrigger,
   MenuPopup,
-  MenuList,
+  InlineMenu,
   MenuItem,
   MenuIcon,
   MenuNote,
@@ -145,7 +145,13 @@ export function ChannelHeaderMenu({
       </>
     );
     return overflow ? (
-      <MenuList aria-label="Channel actions">{content}</MenuList>
+      <InlineMenu
+        open={overflow.open}
+        onClose={overflow.close}
+        label="Channel actions"
+      >
+        {content}
+      </InlineMenu>
     ) : (
       <MenuPopup
         size="compact"

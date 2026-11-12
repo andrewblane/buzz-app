@@ -190,11 +190,32 @@ test.describe("collection details", () => {
       name: "Activity",
       exact: true,
     });
-    await activity
+    const activityRow = activity
       .getByRole("listitem")
-      .filter({ hasText: "Unread reply 1" })
-      .getByRole("button", { name: /^Open / })
-      .click();
+      .filter({ hasText: "Unread reply 1" });
+    // Container queries must not shrink message avatars in the narrow list.
+    await expect(activityRow.locator(".buzz-avatar").first()).toHaveCSS(
+      "width",
+      "32px",
+    );
+    const listDivider = activity.getByRole("separator", {
+      name: "Resize sidebar",
+      exact: true,
+    });
+    for (const [key, width] of [
+      ["End", "520"],
+      ["Home", "220"],
+    ]) {
+      await listDivider.focus();
+      await page.keyboard.press(key);
+      await expect(listDivider).toHaveAttribute("aria-valuenow", width);
+      await expect(activityRow.locator(".buzz-avatar").first()).toHaveCSS(
+        "width",
+        "32px",
+      );
+    }
+    await listDivider.dblclick();
+    await activityRow.getByRole("button", { name: /^Open / }).click();
     const sheet = activity.getByRole("region", {
       name: "Conversation detail",
       exact: true,
@@ -214,7 +235,9 @@ test.describe("collection details", () => {
       exact: true,
     });
     await expect(profile).toBeVisible();
-    await expect(profile).toBeFocused();
+    await expect(
+      sheet.getByRole("tab", { name: "Alice Fixture", exact: true }),
+    ).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(profile).toHaveCount(0);
     await expect(reply).toBeVisible();
@@ -223,7 +246,9 @@ test.describe("collection details", () => {
       .getByRole("button", { name: /^View .* profile$/ })
       .first()
       .click();
-    await expect(profile).toBeFocused();
+    await expect(
+      sheet.getByRole("tab", { name: "Alice Fixture", exact: true }),
+    ).toBeFocused();
     await expect(
       activity.getByRole("list", { name: "Activity", exact: true }),
     ).toBeVisible();
@@ -241,7 +266,7 @@ test.describe("collection details", () => {
       .getByRole("heading", { name: "Alpha", exact: true })
       .boundingBox();
     const conversationPane = await sheet
-      .locator('.panel-header[data-variant="conversation"]')
+      .locator('.panel-header[data-variant="conversation"]:visible')
       .boundingBox();
     const conversationCenter = conversationPane.x + conversationPane.width / 2;
     expect(identityBox.x + identityBox.width / 2).toBeCloseTo(
@@ -271,7 +296,7 @@ test.describe("collection details", () => {
       document.documentElement.style.fontSize = "20px";
     });
     await expect(
-      profile.getByRole("button", { name: "Close Profile panel", exact: true }),
+      sheet.getByRole("button", { name: /^Close .* tab$/ }),
     ).toBeInViewport();
     const narrow = await detail.boundingBox();
 
@@ -280,9 +305,7 @@ test.describe("collection details", () => {
     await page.screenshot({
       path: testInfo.outputPath("thread-detail-split-narrow.png"),
     });
-    await profile
-      .getByRole("button", { name: "Close Profile panel", exact: true })
-      .click();
+    await sheet.getByRole("button", { name: /^Close .* tab$/ }).click();
     await expect(profile).toHaveCount(0);
     await expect(reply).toHaveText("Still typing beside the profile");
     expect(
@@ -297,4 +320,113 @@ test.describe("collection details", () => {
     await page.goForward();
     await expect(reply).toBeHidden();
   });
+});
+
+// This needs real shell routing, portals and editor identity: a link must add a
+// detail tab without replacing Activity or remounting the source composer.
+test("Activity opens linked conversations and threads beside the source", async ({
+  page,
+  app,
+}, testInfo) => {
+  const root = app.append("primary", "beta", "Linked topic", false);
+  const message = app.append(
+    "primary",
+    "alpha",
+    `[Related thread](buzz://channel/beta/${root.id}) [Related chat](buzz://channel/beta)`,
+    false,
+  );
+  await page.setViewportSize({ width: 1920, height: 1000 });
+  await page.goto(app.origin);
+  const rail = page.getByRole("navigation", { name: "Apps", exact: true });
+  await rail.getByRole("button", { name: "Activity", exact: true }).click();
+  const activity = page.getByRole("region", { name: "Activity", exact: true });
+  await activity.getByRole("tab", { name: "Channels", exact: true }).click();
+  await activity
+    .locator('[data-activity-row="alpha"] [data-conversation-row]')
+    .click();
+  const reader = activity.getByRole("region", {
+    name: "Conversation detail",
+    exact: true,
+  });
+  const editor = reader.getByRole("textbox", {
+    name: "Message #Alpha",
+    exact: true,
+  });
+  await editor.fill("Keep Activity context");
+  const original = await editor.elementHandle();
+  const route = page.url();
+  const source = reader.locator(`[data-message-id="${message.id}"]`);
+  await source
+    .getByRole("link", { name: "Related thread", exact: true })
+    .click();
+  const dock = reader.locator("[data-panel-dock]");
+  await expect(
+    dock.getByRole("textbox", { name: "Reply to thread", exact: true }),
+  ).toBeVisible();
+  await expect(editor).toHaveText("Keep Activity context");
+  expect(page.url()).toBe(route);
+  await source
+    .getByRole("link", { name: "Open Chat: Beta", exact: true })
+    .click();
+  await expect(dock.getByRole("tab")).toHaveCount(2);
+  await expect(dock.locator('[data-channel-timeline="beta"]')).toBeVisible();
+  await expect(editor).toHaveText("Keep Activity context");
+  expect(
+    await editor.evaluate((node, previous) => node === previous, original),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("activity-contextual-tabs.png"),
+  });
+  await dock
+    .getByRole("button", { name: "Close Beta tab", exact: true })
+    .click();
+  await dock.getByRole("button", { name: /^Close .* tab$/ }).click();
+  await expect(dock).toBeHidden();
+  await expect(editor).toHaveText("Keep Activity context");
+  await expect(
+    rail.getByRole("button", { name: "Activity", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+});
+
+// Real focus and pane visibility decide which owner consumes the native command.
+test("Activity native Close commands dismiss the reader and retain its draft", async ({
+  page,
+  app,
+}) => {
+  await page.goto(app.origin);
+  await page
+    .getByRole("navigation", { name: "Apps", exact: true })
+    .getByRole("button", { name: "Activity", exact: true })
+    .click();
+  const activity = page.getByRole("region", { name: "Activity", exact: true });
+  await activity.getByRole("tab", { name: "Channels", exact: true }).click();
+  const row = activity.locator(
+    '[data-activity-row="alpha"] [data-conversation-row]',
+  );
+  const reader = activity.getByRole("region", {
+    name: "Conversation detail",
+    exact: true,
+  });
+  for (const command of ["buzz:close-active-tab", "buzz:close-all-tabs"]) {
+    await row.click();
+    const editor = reader.getByRole("textbox", {
+      name: "Message #Alpha",
+      exact: true,
+    });
+    await editor.fill("Keep the native-close draft");
+    expect(
+      await page.evaluate((type) => {
+        const event = new Event(type, { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      }, command),
+    ).toBe(true);
+    await expect(
+      reader.getByRole("textbox", { name: "Message #Alpha", exact: true }),
+    ).toBeHidden();
+  }
+  await row.click();
+  await expect(
+    reader.getByRole("textbox", { name: "Message #Alpha", exact: true }),
+  ).toHaveText("Keep the native-close draft");
 });

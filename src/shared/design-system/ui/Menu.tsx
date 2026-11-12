@@ -7,6 +7,7 @@ import {
   createContext,
   useContext,
   useState,
+  useRef,
   type ComponentProps,
   type ReactNode,
 } from "react";
@@ -88,6 +89,46 @@ export function ContextMenuTrigger(
 }
 export const MenuGroup = BaseMenu.Group;
 export const MenuList = BaseMenu.List;
+/** An action group inside another anchored surface. The host owns positioning
+ * and focus return; Base UI still owns item navigation and activation. */
+export function InlineMenu({
+  label,
+  open,
+  onClose,
+  children,
+}: {
+  label: string;
+  open: boolean;
+  onClose(): void;
+  children: ReactNode;
+}) {
+  const container = useRef<HTMLDivElement>(null);
+  return (
+    <MenuRoot
+      modal={false}
+      open={open}
+      onOpenChange={(next, details) => {
+        if (!next && details.reason !== "focus-out") onClose();
+      }}
+    >
+      <div ref={container}>
+        <BaseMenu.Portal container={container}>
+          <BaseMenu.Positioner
+            anchor={container}
+            style={{ position: "static", transform: "none", width: "100%" }}
+          >
+            <BaseMenu.Popup finalFocus={false}>
+              <BaseMenu.List aria-label={label} tabIndex={0}>
+                {children}
+              </BaseMenu.List>
+            </BaseMenu.Popup>
+          </BaseMenu.Positioner>
+        </BaseMenu.Portal>
+      </div>
+    </MenuRoot>
+  );
+}
+
 export const MenuRadioGroup = BaseMenu.RadioGroup;
 
 export type MenuPosition = Pick<

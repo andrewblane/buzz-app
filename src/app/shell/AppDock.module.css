@@ -7,8 +7,14 @@
   gap: var(--space-1);
 }
 .heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex-shrink: 0;
-  padding-inline: var(--space-4);
+  gap: var(--space-1);
+}
+.frame[data-compact] .heading {
+  flex-direction: column;
 }
 .frame[hidden] {
   display: none;

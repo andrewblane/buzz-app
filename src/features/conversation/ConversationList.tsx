@@ -216,20 +216,26 @@ export function useActivityView(scope: string) {
 export const CollectionCreationAction = createContext<ReactNode>(null);
 
 /** Collection controls share one menu; compact sidebar controls keep Show only. */
-function ConversationFiltersMenu({
+export function ConversationFiltersMenu({
   view,
   onChange,
   sort = false,
+  views = false,
+  label,
 }: {
   view: View;
   onChange(view: View): void;
   sort?: boolean;
+  views?: boolean;
+  label?: string;
 }) {
-  const showLabel = sort
-    ? "Filter and sort conversations"
-    : view.unread
-      ? "Showing unread"
-      : "Showing all";
+  const showLabel =
+    label ??
+    (sort
+      ? "Filter and sort conversations"
+      : view.unread
+        ? "Showing unread"
+        : "Showing all");
   return (
     <MenuRoot>
       <MenuTrigger
@@ -248,6 +254,28 @@ function ConversationFiltersMenu({
         aria-label={sort ? "Filter and sort conversations" : "Show"}
         size="compact"
       >
+        {views && (
+          <>
+            <MenuRadioGroup
+              aria-label="Conversation view"
+              value={view.filter}
+              onValueChange={(filter) => {
+                const choice = conversationViews.find(
+                  (item) => item.value === filter,
+                );
+                if (choice) onChange({ ...view, filter: choice.value });
+              }}
+            >
+              <MenuGroupLabel>View</MenuGroupLabel>
+              {conversationViews.map(({ value, label }) => (
+                <MenuRadioItem key={value} value={value} closeOnClick>
+                  {label}
+                </MenuRadioItem>
+              ))}
+            </MenuRadioGroup>
+            <MenuSeparator />
+          </>
+        )}
         <MenuRadioGroup
           aria-label="Show conversations"
           value={view.unread ? "unread" : "all"}
@@ -554,8 +582,7 @@ export function ConversationList({
     session.sidebarPreferences.snapshot,
   );
   const sorted = channels
-    .map((channel) => ({ channel, at: recency(channel) }))
-    .filter(({ channel }) => {
+    .filter((channel) => {
       if (!unreadOnly || isSelected(channel.id)) return true;
       const muted =
         !preferences.cached && !!preferences.data?.muted.includes(channel.id);
@@ -570,12 +597,17 @@ export function ConversationList({
         )
       );
     })
+    .map((channel) => ({
+      channel,
+      at: recency(channel),
+      label: channelLabel(channel),
+    }))
     .sort(
       (a, b) =>
         (view.sort === "alpha"
-          ? channelLabel(a.channel).localeCompare(channelLabel(b.channel))
+          ? a.label.localeCompare(b.label)
           : b.at - a.at) ||
-        channelLabel(a.channel).localeCompare(channelLabel(b.channel)) ||
+        a.label.localeCompare(b.label) ||
         a.channel.id.localeCompare(b.channel.id),
     );
   const byId = new Map(sorted.map((entry) => [entry.channel.id, entry]));
@@ -618,7 +650,7 @@ export function ConversationList({
         ...sorted.map((entry) => ({
           key: `c:${entry.channel.id}`,
           at: entry.at,
-          label: channelLabel(entry.channel),
+          label: entry.label,
         })),
         ...shownEvents.map((event) => ({
           key: `e:${event.key}`,
@@ -679,7 +711,7 @@ export function ConversationList({
     entry: (typeof sorted)[number],
   ): ConversationListEntry => ({
     key: `c:${entry.channel.id}`,
-    label: channelLabel(entry.channel),
+    label: entry.label,
     at: entry.at,
     target: {
       version: 1,

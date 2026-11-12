@@ -1,3 +1,4 @@
+import { railSections } from "./rail-sections";
 import { motion, useReducedMotion } from "motion/react";
 import {
   DndContext,
@@ -14,14 +15,11 @@ import {
 } from "@dnd-kit/core";
 import {
   createContext,
-  Children,
-  isValidElement,
   useContext,
   useRef,
   useState,
   type ReactNode,
   type ReactElement,
-  type ComponentProps,
 } from "react";
 import { createPortal } from "react-dom";
 import { NavigationSection } from "../../shared/design-system/ui/NavigationSection";
@@ -64,7 +62,7 @@ type Arrangement = {
   openSection(id: string): void;
   groups: { id: string; title: string }[];
   placements: ReturnType<typeof useRailLayout>["layout"]["placements"];
-  assignedEntryIds: ReadonlySet<string>;
+  membership: ReturnType<typeof railSections>;
   move(entry: RailEntry, section: string): void;
   reorder(id: string, over: string): void;
   create(entry: RailEntry): void;
@@ -165,10 +163,9 @@ export function RailArrangement({
       title: group.title,
     })),
     placements: layout.placements,
-    assignedEntryIds: new Set(
-      layout.placements
-        .filter((item) => groups.some((group) => group.id === item.section))
-        .map((item) => item.entry.id),
+    membership: railSections(
+      layout,
+      groups.map(({ id, title }) => ({ id, title })),
     ),
     move: (entry, section) => {
       saved(move(entry, section));
@@ -358,10 +355,12 @@ export function RailGroup({
   title,
   action,
   children,
+  rows: sourceRows = [],
   footer,
   rowsLabel,
   unlimited = false,
   avatarGrid = id === "pins",
+  leadingEntryIds = [],
   trailingEntryId,
   sortEntries,
   pageContent,
@@ -370,10 +369,12 @@ export function RailGroup({
   title: string;
   action?: ReactNode;
   children?: ReactNode;
+  rows?: readonly { entry: RailEntry; content: ReactNode }[];
   footer?: ReactNode;
   rowsLabel?: string;
   unlimited?: boolean;
   avatarGrid?: boolean;
+  leadingEntryIds?: readonly string[];
   trailingEntryId?: string;
   sortEntries?: (a: RailEntry, b: RailEntry) => number;
   pageContent?: ReactNode;
@@ -404,31 +405,20 @@ export function RailGroup({
         ? "after"
         : "before"
       : undefined;
-  const rows: ReactElement<{ entry: RailEntry }>[] = [];
-  const notes: ReactNode[] = [];
-  for (const child of Children.toArray(children)) {
-    if (
-      isValidElement<ComponentProps<typeof RailSourceRow>>(child) &&
-      child.props.entry &&
-      child.props.section === id
-    ) {
-      if (
-        id === "agents" ||
-        !arrangement?.assignedEntryIds.has(child.props.entry.id)
-      )
-        rows.push(child);
-    } else notes.push(child);
-  }
+  const sourceById = new Map(sourceRows.map((row) => [row.entry.id, row]));
+  const entries =
+    arrangement?.membership.entries(
+      id,
+      sourceRows.map((row) => row.entry),
+    ) ?? sourceRows.map((row) => row.entry);
+  const rows = entries.map((entry) => (
+    <RailSourceRow key={entry.id} section={id} entry={entry}>
+      {sourceById.get(entry.id)?.content ?? arrangement?.renderEntry(entry, id)}
+    </RailSourceRow>
+  ));
+  const notes = children;
   const placed =
     arrangement?.placements.filter((item) => item.section === id) ?? [];
-  for (const { entry } of placed) {
-    if (rows.some((row) => row.props.entry.id === entry.id)) continue;
-    rows.push(
-      <RailDestinationRow key={entry.id} entry={entry} section={id}>
-        {arrangement?.renderEntry(entry, id)}
-      </RailDestinationRow>,
-    );
-  }
   if (sortEntries)
     rows.sort((a, b) => sortEntries(a.props.entry, b.props.entry));
   if (trailingEntryId)
@@ -438,8 +428,14 @@ export function RailGroup({
         Number(b.props.entry.id === trailingEntryId),
     );
   const limited = id !== "pins" && !unlimited;
-  const shown = limited ? rows.slice(0, 4) : rows;
-  const more = limited && rows.length > 4 && (!footer || placed.length > 0);
+  const leading = leadingEntryIds.flatMap((entryId) =>
+    rows.filter((row) => row.props.entry.id === entryId),
+  );
+  const preview = rows.filter(
+    (row) => !leadingEntryIds.includes(row.props.entry.id),
+  );
+  const shown = limited ? preview.slice(0, 4) : preview;
+  const more = limited && preview.length > 4 && (!footer || placed.length > 0);
   if (arrangement?.pageSection === id && pageContent) return pageContent;
   if (
     arrangement?.pageSection === id &&
@@ -541,6 +537,7 @@ export function RailGroup({
         }
         action={action && <span data-rail-card-actions="">{action}</span>}
       >
+        {leading}
         {rowsLabel ? (
           <ul aria-label={rowsLabel} className={styles.rows}>
             {shown.map((row) => (
@@ -611,7 +608,11 @@ export function RailSourceRow({
   children: ReactNode;
 }) {
   const arrangement = useContext(ArrangementContext);
-  if (section !== "agents" && arrangement?.assignedEntryIds.has(entry.id))
+  if (
+    section !== "agents" &&
+    arrangement?.membership.assigned.has(entry.id) &&
+    arrangement.membership.assigned.get(entry.id) !== section
+  )
     return null;
   return (
     <RailDestinationRow entry={entry} section={section}>

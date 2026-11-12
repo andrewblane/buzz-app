@@ -24,14 +24,10 @@ import {
   type ConversationHostServices,
 } from "../../features/conversation/ConversationHost";
 import { useConversationPresentation } from "../../features/conversation/ConversationPresentation";
-import {
-  ConversationDetailPane,
-  useConversationDetailPane,
-} from "../../features/conversation/ConversationDetailPane";
 import { PanelHeader } from "../../shared/design-system/ui/PanelHeader";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { PlusIcon, XIcon } from "../../shared/design-system/icons";
-import { PanelFrame } from "../../features/panels/PanelFrame";
+import { PageTabs } from "../channels/PageTabs";
 import { ResizableSidebar } from "../../features/channel-navigation/ResizableSidebar";
 import { NewMessage } from "../../features/direct-messages/NewMessage";
 import { SoloDraft } from "../../features/solo/SoloDraft";
@@ -86,6 +82,7 @@ type Opening = {
 
 /** Collections keep their list mounted beside the shared conversation reader. */
 export function InboxSheet({
+  id,
   session,
   scope,
   children,
@@ -118,7 +115,6 @@ export function InboxSheet({
   const [composer, setComposer] = useState<HTMLDivElement | null>(null);
   const presented = useConversationPresentation();
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
-  const { value: detailPane, companion } = useConversationDetailPane();
   const [drafting, setDrafting] = useState(false);
   const [opening, setOpening] = useState<Opening>();
   const [shown, setShown] = useState(false);
@@ -511,167 +507,177 @@ export function InboxSheet({
         });
   return (
     <FeedbackMount value={shown ? feedbackMount : null}>
-      <ConversationDetailPane value={detailPane}>
+      <div
+        ref={setContainer}
+        className={styles.sheetHost}
+        data-detail-workspace=""
+        data-narrow={narrow || undefined}
+      >
         <div
-          ref={setContainer}
-          className={styles.sheetHost}
-          data-detail-workspace=""
-          data-narrow={narrow || undefined}
+          className={styles.collectionPanes}
+          data-detail-selected={selected || drafting || undefined}
+          data-list-controlled={listVisibility ? "" : undefined}
+          data-list-open={listVisibility?.open ?? true}
+          data-list-animate={listVisibility?.animate ? "" : undefined}
         >
-          <div
-            className={styles.collectionPanes}
-            data-detail-selected={selected || drafting || undefined}
-            data-list-controlled={listVisibility ? "" : undefined}
-            data-list-open={listVisibility?.open ?? true}
-            data-list-animate={listVisibility?.animate ? "" : undefined}
+          <ResizableSidebar
+            scope={`${scope}:collection-list`}
+            defaultWidth={352}
+            className={styles.sheetFeed ?? ""}
+            id={listVisibility?.controls}
+            aria-hidden={listVisibility ? !listVisibility.open : undefined}
+            inert={listVisibility ? !listVisibility.open : undefined}
           >
-            <ResizableSidebar
-              scope={`${scope}:collection-list`}
-              defaultWidth={352}
-              className={styles.sheetFeed ?? ""}
-              id={listVisibility?.controls}
-              aria-hidden={listVisibility ? !listVisibility.open : undefined}
-              inert={listVisibility ? !listVisibility.open : undefined}
+            <ConversationPresentation
+              value={
+                presented &&
+                (listVisibility
+                  ? listVisibility.open
+                  : !narrow || (!selected && !drafting))
+              }
             >
-              <ConversationPresentation
+              <CollectionCreationAction
                 value={
-                  presented &&
-                  (listVisibility
-                    ? listVisibility.open
-                    : !narrow || (!selected && !drafting))
+                  <IconButton
+                    aria-label="New message"
+                    title="New message"
+                    onClick={expandDraft}
+                    icon={<PlusIcon size={20} aria-hidden="true" />}
+                  />
                 }
               >
-                <CollectionCreationAction
-                  value={
-                    <IconButton
-                      aria-label="New message"
-                      title="New message"
-                      onClick={expandDraft}
-                      icon={<PlusIcon size={20} aria-hidden="true" />}
-                    />
-                  }
-                >
-                  {children(open, close, isOpen)}
-                </CollectionCreationAction>
-              </ConversationPresentation>
-              {controlledList && (
-                <div
-                  className={`${styles.collectionCreate} ${styles.listDismiss}`}
-                >
-                  <ConversationListToggle inList />
-                </div>
-              )}
-            </ResizableSidebar>
-            <section
-              ref={reader}
-              className={styles.collectionDetail}
-              aria-label="Conversation detail"
-              tabIndex={-1}
-              onKeyDown={(event) => {
-                if (
-                  event.key === "Escape" &&
-                  !event.shiftKey &&
-                  !event.nativeEvent.isComposing &&
-                  !event.defaultPrevented &&
-                  (shown || drafting) &&
-                  event.currentTarget.contains(event.target as Node) &&
-                  !event.currentTarget.querySelector("[data-popup-open]")
-                ) {
-                  event.preventDefault();
-                  event.stopPropagation();
+                {children(open, close, isOpen)}
+              </CollectionCreationAction>
+            </ConversationPresentation>
+            {controlledList && (
+              <div
+                className={`${styles.collectionCreate} ${styles.listDismiss}`}
+              >
+                <ConversationListToggle inList />
+              </div>
+            )}
+          </ResizableSidebar>
+          <section
+            ref={reader}
+            className={styles.collectionDetail}
+            aria-label="Conversation detail"
+            tabIndex={-1}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Escape" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing &&
+                !event.defaultPrevented &&
+                (shown || drafting) &&
+                event.currentTarget.contains(event.target as Node) &&
+                !event.currentTarget.querySelector("[data-popup-open]")
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+                dismiss();
+              }
+            }}
+          >
+            {detail ?? (
+              <PageTabs
+                embedded
+                closeReader={() => {
+                  if (!shown && !drafting) return false;
                   dismiss();
-                }
-              }}
-            >
-              {detail ?? (
-                <PanelFrame scope={scope} companion={companion}>
-                  <div
-                    ref={setComposer}
-                    className={styles.draftContent}
-                    hidden={shown}
-                  >
-                    {draftKind !== "solo" && (
-                      <PanelHeader
-                        title="New message"
-                        navigation={
-                          listVisibility ? (
-                            <ConversationListToggle />
-                          ) : (
-                            narrow && (
-                              <IconButton
-                                size="sm"
-                                variant="subtle"
-                                aria-label="Close new message"
-                                icon={<XIcon size={16} />}
-                                onClick={dismiss}
-                              />
-                            )
-                          )
-                        }
-                      />
-                    )}
-                    <ConversationPresentation
-                      value={
-                        presented &&
-                        !shown &&
-                        (!narrow || drafting || listVisibility?.open === false)
-                      }
+                  return true;
+                }}
+                id={`${id}:reader`}
+                label="Conversation"
+                scope={scope}
+                session={session}
+                host={host}
+                extensions={extensions}
+              >
+                {(openDetail) => (
+                  <>
+                    <div
+                      ref={setComposer}
+                      className={styles.draftContent}
+                      hidden={shown}
                     >
-                      {draftKind === "solo" ? (
-                        <SoloDraft
-                          navigation={<ConversationListToggle />}
-                          session={session}
-                          scope={scope}
-                          extensions={extensions}
-                          onStarted={showConversation}
-                          onFailed={(_id, message, retry) =>
-                            notify(
-                              message,
-                              "error",
-                              retry
-                                ? {
-                                    label: "Retry restoring message",
-                                    onClick: () => {
-                                      void retry();
-                                    },
-                                    timeout: Infinity,
-                                  }
-                                : undefined,
+                      {draftKind !== "solo" && (
+                        <PanelHeader
+                          variant="conversation"
+                          title="New message"
+                          navigation={
+                            listVisibility ? (
+                              <ConversationListToggle />
+                            ) : (
+                              narrow && (
+                                <IconButton
+                                  size="sm"
+                                  variant="subtle"
+                                  aria-label="Close new message"
+                                  icon={<XIcon size={16} />}
+                                  onClick={dismiss}
+                                />
+                              )
                             )
                           }
                         />
-                      ) : (
-                        <NewMessage
-                          layout="composer"
-                          expanded
-                          onAddressed={expandDraft}
-                          allowChannels
-                          session={session}
-                          scope={scope}
-                          channels={list.channels}
-                          host={detailHost}
-                          extensions={extensions}
-                          onStarted={showConversation}
-                          onOpenThread={(channelId, messageId, threadId) => {
-                            open({ channelId, messageId, threadId });
-                          }}
-                          onOpenChat={showConversation}
-                          renderSolo={
-                            draftKind === "team"
-                              ? undefined
-                              : (agent, focusRequest, onDraftChange) => (
-                                  <SoloDraft
-                                    key={agent}
-                                    embedded
-                                    draftPrefix="direct-message"
-                                    onDraftChange={onDraftChange}
-                                    agent={agent}
-                                    focusRequest={focusRequest}
-                                    session={session}
-                                    scope={scope}
-                                    extensions={extensions}
-                                    onStarted={showConversation}
-                                    onFailed={(_id, message, retry) =>
+                      )}
+                      <ConversationPresentation
+                        value={
+                          presented &&
+                          !shown &&
+                          (!narrow ||
+                            drafting ||
+                            listVisibility?.open === false)
+                        }
+                      >
+                        {draftKind === "solo" ? (
+                          <SoloDraft
+                            navigation={<ConversationListToggle />}
+                            session={session}
+                            scope={scope}
+                            extensions={extensions}
+                            onStarted={showConversation}
+                            onFailed={(_id, message, retry) =>
+                              notify(
+                                message,
+                                "error",
+                                retry
+                                  ? {
+                                      label: "Retry restoring message",
+                                      onClick: () => {
+                                        void retry();
+                                      },
+                                      timeout: Infinity,
+                                    }
+                                  : undefined,
+                              )
+                            }
+                          />
+                        ) : (
+                          <NewMessage
+                            layout={draftKind === "team" ? "page" : "composer"}
+                            expanded
+                            onAddressed={expandDraft}
+                            allowChannels
+                            session={session}
+                            scope={scope}
+                            channels={list.channels}
+                            host={detailHost}
+                            extensions={extensions}
+                            onStarted={showConversation}
+                            onOpenThread={(channelId, messageId, threadId) => {
+                              openDetail(
+                                { channelId, messageId, threadId },
+                                { keep: true },
+                              );
+                            }}
+                            onOpenChat={showConversation}
+                            solo={
+                              draftKind === "team"
+                                ? undefined
+                                : {
+                                    onStarted: showConversation,
+                                    onFailed: (_id, message, retry) =>
                                       notify(
                                         message,
                                         "error",
@@ -684,116 +690,131 @@ export function InboxSheet({
                                               timeout: Infinity,
                                             }
                                           : undefined,
-                                      )
-                                    }
-                                  />
-                                )
-                          }
-                        />
-                      )}
-                    </ConversationPresentation>
-                  </div>
-                  {available && channel && target && tab && (
-                    <div
-                      className={styles.draftContent}
-                      hidden={!shown}
-                      data-conversation-reader=""
-                    >
-                      <ConversationPresentation value={presented && shown}>
-                        <ConversationHost
-                          host={detailHost}
-                          session={session}
-                          scope={scope}
-                          channelId={channel.id}
-                          channelName={channel.name}
-                          threadId={target.threadId}
-                        >
-                          {(interactions) => (
-                            <>
-                              <PanelHeader
-                                variant="conversation"
-                                title={channel.name}
-                                icon={
-                                  <ChannelMembersButton
-                                    key={channel.id}
-                                    session={session}
-                                    channelId={channel.id}
-                                    conversationName={channel.name}
-                                    navigator={detailHost.navigation}
-                                  />
-                                }
-                                navigation={
-                                  listVisibility ? (
-                                    <ConversationListToggle />
-                                  ) : (
-                                    <IconButton
-                                      size="sm"
-                                      variant="subtle"
-                                      aria-label="Close conversation"
-                                      title="Close conversation"
-                                      icon={<XIcon size={16} />}
-                                      onClick={dismiss}
-                                    />
-                                  )
-                                }
-                                actions={
-                                  <InboxSheetActions
-                                    key={tab.id}
-                                    active={shown}
-                                    panels={host.panels}
-                                    context={{
-                                      scope,
-                                      channelId: channel.id,
-                                      channelName: channel.name,
-                                      viewer: session.viewer ?? "",
-                                      relayUrl: navigationScope.communityOrigin
-                                        .replace(/^https:/, "wss:")
-                                        .replace(/^http:/, "ws:"),
-                                      ...(target.threadId && {
-                                        threadId: target.threadId,
-                                      }),
-                                    }}
-                                    interactions={interactions}
-                                    onOpen={() => navigateConversation(target)}
-                                  />
-                                }
-                              />
-                              <div ref={setFeedbackMount} />
-                              <ConversationTab
-                                key={tab.id}
-                                tab={tab}
-                                active={shown}
-                                visit={false}
-                                channel={channel}
-                                session={session}
-                                scope={scope}
-                                extensions={extensions}
-                                openLink={interactions.onOpenLink}
-                                canOpenLink={interactions.canOpenLink}
-                                openThread={(messageId, rootId, intent) => {
-                                  open(
-                                    {
-                                      channelId: channel.id,
-                                      threadId: rootId,
-                                      messageId,
-                                    },
-                                    undefined,
-                                    intent === "reply",
-                                  );
-                                }}
-                              />
-                            </>
-                          )}
-                        </ConversationHost>
+                                      ),
+                                  }
+                            }
+                          />
+                        )}
                       </ConversationPresentation>
                     </div>
-                  )}
-                </PanelFrame>
-              )}
-            </section>
-          </div>
+                    {available && channel && target && tab && (
+                      <div
+                        className={styles.draftContent}
+                        hidden={!shown}
+                        data-conversation-reader=""
+                      >
+                        <ConversationPresentation value={presented && shown}>
+                          <ConversationHost
+                            key={tab.id}
+                            host={detailHost}
+                            session={session}
+                            scope={scope}
+                            channelId={channel.id}
+                            channelName={channel.name}
+                            threadId={target.threadId}
+                          >
+                            {(interactions) => (
+                              <>
+                                <PanelHeader
+                                  variant="conversation"
+                                  historyOverlay={!target.threadId}
+                                  title={channel.name}
+                                  icon={
+                                    <ChannelMembersButton
+                                      key={channel.id}
+                                      session={session}
+                                      channelId={channel.id}
+                                      conversationName={channel.name}
+                                      navigator={detailHost.navigation}
+                                      onOpenConversation={(channelId) =>
+                                        openDetail(
+                                          { channelId },
+                                          { keep: true },
+                                        )
+                                      }
+                                      onOpenLink={(url) =>
+                                        interactions.onOpenLink(url)
+                                      }
+                                      canOpenLink={interactions.canOpenLink}
+                                    />
+                                  }
+                                  navigation={
+                                    listVisibility ? (
+                                      <ConversationListToggle />
+                                    ) : (
+                                      <IconButton
+                                        size="sm"
+                                        variant="subtle"
+                                        aria-label="Close conversation"
+                                        title="Close conversation"
+                                        icon={<XIcon size={16} />}
+                                        onClick={dismiss}
+                                      />
+                                    )
+                                  }
+                                  actions={
+                                    <InboxSheetActions
+                                      key={tab.id}
+                                      active={shown}
+                                      panels={host.panels}
+                                      context={{
+                                        scope,
+                                        channelId: channel.id,
+                                        channelName: channel.name,
+                                        viewer: session.viewer ?? "",
+                                        relayUrl:
+                                          navigationScope.communityOrigin
+                                            .replace(/^https:/, "wss:")
+                                            .replace(/^http:/, "ws:"),
+                                        ...(target.threadId && {
+                                          threadId: target.threadId,
+                                        }),
+                                      }}
+                                      interactions={interactions}
+                                      onOpen={() =>
+                                        navigateConversation(target)
+                                      }
+                                    />
+                                  }
+                                />
+                                <div ref={setFeedbackMount} />
+                                <ConversationTab
+                                  key={tab.id}
+                                  tab={tab}
+                                  active={shown}
+                                  visit={false}
+                                  channel={channel}
+                                  session={session}
+                                  scope={scope}
+                                  extensions={extensions}
+                                  openLink={interactions.onOpenLink}
+                                  canOpenLink={interactions.canOpenLink}
+                                  openThread={(messageId, rootId, intent) => {
+                                    openDetail(
+                                      {
+                                        channelId: channel.id,
+                                        threadId: rootId,
+                                        ...(intent !== "reply" && {
+                                          messageId,
+                                        }),
+                                      },
+                                      { keep: true },
+                                    );
+                                  }}
+                                />
+                              </>
+                            )}
+                          </ConversationHost>
+                        </ConversationPresentation>
+                      </div>
+                    )}
+                  </>
+                )}
+              </PageTabs>
+            )}
+          </section>
         </div>
-      </ConversationDetailPane>
+      </div>
     </FeedbackMount>
   );
 }

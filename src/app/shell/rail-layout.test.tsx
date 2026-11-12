@@ -1,3 +1,4 @@
+import { railSections } from "./rail-sections";
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
@@ -114,4 +115,31 @@ test("a saved arrangement survives remounts, stays scoped, and retains confirmed
   });
   expect(restored.result.current.layout.sections).toEqual([]);
   expect(restored.result.current.layout.placements).toEqual([]);
+});
+
+test("cards, expanded lists, and routing share contributed section membership", () => {
+  const model = railSections(
+    {
+      order: [],
+      sections: [],
+      placements: [{ section: "example.plugin/section", entry }],
+    },
+    [{ id: "example.plugin/section", title: "Plugin work" }],
+  );
+  expect(model.sections.get("example.plugin/section")).toBe("Plugin work");
+  expect(model.owner((candidate) => candidate.id === entry.id)).toBe(
+    "example.plugin/section",
+  );
+  expect(model.entries("messages", [entry])).toEqual([]);
+  expect(model.entries("example.plugin/section", [])).toEqual([entry]);
+  // Disabling the contribution returns its conversations to their default list.
+  const disabled = railSections({
+    order: [],
+    sections: [],
+    placements: [{ section: "example.plugin/section", entry }],
+  });
+  expect(
+    disabled.owner((candidate) => candidate.id === entry.id),
+  ).toBeUndefined();
+  expect(disabled.entries("messages", [entry])).toEqual([entry]);
 });

@@ -20,7 +20,6 @@ import {
   MagnifyingGlassIcon,
 } from "../../shared/design-system/icons";
 import { createPortal } from "react-dom";
-import { PanelHeader } from "../../shared/design-system/ui/PanelHeader";
 import { Panel } from "../../shared/design-system/ui/Panel";
 import { isTauri } from "@tauri-apps/api/core";
 import type { SettingsCards } from "../../features/settings/service";
@@ -298,11 +297,23 @@ function AppShellContent({
       onOpenTarget={onOpenTarget}
       open={switcherOpen}
       onOpenChange={setSwitcherOpen}
-      side={compactRail ? "right" : "bottom"}
+      side="bottom"
     />
   );
   const railActions = (
     <>
+      {railCommunity}
+      <ProfileButton
+        communities={communities}
+        accountActions={accountActions}
+        settingsSelected={selected === "settings"}
+        appearance={appearance}
+        pluginRecommendations={pluginRecommendations}
+        onSettings={(section) =>
+          onSelect("settings", section ? { section } : undefined)
+        }
+        side="bottom"
+      />
       <div ref={setSearchContainer} />
       {creationAction && <div ref={setCreationMenuContainer} />}
     </>
@@ -328,21 +339,7 @@ function AppShellContent({
       community={null}
       profile={null}
       settings={null}
-      header={
-        compactRail ? (
-          <div className="flex flex-col items-center gap-1">
-            {railCommunity}
-            {railActions}
-          </div>
-        ) : (
-          <PanelHeader
-            variant="card"
-            title="Buzz"
-            icon={railCommunity}
-            actions={railActions}
-          />
-        )
-      }
+      header={railActions}
     >
       {connection.viewer && connection.scope && searchServices?.navigation ? (
         <RailNavigation
@@ -440,17 +437,7 @@ function AppShellContent({
         >
           <div className="shell-actions-fixed">
             {launchers}
-            <ProfileButton
-              communities={communities}
-              accountActions={accountActions}
-              settingsSelected={selected === "settings"}
-              appearance={appearance}
-              pluginRecommendations={pluginRecommendations}
-              onSettings={(section) =>
-                onSelect("settings", section ? { section } : undefined)
-              }
-              side="bottom"
-            />
+
             <WindowControls />
           </div>
         </div>

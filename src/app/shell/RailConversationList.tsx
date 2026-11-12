@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  useMemo,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
+import type { ReactNode } from "react";
 import type { RelaySession } from "../../features/relay/session";
 import type { Navigation } from "../../features/navigation/controller";
 import type {
@@ -20,7 +15,7 @@ import {
 import type { RailEntry } from "./rail-pins";
 import { RailDestinationRow } from "./RailArrangement";
 import feedStyles from "../../features/conversation/FeedList.module.css";
-import type { ReadTarget } from "../../features/relay/read-state-model";
+import { useRailUnread } from "./RailConversationItem";
 
 /** Expanded cards keep their membership while sharing Messages' feed and controls. */
 export function RailConversationList({
@@ -45,7 +40,9 @@ export function RailConversationList({
   renderOther(entry: RailEntry): ReactNode;
 }) {
   const [view, setView] = useActivityView(
-    `${scope.communityOrigin}:${scope.viewer}:rail-page:${section}`,
+    section === "messages"
+      ? `${scope.communityOrigin}:${scope.viewer}`
+      : `${scope.communityOrigin}:${scope.viewer}:rail-page:${section}`,
   );
   // Whole conversations use the shared feed. Exact message/thread destinations
   // remain individual entries, preserving their original opening targets.
@@ -147,39 +144,8 @@ function ExactDestinationRow({
   section: string;
   render(entry: RailEntry): ReactNode;
 }) {
-  const target = useMemo<ReadTarget | undefined>(() => {
-    const destination = entry.target;
-    if (destination.kind !== "conversation") return;
-    if (destination.threadRootId)
-      return {
-        kind: "thread",
-        channelId: destination.channelId,
-        rootId: destination.threadRootId,
-      };
-    if (destination.messageId)
-      return {
-        kind: "message",
-        channelId: destination.channelId,
-        messageId: destination.messageId,
-      };
-  }, [entry.target]);
-  const subscribe = useCallback(
-    (listener: () => void) =>
-      target ? session.unread.subscribe(target, listener) : () => {},
-    [session, target],
-  );
-  const snapshot = useCallback(
-    () => (target ? session.unread.snapshot(target) : undefined),
-    [session, target],
-  );
-  const state = useSyncExternalStore(subscribe, snapshot);
-  if (
-    unreadOnly &&
-    (!state ||
-      (state.manual === "none" &&
-        !(state.observedCount && state.observedCount > 0)))
-  )
-    return null;
+  const unread = useRailUnread(session, entry.target);
+  if (unreadOnly && !unread) return null;
   return (
     <li className={feedStyles.item}>
       <RailDestinationRow section={section} entry={entry}>

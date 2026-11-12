@@ -290,13 +290,20 @@ export function ConversationTimeline(
   } = useConversation();
   // All conversation types allow explicit thread replies.
   return (
-    <ChannelTimeline
-      queries={session}
-      viewer={session.viewer}
-      startsThreads
-      {...shared}
-      {...props}
-    />
+    <div className="conversation-history-viewport">
+      <ChannelTimeline
+        queries={session}
+        viewer={session.viewer}
+        startsThreads
+        {...shared}
+        {...props}
+      />
+      <div className="conversation-history-blur" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+    </div>
   );
 }
 

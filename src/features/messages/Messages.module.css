@@ -92,6 +92,7 @@
   width: min(100%, var(--timeline-measure));
   margin-inline: auto;
   /* ChannelTimeline measures this region for Virtua's pixel startMargin. */
+  padding-block-start: var(--history-leading-space, 0px);
   min-height: var(--space-4);
   box-sizing: border-box;
   display: flex;
@@ -700,7 +701,10 @@ html[data-keyboard-navigation] .attachmentImage:focus-visible {
   min-width: 0;
 }
 /* Soften the scroll edge without reserving a blank strip above the composer. */
-:is(.feed, .threadHistory)[data-jump-visible] + .composerContext::before {
+:is(.feed, .threadHistory)[data-jump-visible] + .composerContext::before,
+/* biome-ignore lint/correctness/noUnknownPseudoClass: The shared history viewport wraps the feature-owned scroller. */
+:global(.conversation-history-viewport):has(> .feed[data-jump-visible])
++ .composerContext::before {
   content: "";
   position: absolute;
   inset-inline: 0;

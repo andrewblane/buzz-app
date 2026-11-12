@@ -91,11 +91,3 @@
     margin-inline-start: auto;
   }
 }
-
-/* Use the containing list width, including a narrow Activity side pane. */
-@container (max-width: 30rem) {
-  .rowAvatar {
-    width: var(--space-6);
-    height: var(--space-6);
-  }
-}

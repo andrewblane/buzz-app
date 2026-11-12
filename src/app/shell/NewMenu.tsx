@@ -23,8 +23,10 @@ import {
   MenuGroup,
   MenuGroupLabel,
   MenuSeparator,
+  MenuTrailing,
 } from "../../shared/design-system/ui/Menu";
 import styles from "./NewMenu.module.css";
+import { KeyboardShortcut } from "../../shared/design-system/ui/KeyboardShortcut";
 import { PlusIcon } from "../../shared/design-system/icons";
 
 type Props = {
@@ -103,6 +105,11 @@ function ReadyNewMenu({
     onOpenChange?.(false);
     if (available) compose(true);
   }, [open]);
+  const shortcut = (position: number) => (
+    <MenuTrailing>
+      <KeyboardShortcut text={String(position)} label={`Press ${position}`} />
+    </MenuTrailing>
+  );
   const menuTrigger = (
     <IconButton
       hint="familiar"
@@ -147,7 +154,32 @@ function ReadyNewMenu({
           menuTriggerContainer,
         )}
       <MenuRoot open={menuOpen} onOpenChange={setMenuOpen}>
-        <MenuPopup anchor={menuAnchor} finalFocus={menuAnchor}>
+        <MenuPopup
+          anchor={menuAnchor}
+          finalFocus={menuAnchor}
+          aria-label="New"
+          size="compact"
+          onKeyDown={(event) => {
+            if (
+              event.altKey ||
+              event.ctrlKey ||
+              event.metaKey ||
+              event.shiftKey ||
+              event.repeat ||
+              event.nativeEvent.isComposing ||
+              !/^[1-9]$/.test(event.key)
+            )
+              return;
+            const item =
+              event.currentTarget.querySelectorAll<HTMLElement>(
+                '[role="menuitem"]',
+              )[Number(event.key) - 1];
+            if (!item) return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (item.getAttribute("aria-disabled") !== "true") item.click();
+          }}
+        >
           <MenuGroup>
             <MenuGroupLabel emphasis="quiet">Solo</MenuGroupLabel>
             {!composing && (
@@ -157,7 +189,8 @@ function ReadyNewMenu({
                     void navigator.open(soloDraftTarget(session.scope));
                 }}
               >
-                New chat
+                New solo chat
+                {shortcut(1)}
               </MenuItem>
             )}
             <MenuItem
@@ -167,6 +200,7 @@ function ReadyNewMenu({
               }}
             >
               New workspace
+              {shortcut(composing ? 1 : 2)}
             </MenuItem>
           </MenuGroup>
           <MenuSeparator />
@@ -174,6 +208,7 @@ function ReadyNewMenu({
             <MenuGroupLabel emphasis="quiet">Team</MenuGroupLabel>
             <MenuItem disabled={!scope} onClick={() => compose()}>
               New DM
+              {shortcut(composing ? 2 : 3)}
             </MenuItem>
             <MenuItem
               disabled={!session.channelCreation.available}
@@ -182,6 +217,7 @@ function ReadyNewMenu({
               }}
             >
               New channel
+              {shortcut(composing ? 3 : 4)}
             </MenuItem>
             <MenuItem
               disabled={!preferences.sectionCreationWritable}
@@ -190,6 +226,7 @@ function ReadyNewMenu({
               }}
             >
               New section
+              {shortcut(composing ? 4 : 5)}
             </MenuItem>
           </MenuGroup>
         </MenuPopup>

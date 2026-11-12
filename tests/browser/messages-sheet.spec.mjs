@@ -211,10 +211,16 @@ test("Messages keeps its list beside conversations and preserves drafts and hist
     .getByRole("link", { name: "Open Beta", exact: true })
     .click();
   await expect(page.locator('[data-channel-timeline="beta"]')).toBeVisible();
-  await page.goBack();
   await expect(index).toBeVisible();
+  await detail
+    .getByRole("button", { name: "Show Team list", exact: true })
+    .click();
   await expect(alpha).toBeVisible();
-  await expect(detail.locator('[data-channel-timeline="beta"]')).toBeHidden();
+  await detail
+    .getByRole("button", { name: "Close Beta tab", exact: true })
+    .click();
+  await expect(detail.locator('[data-channel-timeline="beta"]')).toHaveCount(0);
+  await expect(newMessage.getByRole("textbox")).toBeVisible();
   await detail
     .getByRole("button", { name: "Hide Team list", exact: true })
     .click();

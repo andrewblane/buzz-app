@@ -1,3 +1,12 @@
+import {
+  creationDestinationKey,
+  creationPeople as validRecipients,
+  readCreationDestination,
+  saveCreationDestination,
+  type CreationDestination,
+} from "./creation-destination";
+import { SoloDraft } from "../solo/SoloDraft";
+import type { ComponentProps } from "react";
 import { AvatarStack } from "../../shared/design-system/ui/AvatarStack";
 import { createPortal } from "react-dom";
 import { canMessageAgent } from "../agents/choices";
@@ -25,7 +34,11 @@ import {
   type AttachmentDraft,
 } from "../messages/attachment-draft";
 import { MessageComposer } from "../messages/MessageComposer";
-import { mentionDraft, type MentionDraft } from "../messages/mention-draft";
+import {
+  mentionDraft,
+  type MentionDraft,
+  type MentionRecipient,
+} from "../messages/mention-draft";
 import { clearView, readView, writeView } from "../../shared/view-state";
 import { Button } from "../../shared/design-system/ui/Button";
 import {
@@ -37,7 +50,6 @@ import { Tabs } from "../../shared/design-system/ui/Tabs";
 import { NavigationItem } from "../../shared/design-system/ui/NavigationItem";
 import { PlusIcon } from "../../shared/design-system/icons";
 import { relativeTimestamp } from "../../shared/relative-timestamp";
-import type { ReactNode } from "react";
 import { usePeople, type Recipient } from "./usePeople";
 import { usePassThroughUntilDrafted } from "../messages/draft-visit";
 import type { PageNavigation } from "../navigation/service";
@@ -69,29 +81,6 @@ const recipientView = ({ pubkey, name, isAgent }: Recipient): Recipient => ({
   name: name.slice(0, 500),
   ...(isAgent === true ? { isAgent: true } : {}),
 });
-function savedRecipients(scope: string, viewer?: string) {
-  return validRecipients(
-    readView<unknown>(scope, "direct-message:recipients", []),
-    viewer,
-  );
-}
-function validRecipients(saved: unknown, viewer?: string) {
-  if (!Array.isArray(saved)) return [];
-  return [
-    ...new Map(
-      saved
-        .filter(
-          (person): person is Recipient =>
-            person &&
-            typeof person.pubkey === "string" &&
-            /^[0-9a-f]{64}$/.test(person.pubkey) &&
-            person.pubkey !== viewer &&
-            typeof person.name === "string",
-        )
-        .map((person) => [person.pubkey, recipientView(person)]),
-    ).values(),
-  ].slice(0, 8);
-}
 // Earlier development builds wrote a separate pointer. Keep it confirmation-only;
 // its absence from the journal must never authorize a replacement message.
 function savedLegacy(
@@ -119,7 +108,10 @@ function savedLegacy(
       recipients: value.recipients,
       draft: mentionDraft(value.draft),
       attachments: [],
-      people: savedRecipients(scope, viewer),
+      people: validRecipients(
+        readView(scope, "direct-message:recipients", []),
+        viewer,
+      ),
     };
 }
 
@@ -164,7 +156,7 @@ export function NewMessage({
   expanded = false,
   onAddressed,
   contentContainer,
-  renderSolo,
+  solo,
   onOpenChat,
 }: {
   /** Activity embeds the same draft and delivery owner without a second history. */
@@ -175,13 +167,9 @@ export function NewMessage({
   contentContainer?: HTMLElement | null;
   /** To may also name a channel: Send posts a new message there. */
   allowChannels?: boolean;
-  /** A New chat composer for one agent; without it an agent gets a DM. */
-  renderSolo?:
-    | ((
-        agent: string,
-        focusRequest: number,
-        onDraftChange?: ((draft: MentionDraft) => void) | undefined,
-      ) => ReactNode)
+  /** Solo uses the same creation draft and parent lock as Team. */
+  solo?:
+    | Pick<ComponentProps<typeof SoloDraft>, "onStarted" | "onFailed">
     | undefined;
   /** Continue an earlier Solo chat listed beside a chosen agent. */
   onOpenChat?: ((channelId: string) => void) | undefined;
@@ -212,15 +200,13 @@ export function NewMessage({
     draftKey,
     { held: holds },
   );
-  const [recipients, setRecipients] = useState(() =>
-    savedRecipients(scope, session.viewer),
+  const [destination, setDestination] = useState(() =>
+    readCreationDestination(scope, session.viewer, allowChannels),
   );
-  const [channelId, setChannelId] = useState<string | undefined>(() => {
-    const saved = allowChannels
-      ? readView<unknown>(scope, channelViewKey, null)
-      : null;
-    return typeof saved === "string" ? saved : undefined;
-  });
+  const recipients =
+    destination.kind === "people" ? destination.people : emptyRecipients;
+  const channelId =
+    destination.kind === "channel" ? destination.channelId : undefined;
   // A lone agent starts a Solo chat unless Team was picked for it.
   const [teamFor, setTeamFor] = useState(() => {
     const saved = readView<unknown>(scope, teamViewKey, null);
@@ -347,14 +333,14 @@ export function NewMessage({
   held.current = !!pending;
   const failed =
     pending && session.directMessages.delivery(pending.id) === "failed";
-  const locked = !ready || !!busy || (!!pending && !failed);
+  const [soloBusy, setSoloBusy] = useState(false);
+  const locked = soloBusy || !ready || !!busy || (!!pending && !failed);
   const retire = useCallback(() => {
     clearAttachmentDraft(session, `${scope}:${draftKey}`);
     retiring.current = undefined;
     prepared.current = undefined;
     draftEdited(undefined);
-    setRecipients([]);
-    setChannelId(undefined);
+    setDestination({ kind: "people", people: [] });
     setTeamFor(undefined);
     setRestoredDraft(mentionDraft(""));
     setDraftRevision((revision) => revision + 1);
@@ -383,16 +369,20 @@ export function NewMessage({
           recovered(outbox?.snapshot() ?? [], session.viewer) ??
           initialLegacy.current;
         if (saved) {
-          setChannelId(saved.channelTarget);
           const editable =
             session.directMessages.delivery(saved.id) === "failed";
-          setRecipients(
+          const original: CreationDestination = saved.channelTarget
+            ? { kind: "channel", channelId: saved.channelTarget }
+            : { kind: "people", people: saved.people };
+          setDestination(
             editable
-              ? validRecipients(
-                  readView(scope, "direct-message:recipients", saved.people),
+              ? readCreationDestination(
+                  scope,
                   session.viewer,
+                  allowChannels,
+                  original,
                 )
-              : saved.people,
+              : original,
           );
           setRestoredDraft(
             editable
@@ -414,7 +404,7 @@ export function NewMessage({
       active = false;
       attempt.current?.abort();
     };
-  }, [outbox, session.viewer, session.directMessages, scope]);
+  }, [outbox, session.viewer, session.directMessages, scope, allowChannels]);
   function validateAgents() {
     const controlled = new Set(
       session.agentChoices
@@ -437,12 +427,9 @@ export function NewMessage({
   function change(people: Recipient[]) {
     if (locked || attempt.current) return;
     prepared.current = undefined;
-    setRecipients(people);
-    writeView(scope, "direct-message:recipients", people.map(recipientView));
-    if (channelId) {
-      setChannelId(undefined);
-      writeView(scope, channelViewKey, null);
-    }
+    const next: CreationDestination = { kind: "people", people };
+    setDestination(next);
+    saveCreationDestination(scope, next);
     setError("");
     setUploadFailed(false);
   }
@@ -460,16 +447,20 @@ export function NewMessage({
   function chooseChannel(channel: ChannelSummary | undefined) {
     if (locked || attempt.current) return;
     prepared.current = undefined;
-    setChannelId(channel?.id);
-    writeView(scope, channelViewKey, channel?.id ?? null);
-    if (channel) {
-      setRecipients([]);
-      writeView(scope, "direct-message:recipients", []);
-    }
+    const next: CreationDestination = channel
+      ? { kind: "channel", channelId: channel.id }
+      : { kind: "people", people: [] };
+    setDestination(next);
+    saveCreationDestination(scope, next);
     setError("");
     setUploadFailed(false);
   }
-  async function send(draft: MentionDraft, files?: AttachmentDraft) {
+  async function send(
+    draft: MentionDraft,
+    files?: AttachmentDraft,
+    addressed?: readonly MentionRecipient[],
+    references: readonly string[] = [],
+  ) {
     const posting =
       target?.id ?? (!recipients.length ? pending?.channelTarget : undefined);
     const content = composerMarkdown(draft);
@@ -561,7 +552,7 @@ export function NewMessage({
         const messageId = session.messages.send(
           id,
           content,
-          draft.recipients.map((person) => person.pubkey),
+          (addressed ?? draft.recipients).map((person) => person.pubkey),
           uploaded,
           {
             key: recoveryKey,
@@ -571,6 +562,7 @@ export function NewMessage({
               channelTarget: posting,
             }),
           },
+          references,
         );
         current = {
           id: messageId,
@@ -595,6 +587,7 @@ export function NewMessage({
         "direct-message:pending",
         "direct-message:recipients",
         channelViewKey,
+        creationDestinationKey,
         teamViewKey,
       );
       await outbox?.acknowledge(current.id);
@@ -656,16 +649,16 @@ export function NewMessage({
     : undefined;
   const lone = recipients.length === 1 ? recipients[0] : undefined;
   const loneAgent =
-    renderSolo &&
+    solo &&
     !target &&
     lone &&
     (lone.isAgent || profiles.get(lone.pubkey)?.isAgent)
       ? lone.pubkey
       : undefined;
   const kind: Kind | null =
-    ready && !pending && loneAgent && teamFor !== loneAgent
+    solo && ready && !pending && loneAgent && teamFor !== loneAgent
       ? "solo"
-      : target || recipients.length || pending
+      : target || recipients.length || pending || !solo
         ? "team"
         : null;
   const soloAgent = kind === "solo" ? loneAgent : undefined;
@@ -690,7 +683,7 @@ export function NewMessage({
     [channels, soloAgent],
   );
   const kindControl =
-    renderSolo || allowChannels ? (
+    solo || allowChannels ? (
       <div className={styles.kind}>
         <Tabs<Kind>
           variant="segmented"
@@ -699,11 +692,15 @@ export function NewMessage({
           value={kind}
           showSelection={kind !== null}
           items={[
-            { value: "solo", label: "Solo", disabled: !loneAgent },
-            { value: "team", label: "Team", disabled: kind === null },
+            {
+              value: "solo",
+              label: "Solo",
+              disabled: locked || !solo || !loneAgent,
+            },
+            { value: "team", label: "Team", disabled: locked || kind === null },
           ]}
           onValueChange={(next) => {
-            if (!loneAgent) return;
+            if (locked || !loneAgent) return;
             const choice = next === "team" ? loneAgent : undefined;
             setTeamFor(choice);
             writeView(scope, teamViewKey, choice ?? null);
@@ -751,7 +748,7 @@ export function NewMessage({
           trailing={kindControl}
         />
       )}
-      {soloAgent && renderSolo ? (
+      {soloAgent && solo ? (
         <>
           {(layout === "page" || expanded) && (
             <div className={styles.solo} data-new-message-body="">
@@ -788,11 +785,21 @@ export function NewMessage({
             </div>
           )}
           <div className={styles.soloComposer}>
-            {renderSolo(
-              soloAgent,
-              composerFocus,
-              layout === "composer" ? syncInlineRecipients : undefined,
-            )}
+            <SoloDraft
+              key={soloAgent}
+              embedded
+              draftPrefix="direct-message"
+              session={session}
+              scope={scope}
+              extensions={extensions}
+              agent={soloAgent}
+              focusRequest={composerFocus}
+              onDraftChange={
+                layout === "composer" ? syncInlineRecipients : undefined
+              }
+              onBusyChange={setSoloBusy}
+              {...solo}
+            />
           </div>
         </>
       ) : (
@@ -868,13 +875,13 @@ export function NewMessage({
               </div>
             )}
           </div>
-          <DraftMentionRoster.Provider value={roster}>
+          <DraftMentionRoster.Provider value={target ? undefined : roster}>
             <MessageComposer
               key={`${ready ? "ready" : "hydrating"}:${draftRevision}`}
               session={session}
               scope={scope}
               extensions={extensions}
-              channelId={draftChannel}
+              channelId={target?.id ?? draftChannel}
               focusRequest={composerFocus}
               channelName={composerName || "new message"}
               label={composerName ? `Message ${composerName}` : "New message"}
@@ -887,6 +894,7 @@ export function NewMessage({
               }
               disabled={layout === "page" && !recipients.length && !target}
               submission={{
+                channel: target ? true : undefined,
                 draftKey,
                 attachments: true,
                 allowAttachmentOnly: true,
@@ -904,7 +912,15 @@ export function NewMessage({
                     : !recipients.length ||
                       !session.directMessages.available) ||
                   typed,
-                submit: (draft, files) => void send(draft, files),
+                submit: (
+                  draft,
+                  files,
+                  addressed,
+                  _picks,
+                  _draftPicks,
+                  _revision,
+                  references,
+                ) => void send(draft, files, addressed, references),
               }}
             />
           </DraftMentionRoster.Provider>
@@ -917,3 +933,5 @@ export function NewMessage({
 const empty: readonly never[] = [];
 const emptySnapshot = () => empty;
 const noSubscribe = () => () => {};
+
+const emptyRecipients: Recipient[] = [];

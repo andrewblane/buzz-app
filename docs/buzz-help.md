@@ -471,8 +471,8 @@ for 30 days expires.
   resize it; double-click the divider to reset its width. Team, Solo, and Activity
   share the saved list width. A chat assigned to a sidebar section
   shows that section's rows and title. Expanded Pins and custom-section lists show
-  one-line conversation previews, like Team and Activity. Team’s new-message pane and card’s **+** open a composer where you can
-  @mention recipients and write a message. Cmd/Ctrl+N opens the global recipient
+  one-line conversation previews, like Team and Activity. Team’s new-message pane and card’s **+** open a centered recipient bar with Team selected above the composer.
+  Choose a person or channel, then write a message. Cmd/Ctrl+N opens the global recipient
   search with the Solo/Team choice. Solo’s new-chat pane uses the same agent
   composer, saved draft, and chat settings as **New Solo chat**. Its header centers the selected agent’s avatar and name, with the list toggle on the left. Pointer toggles slide the list in and out;
   keyboard toggles and reduced-motion preferences change it immediately. Selecting a list row keeps it
@@ -480,6 +480,9 @@ for 30 days expires.
   Activity’s Close or Escape clears the detail while keeping its draft; explicit
   Close retires that selection’s return path. Back and Forward restore earlier
   selections, drafts, and the list’s open/closed state within the navigation session.
+  Links to conversations and threads, replies, and profile details in Activity open
+  in side tabs, preserving the source conversation and its draft. Close a tab to
+  return to the source; **Open in channel** still navigates to the channel.
   Narrow windows show one pane at a time; Activity’s Close returns to its list.
   Team restores its saved conversation filters when you switch accounts or communities.
   The **New message** plus in the Team, Solo, or Activity list heading opens a draft in
@@ -829,6 +832,9 @@ for 30 days expires.
   Solo chats show participating agents. The toolbar actions stay at the top right.
 - **Conversation timestamps**: sidebar times appear when you hover or focus a row.
   Touch devices keep them visible.
+- **Create menu**: while the menu is open, press **1–5** to activate the numbered
+  rows. Unavailable actions stay disabled. Community, profile/status, Search, and Create share
+  one compact card at the top of the rail.
 - **App navigation**: one left rail contains Search, Activity, **Pins**, **Team**,
   **Solo**, and **Agents**. Plugin destinations and **Plugins** sit with Search and Activity
   in the Plugins card, which starts at the top and can be moved like any section.
@@ -947,6 +953,8 @@ for 30 days expires.
   grabbers brighten only when the pointer is close and appear immediately under it.
   Hovering elsewhere on the card keeps them hidden. Keyboard focus reveals controls
   immediately, and touch devices show them without waiting.
+- **Team card**: Activity and Drafts & sent appear above up to four recent
+  conversations. **Open Team** opens the full conversation list.
 - **Sidebar sections**: in **All**, use the arrow beside **Solo** or **Team** to
   collapse either section independently. Buzz remembers the collapsed sections
   for that community and identity. Collapsed section headings highlight when
