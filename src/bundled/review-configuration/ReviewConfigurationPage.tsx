@@ -13,17 +13,10 @@ import type { RelaySession } from "../../features/relay/session";
 import {
   ArrowLeftIcon,
   ListChecksIcon,
-  MenuIcon,
 } from "../../shared/design-system/icons";
 import { NavigationItem } from "../../shared/design-system/ui/NavigationItem";
 import { Button } from "../../shared/design-system/ui/Button";
-import { IconButton } from "../../shared/design-system/ui/IconButton";
-import {
-  MenuRoot,
-  MenuTrigger,
-  MenuPopup,
-  MenuItem,
-} from "../../shared/design-system/ui/Menu";
+import { Accordion } from "../../shared/design-system/ui/Accordion";
 import { Field } from "../../shared/design-system/ui/Field";
 import { FullPageSurface } from "../../shared/design-system/ui/FullPageSurface";
 import { InlineHeader } from "../../shared/design-system/ui/Header";
@@ -56,9 +49,7 @@ export const reviewPageTitle = (page: ReviewPage) =>
 function Frame({
   children,
   page = "configuration",
-  actions,
 }: {
-  actions?: ReactNode;
   children: ReactNode;
   page?: ReviewPage;
 }) {
@@ -68,7 +59,6 @@ function Frame({
       <div className="review-config-page text-body">
         <PanelHeader
           title={<PanelHeaderLabel title={title} icon={<ListChecksIcon />} />}
-          actions={actions}
         />
         <div className="review-config-scroll">
           <div className="review-config-content" data-review-page={page}>
@@ -214,39 +204,8 @@ export function ReviewConfigurationCommunity({
     !selected.cached &&
     !selected.readOnly &&
     !!session.configArtifactWriter;
-  return (
-    <Frame
-      page={page}
-      actions={
-        <MenuRoot>
-          <MenuTrigger
-            disabled={editing || !onNavigate}
-            render={
-              <IconButton
-                aria-label="Review menu"
-                title="Review menu"
-                icon={<MenuIcon />}
-              />
-            }
-          />
-          <MenuPopup size="compact" align="end">
-            {(["configuration", "submit", "all"] as const).map(
-              (destination) => (
-                <MenuItem
-                  key={destination}
-                  disabled={editing || !onNavigate || page === destination}
-                  aria-current={page === destination ? "page" : undefined}
-                  onClick={() => void navigate(destination)}
-                >
-                  {reviewPageTitle(destination)}
-                </MenuItem>
-              ),
-            )}
-          </MenuPopup>
-        </MenuRoot>
-      }
-    >
-      {navigationError && <p role="alert">{navigationError}</p>}
+  const channelSelector = (
+    <>
       {page !== "configuration" && channels.length === 1 ? (
         <p className="text-caption text-subtle">
           Review channel: {selected?.name}
@@ -281,6 +240,22 @@ export function ReviewConfigurationCommunity({
           draft is preserved.
         </p>
       )}
+    </>
+  );
+  return (
+    <Frame page={page}>
+      {page !== "configuration" && (
+        <div className="review-config-actions">
+          <Button
+            disabled={editing || !onNavigate}
+            onClick={() => void navigate("configuration")}
+          >
+            <ArrowLeftIcon /> Back to Review Configuration
+          </Button>
+        </div>
+      )}
+      {navigationError && <p role="alert">{navigationError}</p>}
+      {(page !== "configuration" || !channel) && channelSelector}
       {channel &&
         (page !== "configuration" ? (
           <ReviewSubmissions
@@ -300,6 +275,9 @@ export function ReviewConfigurationCommunity({
             channel={channel}
             writable={writable}
             onEditingChange={setEditing}
+            channelSelector={channelSelector}
+            onSubmit={onNavigate ? () => void navigate("submit") : undefined}
+            onOpenThread={onOpenThread}
           />
         ))}
     </Frame>
@@ -311,13 +289,21 @@ function ChannelConfiguration({
   channel,
   writable,
   onEditingChange,
+  channelSelector,
+  onSubmit,
+  onOpenThread,
 }: {
+  channelSelector: ReactNode;
+  onSubmit?: (() => void) | undefined;
+  onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
   session: RelaySession;
   channel: string;
   writable: boolean;
   onEditingChange: (editing: boolean) => void;
 }) {
   const choices = useAgentChoices(session, true, true);
+  const [reviewsBusy, setReviewsBusy] = useState(false);
+  const [expanded, setExpanded] = useState<string[]>([]);
   const [laneId, setLaneId] = useState<string>();
   const [rows, setRows] = useState<SavedReviewConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -332,15 +318,17 @@ function ChannelConfiguration({
   const editorTrigger = useRef<HTMLElement | null>(null);
   const lanesRegion = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    onEditingChange(editor !== undefined);
+    onEditingChange(editor !== undefined || reviewsBusy);
+    return () => onEditingChange(false);
+  }, [editor, reviewsBusy, onEditingChange]);
+  useEffect(() => {
     if (editor === undefined) {
       const trigger = editorTrigger.current;
       if (trigger?.isConnected && !trigger.matches(":disabled"))
         trigger.focus();
       else lanesRegion.current?.focus();
     }
-    return () => onEditingChange(false);
-  }, [editor, onEditingChange]);
+  }, [editor]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reload explicitly requests a fresh snapshot.
   useEffect(() => {
     const controller = new AbortController();
@@ -400,17 +388,12 @@ function ChannelConfiguration({
     <>
       {!selected && editor !== "new" ? (
         <>
-          <InlineHeader title="Repositories" />
           <div className="review-config-actions">
             <Button
-              disabled={loading}
-              onClick={() => setReload((value) => value + 1)}
-            >
-              Reload
-            </Button>
-            <Button
               ref={editorTrigger}
-              disabled={loading || !!error || !writable || remaining <= 0}
+              disabled={
+                loading || !!error || !writable || remaining <= 0 || reviewsBusy
+              }
               onClick={(event) => {
                 editorTrigger.current = event.currentTarget;
                 setNotice("");
@@ -419,7 +402,22 @@ function ChannelConfiguration({
             >
               Register repository
             </Button>
+            <Button disabled={reviewsBusy || !onSubmit} onClick={onSubmit}>
+              Submit PR
+            </Button>
           </div>
+          {channelSelector}
+          <InlineHeader
+            title="Repositories"
+            actions={
+              <Button
+                disabled={loading || reviewsBusy}
+                onClick={() => setReload((value) => value + 1)}
+              >
+                Reload
+              </Button>
+            }
+          />
           {loading ? (
             <p role="status">Loading configurations…</p>
           ) : error ? (
@@ -429,6 +427,7 @@ function ChannelConfiguration({
               {rows.map((row) => (
                 <NavigationItem
                   key={row.artifactId}
+                  disabled={reviewsBusy}
                   aria-label={`Open ${row.config.repository}`}
                   multiline
                   label={
@@ -455,9 +454,33 @@ function ChannelConfiguration({
             </p>
           )}
           {warning && <p role="alert">{warning}</p>}
+          <Accordion
+            variant="settings"
+            value={expanded}
+            onValueChange={(next) => {
+              if (!reviewsBusy) setExpanded(next);
+            }}
+            items={[
+              {
+                value: "Pull requests",
+                title: "Pull requests",
+                content: (
+                  <ReviewSubmissions
+                    session={session}
+                    channel={channel}
+                    mode="all"
+                    writable={writable}
+                    onEditingChange={setReviewsBusy}
+                    onOpenThread={onOpenThread}
+                  />
+                ),
+              },
+            ]}
+          />
         </>
       ) : (
         <>
+          {channelSelector}
           {!editor && (
             <div>
               <Button

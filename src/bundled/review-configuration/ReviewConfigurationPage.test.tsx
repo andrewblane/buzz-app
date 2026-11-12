@@ -496,12 +496,6 @@ it("opens dedicated pages from configuration and blocks leaving lane drafts", as
   await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
   expect(screen.queryByRole("region", { name: "PR submissions" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Review menu" }));
-  await user.click(await screen.findByRole("menuitem", { name: "Submit PR" }));
-  expect(onNavigate).toHaveBeenCalledWith("submit");
-  await user.click(screen.getByRole("button", { name: "Review menu" }));
-  await user.click(await screen.findByRole("menuitem", { name: "All PRs" }));
-  expect(onNavigate).toHaveBeenCalledWith("all");
   await user.click(screen.getByRole("button", { name: "Edit General lane" }));
   expect(
     screen.queryByRole("button", { name: "Back to repositories" }),
@@ -509,21 +503,14 @@ it("opens dedicated pages from configuration and blocks leaving lane drafts", as
   const field = screen.getByRole("textbox", { name: "Instructions" });
   await user.clear(field);
   await user.type(field, "Preserve draft");
-  expect(
-    (screen.getByRole("button", { name: "Review menu" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
+  expect(screen.queryByRole("button", { name: "Submit PR" })).toBeNull();
   expect((field as HTMLTextAreaElement).value).toBe("Preserve draft");
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   await user.click(
     screen.getByRole("button", { name: "Back to repositories" }),
   );
-  await user.click(screen.getByRole("button", { name: "Review menu" }));
-  await user.click(await screen.findByRole("menuitem", { name: "Submit PR" }));
+  await user.click(screen.getByRole("button", { name: "Submit PR" }));
   expect(onNavigate).toHaveBeenCalledWith("submit");
-  await user.click(screen.getByRole("button", { name: "Review menu" }));
-  await user.click(await screen.findByRole("menuitem", { name: "All PRs" }));
-  expect(onNavigate).toHaveBeenCalledWith("all");
   await user.click(
     screen.getByRole("button", { name: "Open example-org/project" }),
   );
@@ -669,4 +656,30 @@ it("returns focus to the lane region after removing the edited lane", async () =
       (lane: { name: string }) => lane.name,
     ),
   ).toEqual(["General"]);
+});
+
+it("expands the PR list on the home page without opening another page", async () => {
+  const test = fixture();
+  const onNavigate = vi.fn(async () => {});
+  render(
+    <ReviewConfigurationCommunity
+      session={test.session}
+      onNavigate={onNavigate}
+    />,
+  );
+  const user = userEvent.setup();
+  await screen.findByRole("button", { name: "Register repository" });
+  expect(screen.queryByRole("region", { name: "All PRs" })).toBeNull();
+  const disclosure = screen.getByRole("button", { name: "Pull requests" });
+  await user.click(disclosure);
+  await screen.findByText(
+    "No submissions in the list. Use Submit PR to start a review.",
+  );
+  expect(onNavigate).not.toHaveBeenCalled();
+  await user.click(disclosure);
+  await waitFor(() =>
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false"),
+  );
+  await user.click(screen.getByRole("button", { name: "Submit PR" }));
+  expect(onNavigate).toHaveBeenCalledWith("submit");
 });

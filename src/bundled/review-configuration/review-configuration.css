@@ -143,6 +143,7 @@
   padding-top: var(--space-3);
 }
 
-.review-config-content[data-review-page="all"] {
+.review-config-content[data-review-page="all"],
+.review-config-content[data-review-page="configuration"] {
   max-width: 72rem;
 }

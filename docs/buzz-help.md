@@ -1161,7 +1161,7 @@ confirmation. **Delete team** asks first; it doesn't delete the team's agents.
   reads the latest saved versions. Settings live on the community relay and are
   visible to channel readers; members who can post can edit them. A conflicting
   edit preserves your draft: copy your changes before cancelling and reloading.
-  **Review Configuration** has repository and lane settings plus **Review menu** with **Review Configuration**, **Submit PR**, and **All PRs** that open separate pages. **Edit lane**
+  **Review Configuration** has matching **Register repository** and **Submit PR** actions at the top, a **Repositories** section, and an expandable **Pull requests** table. **Edit lane**
   opens one lane; **Save lane** persists it before **Add lane** starts another.
   **Back to lanes** cancels the editor; **Back to repositories** returns to the list.
   Every new or edited lane requires at least one all/any routing rule matching
@@ -1171,11 +1171,11 @@ confirmation. **Delete team** asks first; it doesn't delete the team's agents.
   Submit button. It finds the repository in the selected review channel, reads
   current PR details, and assigns the first configured reviewer in each matching
   lane. Missing configuration or zero matching lanes sends nothing. Results show
-  assigned agents and their thread buttons. **All PRs** shows previous submissions in a bordered table. The original submitter can confirm **Delete** to remove a submission from the shared list; its conversations and GitHub PR remain. Deleting does not stop active reviews. Resubmitting restores its saved reviewers and threads.
+  assigned agents and their thread buttons. Expand **Pull requests** on the main page to see previous submissions in a bordered table. The original submitter can confirm **Delete** to remove a submission from the shared list; its conversations and GitHub PR remain. Deleting does not stop active reviews. Resubmitting restores its saved reviewers and threads.
   Submitting an existing PR reuses its saved reviewers and threads and mentions
   them again in those threads. Incomplete initial delivery resumes from the original
   browser profile. An interrupted notification retries its saved messages.
-  No configuration controls appear on Submit PR or All PRs. Use the header Review menu to return to configuration or switch pages. All pages remember the selected
+  The separate Submit PR form has a **Back to Review Configuration** button. All pages remember the selected
   review channel. Reviewers must be owned by the signed-in identity and already
   belong to the channel. A connected agent runtime is needed for replies;
   delivery alone does not mean a review started. Desktop uses signed-in GitHub
