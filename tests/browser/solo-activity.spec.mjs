@@ -106,9 +106,15 @@ test("Solo follow-ups share one agent Activity row", async ({
     for (const width of [390, 1280]) {
       await page.setViewportSize({ width, height: 720 });
       await expect(stop).toBeVisible();
-      const box = await stop.boundingBox();
-      expect(box.x).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      await expect
+        .poll(async () => (await stop.boundingBox())?.x ?? -1)
+        .toBeGreaterThanOrEqual(0);
+      await expect
+        .poll(async () => {
+          const box = await stop.boundingBox();
+          return box ? box.x + box.width : Number.POSITIVE_INFINITY;
+        })
+        .toBeLessThanOrEqual(width);
       await page.screenshot({
         path: testInfo.outputPath(`solo-activity-${colorScheme}-${width}.png`),
       });
