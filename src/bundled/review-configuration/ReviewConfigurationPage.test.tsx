@@ -496,9 +496,11 @@ it("opens dedicated pages from configuration and blocks leaving lane drafts", as
   await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
   expect(screen.queryByRole("region", { name: "PR submissions" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Submit PR" }));
+  await user.click(screen.getByRole("button", { name: "Review menu" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Submit PR" }));
   expect(onNavigate).toHaveBeenCalledWith("submit");
-  await user.click(screen.getByRole("button", { name: "All PRs" }));
+  await user.click(screen.getByRole("button", { name: "Review menu" }));
+  await user.click(await screen.findByRole("menuitem", { name: "All PRs" }));
   expect(onNavigate).toHaveBeenCalledWith("all");
   await user.click(screen.getByRole("button", { name: "Edit General lane" }));
   expect(
@@ -508,11 +510,7 @@ it("opens dedicated pages from configuration and blocks leaving lane drafts", as
   await user.clear(field);
   await user.type(field, "Preserve draft");
   expect(
-    (screen.getByRole("button", { name: "Submit PR" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
-  expect(
-    (screen.getByRole("button", { name: "All PRs" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "Review menu" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
   expect((field as HTMLTextAreaElement).value).toBe("Preserve draft");
@@ -520,9 +518,11 @@ it("opens dedicated pages from configuration and blocks leaving lane drafts", as
   await user.click(
     screen.getByRole("button", { name: "Back to repositories" }),
   );
-  await user.click(screen.getByRole("button", { name: "Submit PR" }));
+  await user.click(screen.getByRole("button", { name: "Review menu" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Submit PR" }));
   expect(onNavigate).toHaveBeenCalledWith("submit");
-  await user.click(screen.getByRole("button", { name: "All PRs" }));
+  await user.click(screen.getByRole("button", { name: "Review menu" }));
+  await user.click(await screen.findByRole("menuitem", { name: "All PRs" }));
   expect(onNavigate).toHaveBeenCalledWith("all");
   await user.click(
     screen.getByRole("button", { name: "Open example-org/project" }),

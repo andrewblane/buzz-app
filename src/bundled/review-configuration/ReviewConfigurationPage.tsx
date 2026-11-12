@@ -13,9 +13,17 @@ import type { RelaySession } from "../../features/relay/session";
 import {
   ArrowLeftIcon,
   ListChecksIcon,
+  MenuIcon,
 } from "../../shared/design-system/icons";
 import { NavigationItem } from "../../shared/design-system/ui/NavigationItem";
 import { Button } from "../../shared/design-system/ui/Button";
+import { IconButton } from "../../shared/design-system/ui/IconButton";
+import {
+  MenuRoot,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+} from "../../shared/design-system/ui/Menu";
 import { Field } from "../../shared/design-system/ui/Field";
 import { FullPageSurface } from "../../shared/design-system/ui/FullPageSurface";
 import { InlineHeader } from "../../shared/design-system/ui/Header";
@@ -48,7 +56,9 @@ export const reviewPageTitle = (page: ReviewPage) =>
 function Frame({
   children,
   page = "configuration",
+  actions,
 }: {
+  actions?: ReactNode;
   children: ReactNode;
   page?: ReviewPage;
 }) {
@@ -58,6 +68,7 @@ function Frame({
       <div className="review-config-page text-body">
         <PanelHeader
           title={<PanelHeaderLabel title={title} icon={<ListChecksIcon />} />}
+          actions={actions}
         />
         <div className="review-config-scroll">
           <div className="review-config-content" data-review-page={page}>
@@ -204,34 +215,37 @@ export function ReviewConfigurationCommunity({
     !selected.readOnly &&
     !!session.configArtifactWriter;
   return (
-    <Frame page={page}>
-      <div className="review-config-actions">
-        {page !== "configuration" && (
-          <Button
+    <Frame
+      page={page}
+      actions={
+        <MenuRoot>
+          <MenuTrigger
             disabled={editing || !onNavigate}
-            onClick={() => void navigate("configuration")}
-          >
-            <ArrowLeftIcon /> Back to Review Configuration
-          </Button>
-        )}
-        {page !== "submit" && (
-          <Button
-            variant="prominent"
-            disabled={editing || !onNavigate}
-            onClick={() => void navigate("submit")}
-          >
-            Submit PR
-          </Button>
-        )}
-        {page !== "all" && (
-          <Button
-            disabled={editing || !onNavigate}
-            onClick={() => void navigate("all")}
-          >
-            All PRs
-          </Button>
-        )}
-      </div>
+            render={
+              <IconButton
+                aria-label="Review menu"
+                title="Review menu"
+                icon={<MenuIcon />}
+              />
+            }
+          />
+          <MenuPopup size="compact" align="end">
+            {(["configuration", "submit", "all"] as const).map(
+              (destination) => (
+                <MenuItem
+                  key={destination}
+                  disabled={editing || !onNavigate || page === destination}
+                  aria-current={page === destination ? "page" : undefined}
+                  onClick={() => void navigate(destination)}
+                >
+                  {reviewPageTitle(destination)}
+                </MenuItem>
+              ),
+            )}
+          </MenuPopup>
+        </MenuRoot>
+      }
+    >
       {navigationError && <p role="alert">{navigationError}</p>}
       {page !== "configuration" && channels.length === 1 ? (
         <p className="text-caption text-subtle">
@@ -396,7 +410,6 @@ function ChannelConfiguration({
             </Button>
             <Button
               ref={editorTrigger}
-              variant="prominent"
               disabled={loading || !!error || !writable || remaining <= 0}
               onClick={(event) => {
                 editorTrigger.current = event.currentTarget;

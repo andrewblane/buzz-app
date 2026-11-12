@@ -6,7 +6,7 @@ Choose a channel, register a GitHub repository, add named lanes, reviewer agents
 and save. Open a repository row to manage its lanes. Saved cards show agents,
 instructions, and routing rules. **Edit lane** opens one lane; **Save lane** persists
 it before another can be added. **Back to lanes** cancels edits; **Back to repositories**
-returns to the list. The main page has **Submit PR** and **All PRs** buttons that open separate pages.
+returns to the list. The header **Review menu** opens **Review Configuration**, **Submit PR**, and **All PRs** with consistent navigation on every page.
 
 The **Submit PR** page has a full GitHub PR URL field and one
 Submit button. It finds the saved repository in the selected channel, loads current
@@ -21,7 +21,7 @@ threads or review rounds. Incomplete original submissions resume delivery from
 the original browser profile instead. These actions run only on Submit; opening
 the page or a thread never dispatches messages.
 
-All three pages use the shell's page navigation. Only Review Configuration appears in the sidebar; Submit PR and All PRs have buttons back to it. Repository and lane editing
+All three pages use the shell's page navigation. Only Review Configuration appears in the sidebar; the Review menu returns to it from Submit PR and All PRs. Repository and lane editing
 remain local sections; reloading returns Configuration to its repository list.
 The channel selection is remembered per identity/community; one eligible channel
 is selected automatically. Submit results can be recovered from All PRs
