@@ -94,13 +94,13 @@ it.each([false, true])(
   },
 );
 
-it("shares one acquisition and generation across repeated checks and sibling paths", async () => {
-  let finish!: (value: ReturnType<typeof preview>) => void;
+it("shares repeated checks while keeping sibling Git paths scoped", async () => {
+  const finishes: Array<(value: ReturnType<typeof preview>) => void> = [];
   const checkGit = vi.fn(
     () =>
-      new Promise<ReturnType<typeof preview>>((resolve) => {
-        finish = resolve;
-      }),
+      new Promise<ReturnType<typeof preview>>((resolve) =>
+        finishes.push(resolve),
+      ),
   );
   const checks = createPluginUpdateChecks({
     checkGit,
@@ -110,11 +110,25 @@ it("shares one acquisition and generation across repeated checks and sibling pat
   const again = checks.check(plugin());
   const sibling = checks.check(plugin("example.two", "two"));
   await Promise.resolve();
-  expect(checkGit).toHaveBeenCalledOnce();
+  expect(checkGit).toHaveBeenCalledTimes(2);
+  expect(checkGit).toHaveBeenNthCalledWith(
+    1,
+    "https://example.com/plugins",
+    "main",
+    undefined,
+    { commit: undefined, path: "one" },
+  );
+  expect(checkGit).toHaveBeenNthCalledWith(
+    2,
+    "https://example.com/plugins",
+    "main",
+    undefined,
+    { commit: undefined, path: "two" },
+  );
   expect(pluginUpdateCheck(checks.snapshot(), plugin())?.sequence).toBe(
     sequence,
   );
-  finish(preview("new"));
+  for (const finish of finishes) finish(preview("new"));
   await Promise.all([first, again, sibling]);
   expect(pluginUpdateAvailable(checks.snapshot(), plugin())).toBe(true);
   expect(

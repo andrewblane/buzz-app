@@ -1031,6 +1031,27 @@ export function Settings({
       navigation?.savePosition(PLUGIN_DETAILS, null);
     }
   }, [catalog, navigation, selectedPlugin, selectedPluginId]);
+  const closePluginImport = () => {
+    // "Open in Buzz" and "Open plugin" show their plugin before this dismissal
+    // lands. An install finishing after Back closes nothing.
+    if (
+      navigation?.target.kind === "settings" &&
+      navigation.target.pluginImport &&
+      navigation.entryId === currentNavigation.current?.entryId
+    )
+      closingVisit.current = true;
+    onPluginImportClosed?.();
+  };
+  const openInstalledPlugin = (id: string) => {
+    pluginTrigger.current =
+      [
+        ...(pluginSection.current?.querySelectorAll<HTMLButtonElement>(
+          "button[data-plugin-id]",
+        ) ?? []),
+      ].find((button) => button.dataset.pluginId === id) ?? null;
+    setActivationAttempt(undefined);
+    showPluginDetails(id);
+  };
   const closePluginDetails = () => {
     holdPluginRow(pluginTrigger.current);
     restorePluginFocus.current = true;
@@ -1635,6 +1656,7 @@ export function Settings({
                 catalog={catalog}
                 busy={busy}
                 returnFocus={() => pluginSection.current}
+                onOpenInstalled={openInstalledPlugin}
               />
             )}
             {catalog && linkedPlugin && "url" in linkedPlugin && (
@@ -1647,7 +1669,8 @@ export function Settings({
                 requester="A link"
                 holdReview={installRequests?.holdReview}
                 returnFocus={() => pluginSection.current}
-                onClose={() => onPluginImportClosed?.()}
+                onOpenInstalled={openInstalledPlugin}
+                onClose={closePluginImport}
               />
             )}
             {catalog ? (
@@ -1663,17 +1686,7 @@ export function Settings({
                     : undefined
                 }
                 requestSignal={navigation?.signal}
-                onClosed={() => {
-                  // "Open in Buzz" shows its plugin before this dismissal
-                  // lands. An install finishing after Back closes nothing.
-                  if (
-                    navigation?.target.kind === "settings" &&
-                    navigation.target.pluginImport &&
-                    navigation.entryId === currentNavigation.current?.entryId
-                  )
-                    closingVisit.current = true;
-                  onPluginImportClosed?.();
-                }}
+                onClosed={closePluginImport}
                 actionTarget={pluginImportActions}
                 request={
                   installRequest && !isUrlInstallSource(installRequest.source)
@@ -1689,16 +1702,7 @@ export function Settings({
                 catalog={catalog}
                 busy={busy}
                 authorizeGit={authorizePluginGit}
-                onOpenInstalled={(id) => {
-                  pluginTrigger.current =
-                    [
-                      ...(pluginSection.current?.querySelectorAll<HTMLButtonElement>(
-                        "button[data-plugin-id]",
-                      ) ?? []),
-                    ].find((button) => button.dataset.pluginId === id) ?? null;
-                  setActivationAttempt(undefined);
-                  showPluginDetails(id);
-                }}
+                onOpenInstalled={openInstalledPlugin}
                 returnFocus={() => detailsClose.current ?? visibleReturn(null)}
               />
             ) : configuration.status === "recovery" ? (

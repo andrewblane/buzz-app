@@ -1,3 +1,4 @@
+import { gitScope } from "./git-scope";
 import { samePluginRelease } from "./same-release";
 import type {
   ImportPreview,
@@ -89,7 +90,7 @@ export function createPluginUpdateChecks(imports: PluginImports | undefined) {
     const key = JSON.stringify(
       "root" in source
         ? ["folder", id, source.root, source.path]
-        : ["git", source.repository, source.reference],
+        : ["git", source.repository, source.reference, source.path],
     );
     const active = () => current() && (!("root" in source) || folderEligible());
     let request = pending.get(key);
@@ -118,6 +119,7 @@ export function createPluginUpdateChecks(imports: PluginImports | undefined) {
             signed?.repository ?? source.repository,
             source.reference,
             signed?.token,
+            ...gitScope(undefined, source.path),
           );
         } finally {
           const next = gitQueue.shift();

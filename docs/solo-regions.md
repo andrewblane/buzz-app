@@ -36,6 +36,14 @@ and `-end` for row geometry. Other host classes and module class names are
 private. Conversations are not drag sources and cannot file into personal
 workspaces.
 
+A source can open a channel that also appears in Team with
+`ctx.navigation.open(target, { sidebar: "preserve" })`. This opening keeps the
+sidebar scope, scroll, and disclosure state. It does not select or reveal the
+Team row. The source supplies its own selected row. Check
+`ctx.navigation.snapshot().attempt.sidebar` along with the target to select it
+only for this opening. Retry retains the option. Later opens and Back/Forward
+use the normal destination rules. The option does not change access or focus.
+
 `data-solo-destination-id` is a supported behavior hook. A primary
 `Conversation.Link` carries its channel ID; secondary links omit the marker.
 Recovery destinations use the same marker. Nexus uses it to identify dragged
@@ -47,6 +55,22 @@ The host retains one JSON state value per scope, viewer, and source key across
 unmount, disposal, and registration. It accepts at most 16 KiB. A failed or stale
 write returns false and does not update the memory value. Sources must keep their
 own accepted state unchanged when a write fails.
+
+`handle.state(binding)` returns `get()`, `set(value)`, and
+`subscribe(listener)` for this same record. It works before the component mounts.
+The component's `state` has the same methods. `get()` returns `undefined` when
+the record is absent and preserves JSON `null`. It throws when the binding ends,
+the saved JSON is invalid, or storage is unavailable without an accepted memory
+value. `set()` returns false for a stale binding, an invalid value, an oversized
+value, or a failed storage write. Writes replace the whole record; the last write
+wins. This is device state, with no relay read or write.
+
+Subscribers receive local writes and matching storage events from other windows.
+The listener reads the current value with `get()`; it receives no initial call.
+Unrelated keys do not notify it. The returned function ends the subscription.
+Binding abort and source disposal also remove it. `state(binding)` and
+`subscribe()` throw for an ended binding. Source disposal preserves saved bytes.
+Plugins must require a host release with `handle.state` before they use this API.
 
 `openDraft` opens the host's New chat editor for the region, optionally in a
 workspace, with its own draft, files, model, and effort. Send works like an
