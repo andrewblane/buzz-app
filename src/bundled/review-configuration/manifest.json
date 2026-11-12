@@ -2,7 +2,7 @@
   "id": "buzz.review-configuration",
   "name": "Review Configuration",
   "apiVersion": 1,
-  "description": "Save repository and lane settings for review workflows.",
+  "description": "Configure review lanes and submit PRs to assigned reviewers.",
   "discovery": {
     "category": "productivity",
     "tags": ["code", "tasks"]

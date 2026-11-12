@@ -3,34 +3,35 @@
 An optional bundled plugin with a separate sidebar page for repository review
 settings. Enable **Review Configuration** in Settings → Plugins → Manage plugins.
 Choose a channel, register a GitHub repository, add named lanes, reviewer agents, and instructions,
-and save. Open a repository row to work with one repository at a time. Its **Configuration**
-section contains lane settings; **Pull requests** contains Submit PR and Existing PRs.
-Saved lane cards show their agents, instructions, and rules. **Edit lane** opens one lane;
-**Save lane** persists it before another can be added with the bottom **Add lane** button.
-**Back to lanes** cancels the editor; **Back to repositories** returns to the list. Cancel or save a draft before
-switching sections or repositories. These are local page sections: reload returns
-to the repository list; they do not create separate shell tabs or history visits. The page
-remembers your channel per identity/community and selects it automatically when
-only one eligible channel is available.
+and save. Open a repository row to manage its lanes. Saved cards show agents,
+instructions, and routing rules. **Edit lane** opens one lane; **Save lane** persists
+it before another can be added. **Back to lanes** cancels edits; **Back to repositories**
+returns to the list. Configuration contains no PR submission controls.
 
-From the repository list, **Submit PR** accepts a full GitHub PR URL and finds
-its configured repository in the selected channel. Unknown repositories must be
-registered first. The matched repository opens in Pull requests with the URL
-filled in; Load PR details previews its matching lanes before sending.
+The separate **Submit PR** sidebar page has a full GitHub PR URL field and one
+Submit button. It finds the saved repository in the selected channel, loads current
+PR metadata, and assigns the first configured reviewer per matching lane. Missing
+configuration, unavailable reviewers, and zero matching lanes produce an error
+without starting threads. Results show assigned reviewers and thread buttons.
+Existing PRs are listed below, with optional details collapsed.
 
-In a repository’s **Pull requests** section, use **Submit PR**, enter a PR number or URL, and
-load PR details to preview matching lanes, then choose one configured reviewer
-per matching lane. **Start review threads** saves the instruction snapshot,
-creates one thread per matching lane with no overview, and mentions
-each selected reviewer with the complete lane instructions. The list retains
-thread links and delivery status. Sending does not prove that an agent is running
-or reviewing. No model process or reminder timer is started by this plugin.
+Submitting an already-delivered PR sends a reviewer mention in each saved lane
+thread. It preserves the saved reviewers and instructions and creates no new
+threads or review rounds. Incomplete original submissions resume delivery from
+the original browser profile instead. These actions run only on Submit; opening
+the page or a thread never dispatches messages.
+
+Both sidebar pages use the shell's page navigation. Repository and lane editing
+remain local sections; reloading returns Configuration to its repository list.
+The channel selection is remembered per identity/community; one eligible channel
+is selected automatically. Submit results can be recovered from Existing PRs
+following reload; navigation never replays Submit automatically.
 
 ## Getting started
 
 Enable this plugin in **Settings → Plugins → Manage plugins**, then open its
 sidebar entry. Choose a channel and register a repository. For each lane, select
-reviewer agents, enter instructions, and configure at least one routing rule, then save. Open its Configuration section to edit settings.
+reviewer agents, enter instructions, and configure at least one routing rule, then save. Open the repository to edit settings.
 These selections do not start reviews or grant agents access to the channel.
 
 ---
@@ -101,39 +102,43 @@ lab with registered identities alone cannot execute a review.
 ## Submissions and recovery
 
 One `buzz.review.submission` artifact per channel/repository/PR stores the selected
-reviewers, instructions, configuration revision, and message IDs. Repeating a PR
-returns that record; resubmission rounds are not implemented. The PR URL is
-validated against the repository. GitHub title, labels, file count, changed paths,
-and base/head commits are read before preview and rechecked before submission.
-If they change, confirm the updated preview before sending. The reviewer is
-asked to report the exact commit reviewed; this does not pin their checkout.
-Earlier version-1 submissions retain their overview and original thread IDs for
-recovery. New version-2 submissions store only matching lanes and their threads. This does not post a GitHub review or claim an approval.
+reviewers, instructions, configuration revision, and message IDs. New version-2
+submissions store only matching lane threads. Earlier version-1 submissions retain
+their overview and original lane IDs. Explicit resubmission notifies lane reviewers
+only, never the overview. Reviewer ownership and availability are revalidated;
+the outbox verifies channel membership before publishing mentions.
 
-Artifact create/CAS prevents competing submissions. A local profile identifier
-and Web Lock serialize delivery in the submitting profile; outbox recovery keeps
-the exact messages through lost receipts or interrupted artifact saves.
-**Resume submission** explicitly retries saved messages. A duplicate submission
-first returns the saved preview; it never silently dispatches an older selection. Other profiles can read
-the links but cannot take over incomplete delivery. If the original profile's
-recovery storage is lost, delivery stops instead of risking duplicate threads.
-Dispatch intent is saved before enqueueing. If that intent survives but both the
-message ID and recovery journal are missing, the row shows unconfirmed delivery
-and stops. A proven rejection before enqueue clears that intent for a later retry.
-A missing outbox message with a known ID is checked against the relay before
-recording delivery.
-No background retries, polling, or model runtime are added.
+The URL identifies the repository. Each Submit reads saved configuration fresh.
+For a new submission, the reader obtains complete and consistent GitHub title,
+labels, file count, paths, and base/head commits before routing. Existing submissions
+reuse their snapshot without requiring a GitHub read. Reviewers must verify the
+current PR and report the commit they reviewed; this does not pin their checkout.
 
-Opening Pull requests adds one bounded submissions read (latest 100, with truncation
-notice). Submission explicitly reads the current record and reviewer profiles,
-refreshes agent choices, and uses the outbox's per-message membership preflight.
-Reconnect introduces no new plugin reads.
+Artifact create/CAS prevents competing initial submissions. A Web Lock serializes
+operations in the same profile. Original delivery belongs to the submitting profile;
+other profiles may read its links but cannot take over incomplete initial delivery.
+Dispatch intent is saved before enqueue, and the durable outbox retains message
+identities through interrupted saves or uncertain receipts. Missing recovery data
+stops delivery instead of creating replacement threads.
 
-Try Submit PR → Load PR details → Start review threads → reload → Open a lane thread. Check that
-the PR, reviewer mention and complete instructions are present. Submit the same
-PR again: it must reuse the saved threads. Test interrupted delivery with Resume
-from the same browser profile. Reminders, review verdict tracking, GitHub status
-synchronization, and new review rounds remain future work.
+Explicit notifications use a recovery key per saved lane thread in the current
+identity/community's outbox. Successful receipts remain until the batch succeeds,
+so retrying a partial batch does not recreate its acknowledged messages. After
+completion another explicit Submit starts another notification batch. These are
+user-triggered follow-ups, not an exactly-once cross-device notification guarantee.
+A failed notification leaves existing thread buttons available and reports failure.
+
+Opening Submit PR reads the latest 100 submissions once, with truncation/error
+feedback. Submit reads configurations and the current submission, then verifies
+reviewer profiles and ownership before dispatch. No polling or reconnect reads
+are added. No GitHub comments, verdict synchronization, scheduled reminders, or
+agent runtime are added.
+
+Try a fresh test PR URL → Submit PR → Open a lane thread. Check its URL, reviewer
+mention, and complete instructions. Submit the same URL again: the same threads
+must receive follow-ups. Check unknown repositories, zero matching lanes, and
+interrupted delivery. Required channel membership and connected reviewer runtimes
+are separate from configuration.
 
 ## Routing rules
 
@@ -150,4 +155,4 @@ Desktop reads use the existing signed-in GitHub CLI. Browser reads use GitHub's
 public API without credentials, so private PRs and rate-limited requests need the
 desktop host. The reader rejects incomplete/changing metadata and supports at
 most 3,000 changed files and 100 labels; it never routes on a truncated file list.
-Metadata is fetched only on Load PR details and submission; there is no poller.
+Metadata is fetched during new submission only; there is no poller.

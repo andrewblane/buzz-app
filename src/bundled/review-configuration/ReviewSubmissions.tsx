@@ -1,543 +1,345 @@
-import { createPullReader, pullFingerprint, type ReadPull } from "./pull-facts";
-import { laneMatches, type PullFacts } from "./routing";
-const publicPullReader = createPullReader();
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAgentChoices } from "../../features/agents/use-choices";
 import type { RelaySession } from "../../features/relay/session";
 import { Accordion } from "../../shared/design-system/ui/Accordion";
 import { Button } from "../../shared/design-system/ui/Button";
 import { Field } from "../../shared/design-system/ui/Field";
 import { InlineHeader } from "../../shared/design-system/ui/Header";
+import { LoadingRegion } from "../../shared/design-system/ui/LoadingRegion";
 import { Input } from "../../shared/design-system/ui/Input";
-import { Select } from "../../shared/design-system/ui/Select";
-import { SettingsGroup } from "../../shared/design-system/ui/SettingsGroup";
-import type { SavedReviewConfig } from "./configuration";
+import { ReviewerIdentity } from "./LaneReviewers";
+import { loadConfigurations } from "./configuration";
+import { createPullReader, type ReadPull } from "./pull-facts";
 import {
   loadSubmissions,
   prUrl,
+  pullRepository,
+  pullRequest,
   submitReview,
   submissionLane,
-  pullRequest,
   type SavedSubmission,
 } from "./submissions";
+
+const publicPullReader = createPullReader();
 
 export function ReviewSubmissions({
   session,
   channel,
-  configurations,
-  initialPull = "",
-  disabled,
   writable,
   onEditingChange,
   onOpenThread,
   readPull = publicPullReader,
 }: {
   session: RelaySession;
-  readPull?: ReadPull;
   channel: string;
-  configurations: readonly SavedReviewConfig[];
-  initialPull?: string;
-  disabled: boolean;
   writable: boolean;
   onEditingChange: (editing: boolean) => void;
   onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
+  readPull?: ReadPull;
 }) {
-  const [rows, setRows] = useState<SavedSubmission[]>([]);
-  const [reload, setReload] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const choices = useAgentChoices(session, true, true);
+  const [pr, setPr] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [status, setStatus] = useState("");
+  const [result, setResult] = useState<SavedSubmission>();
+  const [rows, setRows] = useState<SavedSubmission[]>([]);
+  const input = useRef<HTMLInputElement>(null);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState("");
   const [warning, setWarning] = useState("");
-  const [draft, setDraft] = useState<
-    | {
-        config: SavedReviewConfig;
-        existing?: SavedSubmission;
-      }
-    | undefined
-  >(() =>
-    initialPull && configurations[0]
-      ? { config: configurations[0] }
-      : undefined,
-  );
-  const trigger = useRef<HTMLButtonElement | null>(null);
+  const [reload, setReload] = useState(0);
+  const operation = useRef<AbortController | undefined>(undefined);
+  useEffect(() => () => operation.current?.abort(), []);
   useEffect(() => {
-    onEditingChange(!!draft);
-    if (!draft) trigger.current?.focus();
+    onEditingChange(busy || !!pr.trim());
     return () => onEditingChange(false);
-  }, [draft, onEditingChange]);
+  }, [busy, pr, onEditingChange]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reload is an explicit fresh read.
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
-    setError("");
+    setListError("");
+    setListLoading(true);
     loadSubmissions(
       session,
       channel,
       AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]),
     )
-      .then((result) => {
-        if (!controller.signal.aborted) {
-          setRows(result.rows);
-          setWarning(result.warning);
-        }
+      .then((next) => {
+        if (controller.signal.aborted) return;
+        // A list read can finish after Submit; keep the action's newer result.
+        setRows((current) => [
+          ...current,
+          ...next.rows.filter(
+            (row) =>
+              !current.some((item) => item.artifactId === row.artifactId),
+          ),
+        ]);
+        setWarning(next.warning);
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted)
-          setError(
+          setListError(
             reason instanceof Error
               ? reason.message
-              : "Could not load submissions.",
+              : "Could not load previous submissions.",
           );
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) setListLoading(false);
       });
     return () => controller.abort();
   }, [session, channel, reload]);
-  const visibleRows = rows.filter((row) =>
-    configurations.some(
-      (config) => config.config.repository === row.value.config.repository,
-    ),
-  );
-  return (
-    <section className="review-config-form" aria-label="PR submissions">
-      <div className="review-config-actions">
-        <Button
-          ref={trigger}
-          variant="prominent"
-          disabled={
-            disabled ||
-            loading ||
-            !!draft ||
-            !writable ||
-            !configurations.length
-          }
-          onClick={(event) => {
-            trigger.current = event.currentTarget;
-            const first = configurations[0];
-            if (first) setDraft({ config: first });
-          }}
-        >
-          Submit PR
-        </Button>
-      </div>
-      {draft && (
-        <SubmissionForm
-          key={draft.existing?.artifactId ?? "new"}
-          session={session}
-          channel={channel}
-          configurations={configurations}
-          initial={draft.config}
-          initialPull={initialPull}
-          readPull={readPull}
-          existing={draft.existing}
-          writable={writable && !loading && !error}
-          onClose={() => setDraft(undefined)}
-          onProgress={(record) =>
-            setRows((current) => [
-              record,
-              ...current.filter((row) => row.artifactId !== record.artifactId),
-            ])
-          }
-        />
-      )}
-      <section className="review-config-form" aria-label="Existing PRs">
-        <InlineHeader title="Existing PRs" />
-        <div>
-          <Button
-            disabled={disabled || !!draft || loading}
-            onClick={() => setReload((value) => value + 1)}
-          >
-            Reload submissions
-          </Button>
-        </div>
-        {loading && <p role="status">Loading submissions…</p>}
-        {error && (
-          <p role="alert">{error} Use Reload submissions to try again.</p>
-        )}
-        {warning && <p role="alert">{warning}</p>}
-        {!loading && !error && !visibleRows.length && (
-          <p>No PRs submitted for this repository.</p>
-        )}
-        <Accordion
-          variant="form"
-          items={visibleRows.map((row) => ({
-            value: row.artifactId,
-            title: (
-              <span className="review-config-pr-summary">
-                <span>
-                  {row.value.config.repository}#{row.value.pr}
-                </span>
-                <span className="text-caption text-subtle">
-                  {row.value.threads.every((thread) => thread.delivered)
-                    ? "Requests delivered"
-                    : "Delivery incomplete"}
-                </span>
-              </span>
-            ),
-            content: (
-              <section
-                className="review-config-lane"
-                aria-label={`${row.value.config.repository}#${row.value.pr}`}
-              >
-                <p>{prUrl(row.value)}</p>
-                {row.value.threads.map((thread, index) => (
-                  <div
-                    key={submissionLane(row.value, index)?.id ?? "overview"}
-                    className="review-config-actions"
-                  >
-                    <span>
-                      {submissionLane(row.value, index)?.name ??
-                        "Overview (earlier submission)"}
-                      :{" "}
-                      {thread.delivered
-                        ? "Request delivered"
-                        : thread.id || thread.started
-                          ? "Delivery unconfirmed"
-                          : "Not sent"}
-                    </span>
-                    {thread.id && (
-                      <Button
-                        disabled={!onOpenThread || !!draft || disabled}
-                        onClick={async () => {
-                          try {
-                            if (thread.id)
-                              await onOpenThread?.(channel, thread.id);
-                          } catch (reason) {
-                            setError(
-                              reason instanceof Error
-                                ? reason.message
-                                : "Could not open thread.",
-                            );
-                          }
-                        }}
-                      >
-                        Open{" "}
-                        {submissionLane(row.value, index)?.name ?? "overview"}{" "}
-                        thread
-                      </Button>
-                    )}
-                  </div>
-                ))}
-                {!row.value.threads.every((thread) => thread.delivered) && (
-                  <div>
-                    <Button
-                      disabled={disabled || loading || !!draft || !writable}
-                      onClick={(event) => {
-                        trigger.current = event.currentTarget;
-                        setDraft({
-                          config: {
-                            config: row.value.config,
-                            revision: row.value.configRevision,
-                            artifactId: "",
-                          },
-                          existing: row,
-                        });
-                      }}
-                    >
-                      Resume submission
-                    </Button>
-                  </div>
-                )}
-              </section>
-            ),
-          }))}
-        />
-      </section>
-    </section>
-  );
-}
 
-function SubmissionForm({
-  session,
-  channel,
-  configurations,
-  initial,
-  initialPull,
-  existing,
-  writable,
-  onClose,
-  onProgress,
-  readPull,
-}: {
-  session: RelaySession;
-  readPull: ReadPull;
-  channel: string;
-  configurations: readonly SavedReviewConfig[];
-  initial: SavedReviewConfig;
-  initialPull: string;
-  existing: SavedSubmission | undefined;
-  writable: boolean;
-  onClose: () => void;
-  onProgress: (record: SavedSubmission) => void;
-}) {
-  const choices = useAgentChoices(session, true, true);
-  const [config, setConfig] = useState(initial);
-  const [pr, setPr] = useState(
-    existing ? String(existing.value.pr) : initialPull,
-  );
-  const [reviewers, setReviewers] = useState(
-    initial.config.lanes.map((lane) => lane.reviewers[0] ?? ""),
-  );
-  const [facts, setFacts] = useState<PullFacts>();
-  const matched = useMemo(
-    () =>
-      config.config.lanes.map(
-        (lane) => !!facts && laneMatches(lane.routing, facts),
-      ),
-    [config.config.lanes, facts],
-  );
-  const [reading, setReading] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [started, setStarted] = useState(!!existing);
-  const operation = useRef<AbortController | undefined>(undefined);
-  useEffect(() => () => operation.current?.abort(), []);
-  async function preview() {
-    if (operation.current) return;
-    const controller = new AbortController();
-    operation.current = controller;
-    setReading(true);
-    setFacts(undefined);
-    setError("");
-    try {
-      const next = await readPull(
-        config.config.repository,
-        pullRequest(pr, config.config.repository),
-        AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]),
-      );
-      if (!controller.signal.aborted) setFacts(next);
-    } catch (reason) {
-      if (!controller.signal.aborted)
-        setError(
-          reason instanceof Error ? reason.message : "Could not load PR.",
-        );
-    } finally {
-      operation.current = undefined;
-      if (!controller.signal.aborted) setReading(false);
-    }
-  }
   async function submit() {
     if (operation.current || !writable) return;
     const controller = new AbortController();
+    const signal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(120_000),
+    ]);
     operation.current = controller;
     setBusy(true);
     setError("");
-    let recorded = started;
+    setResult(undefined);
+    setStatus("Finding repository and assigning reviewers…");
+    let existing = false;
+    let recorded = false;
+    let alreadyComplete: boolean | undefined;
     try {
-      if (!started) {
-        if (!facts)
-          throw new Error("Load PR details to preview matching lanes first.");
-        const current = await readPull(
-          config.config.repository,
-          pullRequest(pr, config.config.repository),
-          AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]),
-        );
-        if (pullFingerprint(current) !== pullFingerprint(facts)) {
-          setFacts(current);
+      const repository = pullRepository(pr);
+      const configurations = await loadConfigurations(session, channel, signal);
+      const saved = configurations.rows.find(
+        (row) => row.config.repository === repository,
+      );
+      if (!saved) {
+        if (configurations.truncated || configurations.unreadable)
           throw new Error(
-            "The PR changed. Review the updated matching lanes before starting threads.",
+            "Could not confirm this repository's configuration. Check Review Configuration and try again.",
           );
-        }
+        throw new Error(
+          `${repository} is not configured in this channel. Add it in Review Configuration, then submit again.`,
+        );
       }
-      await submitReview(
+      const record = await submitReview(
         session,
         channel,
-        config,
+        saved,
         pr,
-        reviewers,
-        AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]),
-        (record) => {
-          if (!controller.signal.aborted) {
-            recorded = true;
-            setStarted(true);
-            setConfig({
-              config: record.value.config,
-              revision: record.value.configRevision,
-              artifactId: config.artifactId,
-            });
-            setPr(String(record.value.pr));
-            setReviewers(
-              record.value.config.lanes.map((lane) => lane.reviewers[0] ?? ""),
-            );
-            onProgress(record);
-          }
+        saved.config.lanes.map((lane) => lane.reviewers[0] ?? ""),
+        signal,
+        (next) => {
+          if (controller.signal.aborted) return;
+          recorded = true;
+          alreadyComplete ??= next.value.threads.every(
+            (thread) => thread.delivered,
+          );
+          setResult(next);
+          setRows((current) => [
+            next,
+            ...current.filter((row) => row.artifactId !== next.artifactId),
+          ]);
         },
-        started,
-        facts,
+        true,
+        () => readPull(repository, pullRequest(pr, repository), signal),
+        () => {
+          existing = true;
+        },
       );
-      if (!controller.signal.aborted) onClose();
+      if (controller.signal.aborted) return;
+      setResult(record);
+      setStatus(
+        existing && alreadyComplete
+          ? "Already exists — reviewers notified in their existing threads."
+          : "Submitted — reviewers assigned and requests delivered.",
+      );
     } catch (reason) {
-      if (!controller.signal.aborted)
+      if (!controller.signal.aborted) {
+        setStatus("");
         setError(
-          `${reason instanceof Error ? reason.message : "Could not submit."} ${recorded ? "Saved messages are retained. Close and reload submissions to check progress; Resume retries the same messages." : "Your draft is still here."}`,
+          `${reason instanceof Error ? reason.message : "Could not submit PR."}${recorded ? " Existing threads are preserved. Submit again to retry unconfirmed delivery." : ""}`,
         );
+      }
     } finally {
       operation.current = undefined;
       if (!controller.signal.aborted) setBusy(false);
     }
   }
+
+  function threads(row: SavedSubmission) {
+    return (
+      <section
+        className="review-config-form"
+        aria-label={`${row.value.config.repository}#${row.value.pr} reviewers`}
+      >
+        {row.value.threads.map((thread, index) => {
+          const lane = submissionLane(row.value, index);
+          return (
+            <div
+              key={lane?.id ?? "overview"}
+              className="review-config-actions review-config-result-row"
+            >
+              <span className="text-caption text-subtle">
+                {lane?.name ?? "Overview (earlier submission)"}
+              </span>
+              {lane?.reviewers.map((pubkey) => (
+                <ReviewerIdentity
+                  key={pubkey}
+                  pubkey={pubkey}
+                  choices={choices}
+                />
+              ))}
+              <div className="review-config-actions">
+                {thread.id ? (
+                  <Button
+                    disabled={busy || !onOpenThread}
+                    onClick={async () => {
+                      try {
+                        if (thread.id) await onOpenThread?.(channel, thread.id);
+                      } catch (reason) {
+                        setError(
+                          reason instanceof Error
+                            ? reason.message
+                            : "Could not open thread.",
+                        );
+                      }
+                    }}
+                  >
+                    Open {lane?.name ?? "overview"} thread
+                  </Button>
+                ) : (
+                  <span>Thread delivery pending</span>
+                )}
+                {!thread.delivered && thread.id && (
+                  <span>Delivery unconfirmed</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </section>
+    );
+  }
+
   return (
-    <form
-      className="review-config-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
-    >
-      <InlineHeader
-        title={started ? "Resume saved submission" : "New PR submission"}
-      />
-      <SettingsGroup layout="form">
-        {configurations.length > 1 && (
-          <Select
-            label="Repository to review"
-            variant="field"
-            value={config.config.repository}
-            disabled={busy || reading || started}
-            groups={[
-              {
-                label: "Repositories",
-                options: (existing ? [config] : configurations).map((row) => ({
-                  value: row.config.repository,
-                  label: row.config.repository,
-                })),
-              },
-            ]}
-            onValueChange={(repository) => {
-              const row = configurations.find(
-                (item) => item.config.repository === repository,
-              );
-              if (row) {
-                setFacts(undefined);
-                setConfig(row);
-                setReviewers(
-                  row.config.lanes.map((lane) => lane.reviewers[0] ?? ""),
-                );
-              }
-            }}
-          />
-        )}
+    <section className="review-config-form" aria-label="PR submissions">
+      <form
+        className="review-config-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
         <Field
-          label="Pull request"
-          description="Enter a PR number or full GitHub PR URL, then load its details to preview matching lanes."
+          label="GitHub PR URL"
+          description="We’ll assign a reviewer to each matching lane. Submitting an existing PR notifies its reviewers again."
         >
           <Input
-            autoFocus
+            ref={input}
             required
             maxLength={300}
-            placeholder="https://github.com/example-org/project/pull/123"
             value={pr}
-            disabled={busy || reading || started}
+            disabled={busy}
+            placeholder="https://github.com/example-org/project/pull/123"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             onValueChange={(value) => {
               setPr(value);
-              setFacts(undefined);
+              setError("");
+              setStatus("");
+              setResult(undefined);
             }}
           />
         </Field>
-      </SettingsGroup>
-      {!started && (
-        <div className="review-config-form">
-          <div>
-            <Button
-              disabled={busy || reading || !pr.trim()}
-              loading={reading}
-              onClick={() => void preview()}
-            >
-              Load PR details
-            </Button>
-          </div>
-          {facts && (
-            <>
-              <p>
-                {facts.title} · {facts.changedFiles} changed files · Labels:{" "}
-                {facts.labels.join(", ") || "none"}
-              </p>
-              <p>
-                Matching lanes:{" "}
-                {config.config.lanes
-                  .filter((_, index) => matched[index])
-                  .map((lane) => lane.name)
-                  .join(", ") ||
-                  "None. Adjust the lane rules before submitting."}
-              </p>
-              <p>
-                Other lanes:{" "}
-                {config.config.lanes
-                  .filter((_, index) => !matched[index])
-                  .map((lane) => lane.name)
-                  .join(", ") || "none"}
-              </p>
-            </>
-          )}
+        <div>
+          <Button
+            type="submit"
+            variant="prominent"
+            loading={busy}
+            disabled={!writable || !pr.trim()}
+          >
+            Submit PR
+          </Button>
         </div>
-      )}
-      {config.config.lanes.map((lane, index) =>
-        !started && !matched[index] ? null : (
-          <section key={lane.id} className="review-config-lane">
-            <Select
-              variant="field"
-              label={`${lane.name} reviewer`}
-              value={reviewers[index] ?? ""}
-              required
-              disabled={busy || reading || started}
-              placeholder="Choose a reviewer"
-              groups={[
-                {
-                  label: "Configured reviewers",
-                  options: lane.reviewers.map((key) => {
-                    const choice = choices.selectable.find(
-                      (item) => item.pubkey === key,
-                    );
-                    return {
-                      value: key,
-                      label:
-                        choice?.managedName ??
-                        choice?.name ??
-                        `Unavailable (${key.slice(0, 10)})`,
-                      disabled: !choice,
-                    };
-                  }),
-                },
-              ]}
-              onValueChange={(value) =>
-                setReviewers((current) =>
-                  current.map((item, i) => (i === index ? value : item)),
-                )
-              }
-            />
-            <details>
-              <summary>Instructions for {lane.name}</summary>
-              <p className="review-config-instructions">{lane.instructions}</p>
-            </details>
-          </section>
-        ),
-      )}
-      <p>
-        This sends a request to one reviewer per matching lane in this channel,
-        with no extra overview thread. Reviewers must belong to your signed-in
-        identity and already have channel access. Their model runner must be
-        connected to reply.
-      </p>
+      </form>
       {error && <p role="alert">{error}</p>}
-      {busy && <p role="status">Saving submission and delivering threads…</p>}
-      <div className="review-config-actions">
-        <Button disabled={busy || reading} onClick={onClose}>
-          {started ? "Close" : "Cancel"}
-        </Button>
-        <Button
-          type="submit"
-          variant="prominent"
-          loading={busy}
-          disabled={
-            !writable ||
-            choices.pending ||
-            reading ||
-            (!started && (!facts || !matched.some(Boolean)))
-          }
+      {status && <p role="status">{status}</p>}
+      {result && (
+        <section className="review-config-form" aria-label="Submission result">
+          <InlineHeader
+            title={`${result.value.config.repository}#${result.value.pr}`}
+          />
+          {threads(result)}
+        </section>
+      )}
+      <section className="review-config-form" aria-label="Existing PRs">
+        <InlineHeader title="Existing PRs" />
+        <LoadingRegion
+          pending={listLoading}
+          label="Loading submissions…"
+          statusVisibility="screen-reader"
         >
-          {started ? "Resume delivery" : "Start review threads"}
-        </Button>
-      </div>
-    </form>
+          {!listLoading && !listError && !rows.length && (
+            <p>No PRs submitted in this channel yet.</p>
+          )}
+        </LoadingRegion>
+        {listError && (
+          <>
+            <p role="alert">{listError}</p>
+            <div>
+              <Button
+                disabled={busy}
+                onClick={() => setReload((value) => value + 1)}
+              >
+                Reload submissions
+              </Button>
+            </div>
+          </>
+        )}
+        {warning && <p role="alert">{warning}</p>}
+        <Accordion
+          variant="form"
+          items={rows
+            .filter((row) => row.artifactId !== result?.artifactId)
+            .map((row) => ({
+              value: row.artifactId,
+              title: (
+                <span className="review-config-pr-summary">
+                  <span>
+                    {row.value.config.repository}#{row.value.pr}
+                  </span>
+                  <span className="text-caption text-subtle">
+                    {row.value.threads.every((thread) => thread.delivered)
+                      ? "Requests delivered"
+                      : "Delivery incomplete"}
+                  </span>
+                </span>
+              ),
+              content: (
+                <div className="review-config-form">
+                  {threads(row)}
+                  <div>
+                    <Button
+                      disabled={busy}
+                      onClick={() => {
+                        setPr(prUrl(row.value));
+                        input.current?.focus();
+                        setResult(row);
+                        setError("");
+                        setStatus(
+                          "Submit again to notify reviewers or resume incomplete delivery.",
+                        );
+                      }}
+                    >
+                      Use this PR
+                    </Button>
+                  </div>
+                </div>
+              ),
+            }))}
+        />
+      </section>
+    </section>
   );
 }

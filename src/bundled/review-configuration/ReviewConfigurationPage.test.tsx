@@ -483,64 +483,33 @@ it("preserves the remembered channel until pending metadata finishes", async () 
   );
 });
 
-it("separates a repository's PR activity and guards drafts before switching views", async () => {
+it("keeps submission controls out of configuration and preserves lane drafts", async () => {
   const test = fixture();
   render(<ReviewConfigurationCommunity session={test.session} />);
   const user = await openDraft();
   await user.click(screen.getByRole("button", { name: "Save lane" }));
   await screen.findByText("Saved example-org/project.");
   expect(screen.queryByRole("region", { name: "PR submissions" })).toBeNull();
-  await user.click(screen.getByRole("tab", { name: "Pull requests" }));
-  await screen.findByRole("button", { name: "Submit PR" });
-  expect(
-    screen.queryByRole("button", { name: "Edit General lane" }),
-  ).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Submit PR" }));
-  expect(
-    screen.queryByRole("combobox", { name: "Repository to review" }),
-  ).toBeNull();
-  expect(
-    screen
-      .getByRole("tab", { name: "Configuration" })
-      .getAttribute("aria-disabled"),
-  ).toBe("true");
-  expect(
-    (
-      screen.getByRole("button", {
-        name: "Back to repositories",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-  await user.click(screen.getByRole("button", { name: "Cancel" }));
-  await user.click(screen.getByRole("tab", { name: "Configuration" }));
+  expect(screen.queryByRole("button", { name: "Submit PR" })).toBeNull();
   await user.click(screen.getByRole("button", { name: "Edit General lane" }));
   expect(
-    screen
-      .getByRole("tab", { name: "Pull requests" })
-      .getAttribute("aria-disabled"),
-  ).toBe("true");
+    screen.queryByRole("button", { name: "Back to repositories" }),
+  ).toBeNull();
   const field = screen.getByRole("textbox", { name: "Instructions" });
   await user.clear(field);
-  await user.type(field, "Preserve collapsed drafts");
-  expect(
-    (
-      screen.getByRole("textbox", {
-        name: "Instructions",
-      }) as HTMLTextAreaElement
-    ).value,
-  ).toBe("Preserve collapsed drafts");
+  await user.type(field, "Preserve draft");
+  expect((field as HTMLTextAreaElement).value).toBe("Preserve draft");
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   await user.click(
     screen.getByRole("button", { name: "Back to repositories" }),
   );
+  expect(screen.queryByRole("button", { name: "Submit PR" })).toBeNull();
   await user.click(
     screen.getByRole("button", { name: "Open example-org/project" }),
   );
   expect(
-    screen
-      .getByRole("tab", { name: "Configuration" })
-      .getAttribute("aria-selected"),
-  ).toBe("true");
+    screen.getByRole("button", { name: "Edit General lane" }),
+  ).toBeTruthy();
 });
 
 it("blocks editor entry while a reload can replace the repository", async () => {
@@ -578,57 +547,15 @@ it("blocks editor entry while a reload can replace the repository", async () => 
   ).toBe(false);
 });
 
-it("maps a pasted URL to its configured repository and keeps unknown URLs editable", async () => {
+it("opens the separate submit page without repository or lane configuration", async () => {
   const test = fixture();
-  const readPull = vi.fn(async () => ({
-    title: "Review this change",
-    labels: [],
-    changedFiles: 1,
-    repository: "example-org/project",
-    pr: 42,
-    paths: ["src/index.ts"],
-    head: "a".repeat(40),
-    base: "b".repeat(40),
-  }));
-  render(
-    <ReviewConfigurationCommunity session={test.session} readPull={readPull} />,
-  );
-  const user = await openDraft();
-  await user.click(screen.getByRole("button", { name: "Save lane" }));
-  await screen.findByText("Saved example-org/project.");
-  await user.click(
-    screen.getByRole("button", { name: "Back to repositories" }),
-  );
-  await user.click(screen.getByRole("button", { name: "Submit PR" }));
-  const input = screen.getByRole("textbox", { name: "GitHub PR URL" });
-  await user.type(input, "https://github.com/example-org/unknown/pull/42");
-  await user.click(screen.getByRole("button", { name: "Continue" }));
-  expect((await screen.findByRole("alert")).textContent).toContain(
-    "not configured",
-  );
-  await user.clear(input);
-  await user.type(input, "https://github.com/example-org/project/pull/42");
-  await user.click(screen.getByRole("button", { name: "Continue" }));
+  render(<ReviewConfigurationCommunity session={test.session} submit />);
+  await screen.findByRole("textbox", { name: "GitHub PR URL" });
+  expect(screen.getByRole("button", { name: "Submit PR" })).toBeTruthy();
   expect(
-    (
-      (await screen.findByRole("textbox", {
-        name: "Pull request",
-      })) as HTMLInputElement
-    ).value,
-  ).toBe("https://github.com/example-org/project/pull/42");
-  await user.click(screen.getByRole("button", { name: "Load PR details" }));
-  await waitFor(() =>
-    expect(readPull).toHaveBeenCalledWith(
-      "example-org/project",
-      42,
-      expect.any(AbortSignal),
-    ),
-  );
-  expect(test.publish).toHaveBeenCalledTimes(1);
-  await user.click(screen.getByRole("button", { name: "Cancel" }));
-  await user.click(screen.getByRole("tab", { name: "Configuration" }));
-  await user.click(screen.getByRole("tab", { name: "Pull requests" }));
-  expect(screen.queryByRole("textbox", { name: "Pull request" })).toBeNull();
+    screen.queryByRole("button", { name: "Register repository" }),
+  ).toBeNull();
+  expect(screen.queryByText("Repositories")).toBeNull();
 });
 
 it("requires a routing value and saves each lane before allowing another", async () => {

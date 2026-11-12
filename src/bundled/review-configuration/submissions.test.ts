@@ -492,3 +492,155 @@ it("infers a canonical repository only from a valid full PR URL", () => {
   ])
     expect(() => pullRepository(input)).toThrow();
 });
+
+it("explicit resubmission notifies saved reviewers in existing threads without new artifacts or GitHub reads", async () => {
+  const test = await fixture();
+  const first = await test.run();
+  const writes = test.artifactPublish.mock.calls.length;
+  const facts = vi.fn(async () => {
+    throw new Error("GitHub unavailable");
+  });
+  const existing = vi.fn();
+  const again = () =>
+    submitReview(
+      test.session,
+      channel,
+      test.config,
+      "123",
+      [test.agent.pubkey, test.agent.pubkey],
+      new AbortController().signal,
+      () => {},
+      true,
+      facts,
+      existing,
+    );
+  const result = await again();
+  expect(result.value.threads).toEqual(first.value.threads);
+  expect(test.artifactPublish).toHaveBeenCalledTimes(writes);
+  expect(facts).not.toHaveBeenCalled();
+  expect(existing).toHaveBeenCalledOnce();
+  const replies = [...test.messages.values()].filter((event) =>
+    event.tags.some((tag) => tag[0] === "e"),
+  );
+  expect(replies).toHaveLength(2);
+  for (const [i, reply] of replies.entries()) {
+    expect(reply.tags).toContainEqual([
+      "e",
+      first.value.threads[i]?.id,
+      "",
+      "reply",
+    ]);
+    expect(reply.tags).toContainEqual(["p", test.agent.pubkey]);
+    expect(reply.tags.some((tag) => tag[0] === "subject")).toBe(false);
+    expect(reply.content).toContain("submitted again");
+  }
+  await again();
+  expect(test.publish).toHaveBeenCalledTimes(6);
+});
+
+it("revalidates ownership before notifying and retains existing threads on refusal", async () => {
+  const test = await fixture();
+  await test.run();
+  test.changeOwner();
+  await expect(
+    submitReview(
+      test.session,
+      channel,
+      test.config,
+      "123",
+      [test.agent.pubkey, test.agent.pubkey],
+      new AbortController().signal,
+      () => {},
+      true,
+      undefined,
+      () => {},
+    ),
+  ).rejects.toThrow("verified ownership");
+  expect(test.publish).toHaveBeenCalledTimes(2);
+});
+
+it("routes fresh facts inside Submit and refuses no-match before writing", async () => {
+  const test = await fixture();
+  const config = {
+    ...test.config,
+    config: {
+      ...test.config.config,
+      lanes: test.config.config.lanes.map((lane) => ({
+        ...lane,
+        routing: {
+          mode: "all" as const,
+          rules: [
+            {
+              id: "label",
+              field: "label" as const,
+              operator: "has" as const,
+              value: "security",
+            },
+          ],
+        },
+      })),
+    },
+  };
+  const facts = vi.fn(async () => ({
+    repository: "example-org/project",
+    pr: 123,
+    title: "UI change",
+    labels: [],
+    changedFiles: 1,
+    paths: ["ui.tsx"],
+    head: "a".repeat(40),
+    base: "b".repeat(40),
+  }));
+  await expect(
+    submitReview(
+      test.session,
+      channel,
+      config,
+      "123",
+      [test.agent.pubkey, test.agent.pubkey],
+      new AbortController().signal,
+      () => {},
+      true,
+      facts,
+      () => {},
+    ),
+  ).rejects.toThrow("No lanes match");
+  expect(facts).toHaveBeenCalledOnce();
+  expect(test.artifactPublish).not.toHaveBeenCalled();
+  expect(test.publish).not.toHaveBeenCalled();
+});
+
+it("retries a partially delivered notification batch with the same message identities", async () => {
+  const test = await fixture();
+  const first = await test.run();
+  test.publish.mockImplementationOnce(async (event) => {
+    test.messages.set(event.id, event);
+  });
+  test.publish.mockRejectedValueOnce(new Error("notification offline"));
+  const again = () =>
+    submitReview(
+      test.session,
+      channel,
+      test.config,
+      "123",
+      [test.agent.pubkey, test.agent.pubkey],
+      new AbortController().signal,
+      () => {},
+      true,
+      undefined,
+      () => {},
+    );
+  await expect(again()).rejects.toThrow("notification offline");
+  const attempted = test.publish.mock.calls.slice(2).map(([event]) => event.id);
+  await again();
+  expect(test.publish.mock.calls.slice(2).map(([event]) => event.id)).toEqual([
+    ...attempted,
+    attempted[1],
+  ]);
+  expect(
+    [...test.messages.values()].filter((event) =>
+      event.tags.some((tag) => tag[0] === "subject"),
+    ),
+  ).toHaveLength(2);
+  expect((await test.run()).value.threads).toEqual(first.value.threads);
+});

@@ -7,18 +7,20 @@ export const inject = ["pages", "relay", "navigation", "host"];
 export const apply: PluginModule["apply"] = (ctx) => {
   const { relay, navigation: navigator } = ctx;
   const readPull = createPullReader(gitHubCli(ctx.host));
-  ctx.pages.register({
-    id: "configuration",
-    title: "Review Configuration",
-    layout: "workspace",
-    primary: true,
-    placement: "sidebar",
-    component: () => (
-      <ReviewConfigurationPage
-        relay={relay}
-        navigator={navigator}
-        readPull={readPull}
-      />
-    ),
-  });
+  for (const submit of [false, true])
+    ctx.pages.register({
+      id: submit ? "submit" : "configuration",
+      title: submit ? "Submit PR" : "Review Configuration",
+      layout: "workspace",
+      primary: true,
+      placement: "sidebar",
+      component: () => (
+        <ReviewConfigurationPage
+          submit={submit}
+          relay={relay}
+          navigator={navigator}
+          readPull={readPull}
+        />
+      ),
+    });
 };

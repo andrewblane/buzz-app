@@ -306,6 +306,62 @@ function delivered(
   });
 }
 
+/** Explicit resubmission mentions the saved reviewer in each existing lane thread.
+ * Keep receipts until the whole batch succeeds so interrupted sends can resume. */
+async function notifyReviewers(
+  session: RelaySession,
+  channel: string,
+  record: SavedSubmission,
+  signal: AbortSignal,
+) {
+  const outbox = session.outbox;
+  if (!outbox) throw new Error("Message delivery is unavailable.");
+  await eligible(session, record.value, signal);
+  const receipts: string[] = [];
+  for (const [index, thread] of record.value.threads.entries()) {
+    const lane = submissionLane(record.value, index);
+    if (!lane || !thread.id) continue; // Older submissions also have an overview.
+    signal.throwIfAborted();
+    const key = `review-notify:${record.artifactId}:${thread.id}`;
+    const recovery = await outbox.recovery(key);
+    const active = () => !signal.aborted;
+    let id: string;
+    if (recovery) {
+      id = recovery.event.id;
+      if (!outbox.snapshot().some((item) => item.event.id === id))
+        throw new Error("Reload to recover the saved reviewer notification.");
+      if (!["accepted", "seen", "sending"].includes(recovery.delivery))
+        outbox.retry(id, active);
+    } else {
+      const request = threadMessage(
+        record.value,
+        channel,
+        index,
+        session.agentChoices
+          .snapshot()
+          .selectable.find((choice) => choice.pubkey === lane.reviewers[0])
+          ?.name,
+      );
+      id = outbox.send(
+        {
+          kind: 9,
+          tags: [
+            ["h", channel],
+            ["e", thread.id, "", "reply"],
+            ["p", lane.reviewers[0] ?? ""],
+          ],
+          content: `This PR was submitted again. Please revisit the review in this thread.\n\n${request.content}`,
+        },
+        { key, value: record.artifactId },
+        active,
+      );
+    }
+    await delivered(outbox, id, signal);
+    receipts.push(id);
+  }
+  for (const id of receipts) await outbox.acknowledge(id);
+}
+
 /** Explicit user action only. There is no background dispatcher or polling. */
 export async function submitReview(
   session: RelaySession,
@@ -316,7 +372,8 @@ export async function submitReview(
   signal: AbortSignal,
   onProgress: (value: SavedSubmission) => void,
   resume = false,
-  facts?: PullFacts,
+  facts?: PullFacts | (() => Promise<PullFacts>),
+  notifyExisting?: () => void,
 ) {
   const outbox = session.outbox;
   const read = session.snapshotRead;
@@ -348,20 +405,28 @@ export async function submitReview(
       );
       let record: SavedSubmission;
       const head = events[0];
-      if (head) record = await decode(head, channel);
-      else {
+      if (head) {
+        record = await decode(head, channel);
+        notifyExisting?.();
+      } else {
+        const currentFacts =
+          typeof facts === "function" ? await facts() : facts;
+        signal.throwIfAborted();
         if (
-          facts &&
-          (facts.repository !== saved.config.repository || facts.pr !== pr)
+          currentFacts &&
+          (currentFacts.repository !== saved.config.repository ||
+            currentFacts.pr !== pr)
         )
           throw new Error("The loaded PR does not match this submission.");
         if (
-          !facts &&
+          !currentFacts &&
           saved.config.lanes.some((lane) => lane.routing?.rules.length)
         )
           throw new Error("Load PR details before routing this submission.");
         const matched = saved.config.lanes.flatMap((lane, i) =>
-          !facts || laneMatches(lane.routing, facts) ? [{ lane, i }] : [],
+          !currentFacts || laneMatches(lane.routing, currentFacts)
+            ? [{ lane, i }]
+            : [],
         );
         if (!matched.length)
           throw new Error(
@@ -389,9 +454,11 @@ export async function submitReview(
         record = await write(session, channel, value, undefined, signal);
       }
       onProgress(record);
-      // A duplicate opens the saved preview; only explicit Resume can dispatch it.
-      if (head && !resume) return record;
+      // The dedicated Submit action may notify; passive readers never dispatch.
+      if (head && !resume && !notifyExisting) return record;
       if (record.value.threads.every((thread) => thread.delivered)) {
+        if (head && notifyExisting)
+          await notifyReviewers(session, channel, record, signal);
         for (const thread of record.value.threads)
           if (thread.id) await outbox.acknowledge(thread.id);
         return record;

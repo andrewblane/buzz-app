@@ -1,16 +1,9 @@
 import { createPullReader, type ReadPull } from "./pull-facts";
 const publicPullReader = createPullReader();
 import { LaneRules, ruleDescription } from "./LaneRules";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAgentChoices } from "../../features/agents/use-choices";
 import { ReviewSubmissions } from "./ReviewSubmissions";
-import { pullRepository } from "./submissions";
 import type { Navigation } from "../../features/navigation/controller";
 import { splitPartition } from "../../features/relay/partition";
 import { LaneReviewers, ReviewerIdentity } from "./LaneReviewers";
@@ -22,7 +15,6 @@ import {
   ListChecksIcon,
 } from "../../shared/design-system/icons";
 import { NavigationItem } from "../../shared/design-system/ui/NavigationItem";
-import { Tabs } from "../../shared/design-system/ui/Tabs";
 import { Button } from "../../shared/design-system/ui/Button";
 import { Field } from "../../shared/design-system/ui/Field";
 import { FullPageSurface } from "../../shared/design-system/ui/FullPageSurface";
@@ -45,17 +37,19 @@ import {
 } from "./configuration";
 import "./review-configuration.css";
 
-function Frame({ children }: { children: ReactNode }) {
+function Frame({
+  children,
+  submit = false,
+}: {
+  children: ReactNode;
+  submit?: boolean;
+}) {
+  const title = submit ? "Submit PR" : "Review Configuration";
   return (
-    <FullPageSurface aria-label="Review Configuration">
+    <FullPageSurface aria-label={title}>
       <div className="review-config-page text-body">
         <PanelHeader
-          title={
-            <PanelHeaderLabel
-              title="Review Configuration"
-              icon={<ListChecksIcon />}
-            />
-          }
+          title={<PanelHeaderLabel title={title} icon={<ListChecksIcon />} />}
         />
         <div className="review-config-scroll">
           <div className="review-config-content">{children}</div>
@@ -69,7 +63,9 @@ export function ReviewConfigurationPage({
   relay,
   navigator,
   readPull = publicPullReader,
+  submit = false,
 }: {
+  submit?: boolean;
   relay: RelayData;
   navigator?: Navigation;
   readPull?: ReadPull;
@@ -80,6 +76,7 @@ export function ReviewConfigurationPage({
       <ReviewConfigurationCommunity
         key={`${connection.scope}:${connection.generation}`}
         session={connection.session}
+        submit={submit}
         readPull={readPull}
         onOpenThread={async (channelId, id) => {
           const scope = splitPartition(connection.scope ?? "");
@@ -99,11 +96,11 @@ export function ReviewConfigurationPage({
       />
     );
   return (
-    <Frame>
+    <Frame submit={submit}>
       <p>
         {connection.status === "connecting"
           ? "Connecting to your community…"
-          : "Connect to a community to configure reviews."}
+          : "Connect to a community to use reviews."}
       </p>
       {connection.status === "error" && (
         <>
@@ -119,8 +116,10 @@ export function ReviewConfigurationCommunity({
   session,
   onOpenThread,
   readPull = publicPullReader,
+  submit = false,
 }: {
   session: RelaySession;
+  submit?: boolean;
   readPull?: ReadPull;
   onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
 }) {
@@ -165,25 +164,31 @@ export function ReviewConfigurationCommunity({
     !selected.readOnly &&
     !!session.configArtifactWriter;
   return (
-    <Frame>
-      <Select
-        label="Review channel"
-        variant="field"
-        value={channel}
-        onValueChange={setChannel}
-        disabled={editing}
-        placeholder="Choose a channel"
-        groups={[
-          {
-            label: "Channels",
-            options: channels.map((item) => ({
-              value: item.id,
-              label: item.name,
-            })),
-          },
-        ]}
-        description="Repositories and reviews are shared with this channel."
-      />
+    <Frame submit={submit}>
+      {submit && channels.length === 1 ? (
+        <p className="text-caption text-subtle">
+          Review channel: {selected?.name}
+        </p>
+      ) : (
+        <Select
+          label="Review channel"
+          variant="field"
+          value={channel}
+          onValueChange={setChannel}
+          disabled={editing}
+          placeholder="Choose a channel"
+          groups={[
+            {
+              label: "Channels",
+              options: channels.map((item) => ({
+                value: item.id,
+                label: item.name,
+              })),
+            },
+          ]}
+          description="Repositories and reviews are shared with this channel."
+        />
+      )}
       {list.status === "loading" && <p role="status">Loading channels…</p>}
       {list.status === "error" && (
         <p role="alert">Could not load channels. Reconnect to try again.</p>
@@ -194,17 +199,26 @@ export function ReviewConfigurationCommunity({
           draft is preserved.
         </p>
       )}
-      {channel && (
-        <ChannelConfiguration
-          key={channel}
-          session={session}
-          channel={channel}
-          writable={writable}
-          onEditingChange={setEditing}
-          onOpenThread={onOpenThread}
-          readPull={readPull}
-        />
-      )}
+      {channel &&
+        (submit ? (
+          <ReviewSubmissions
+            key={channel}
+            session={session}
+            channel={channel}
+            writable={writable}
+            onEditingChange={setEditing}
+            onOpenThread={onOpenThread}
+            readPull={readPull}
+          />
+        ) : (
+          <ChannelConfiguration
+            key={channel}
+            session={session}
+            channel={channel}
+            writable={writable}
+            onEditingChange={setEditing}
+          />
+        ))}
     </Frame>
   );
 }
@@ -214,27 +228,14 @@ function ChannelConfiguration({
   channel,
   writable,
   onEditingChange,
-  onOpenThread,
-  readPull,
 }: {
   session: RelaySession;
-  readPull: ReadPull;
   channel: string;
   writable: boolean;
   onEditingChange: (editing: boolean) => void;
-  onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
 }) {
   const choices = useAgentChoices(session, true, true);
   const [laneId, setLaneId] = useState<string>();
-  const [submitting, setSubmitting] = useState(false);
-  const [lookup, setLookup] = useState(false);
-  const [pullUrl, setPullUrl] = useState("");
-  const [lookupError, setLookupError] = useState("");
-  const [initialPull, setInitialPull] = useState("");
-  const submissionEditing = useCallback((editing: boolean) => {
-    setSubmitting(editing);
-    if (!editing) setInitialPull("");
-  }, []);
   const [rows, setRows] = useState<SavedReviewConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -244,14 +245,11 @@ function ChannelConfiguration({
   const [reload, setReload] = useState(0);
   const [editor, setEditor] = useState<SavedReviewConfig | "new">();
   const [repository, setRepository] = useState("");
-  const [section, setSection] = useState<"configuration" | "pulls">(
-    "configuration",
-  );
   const selected = rows.find((row) => row.config.repository === repository);
   const editorTrigger = useRef<HTMLElement | null>(null);
   const lanesRegion = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    onEditingChange(editor !== undefined || submitting || lookup);
+    onEditingChange(editor !== undefined);
     if (editor === undefined) {
       const trigger = editorTrigger.current;
       if (trigger?.isConnected && !trigger.matches(":disabled"))
@@ -259,7 +257,7 @@ function ChannelConfiguration({
       else lanesRegion.current?.focus();
     }
     return () => onEditingChange(false);
-  }, [editor, submitting, lookup, onEditingChange]);
+  }, [editor, onEditingChange]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reload explicitly requests a fresh snapshot.
   useEffect(() => {
     const controller = new AbortController();
@@ -322,7 +320,7 @@ function ChannelConfiguration({
           <InlineHeader title="Repositories" />
           <div className="review-config-actions">
             <Button
-              disabled={loading || lookup}
+              disabled={loading}
               onClick={() => setReload((value) => value + 1)}
             >
               Reload
@@ -330,9 +328,7 @@ function ChannelConfiguration({
             <Button
               ref={editorTrigger}
               variant="prominent"
-              disabled={
-                loading || lookup || !!error || !writable || remaining <= 0
-              }
+              disabled={loading || !!error || !writable || remaining <= 0}
               onClick={(event) => {
                 editorTrigger.current = event.currentTarget;
                 setNotice("");
@@ -341,67 +337,7 @@ function ChannelConfiguration({
             >
               Register repository
             </Button>
-            <Button
-              disabled={
-                loading || lookup || !!error || !writable || !rows.length
-              }
-              onClick={() => {
-                setLookup(true);
-                setLookupError("");
-              }}
-            >
-              Submit PR
-            </Button>
           </div>
-          {lookup && (
-            <form
-              className="review-config-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                try {
-                  const name = pullRepository(pullUrl);
-                  const match = rows.find(
-                    (row) => row.config.repository === name,
-                  );
-                  if (!match)
-                    throw new Error(
-                      `${name} is not configured in this channel. Register it before submitting.`,
-                    );
-                  setRepository(name);
-                  setSection("pulls");
-                  setInitialPull(pullUrl.trim());
-                  setLookup(false);
-                } catch (reason) {
-                  setLookupError(
-                    reason instanceof Error
-                      ? reason.message
-                      : "Could not find repository.",
-                  );
-                }
-              }}
-            >
-              <Field
-                label="GitHub PR URL"
-                description="We’ll find its configured repository and match its lane rules."
-              >
-                <Input
-                  autoFocus
-                  required
-                  maxLength={300}
-                  value={pullUrl}
-                  onValueChange={setPullUrl}
-                  placeholder="https://github.com/example-org/project/pull/123"
-                />
-              </Field>
-              {lookupError && <p role="alert">{lookupError}</p>}
-              <div className="review-config-actions">
-                <Button onClick={() => setLookup(false)}>Cancel</Button>
-                <Button type="submit" variant="prominent">
-                  Continue
-                </Button>
-              </div>
-            </form>
-          )}
           {loading ? (
             <p role="status">Loading configurations…</p>
           ) : error ? (
@@ -413,7 +349,6 @@ function ChannelConfiguration({
                   key={row.artifactId}
                   aria-label={`Open ${row.config.repository}`}
                   multiline
-                  disabled={lookup}
                   label={
                     <span className="review-config-repository-label">
                       <span>{row.config.repository}</span>
@@ -425,7 +360,6 @@ function ChannelConfiguration({
                   trailing="Open"
                   onClick={() => {
                     setRepository(row.config.repository);
-                    setSection("configuration");
                     setNotice("");
                   }}
                 />
@@ -445,7 +379,6 @@ function ChannelConfiguration({
           {!editor && (
             <div>
               <Button
-                disabled={submitting}
                 onClick={() => {
                   setRepository("");
                   setNotice("");
@@ -458,176 +391,140 @@ function ChannelConfiguration({
           {selected && (
             <>
               <InlineHeader title={selected.config.repository} />
-              <Tabs
-                variant="panel"
-                label="Repository sections"
-                value={section}
-                items={[
-                  {
-                    value: "configuration",
-                    label: "Configuration",
-                    disabled: !!editor || submitting,
-                  },
-                  {
-                    value: "pulls",
-                    label: "Pull requests",
-                    disabled: !!editor || submitting,
-                  },
-                ]}
-                onValueChange={setSection}
-                renderPanel={(tab) =>
-                  tab === "configuration" ? (
-                    <section
-                      className="review-config-form"
-                      aria-label="Repository configuration"
-                      ref={lanesRegion}
-                      tabIndex={-1}
-                    >
-                      {editor ? (
-                        <ConfigurationEditor
-                          key={editor === "new" ? "new" : editor.revision}
-                          session={session}
-                          channel={channel}
-                          writable={writable}
-                          previous={editor === "new" ? undefined : editor}
-                          laneId={laneId}
-                          existing={rows}
-                          onCancel={() => setEditor(undefined)}
-                          onSaved={saved}
-                        />
-                      ) : (
-                        <>
+              <section
+                className="review-config-form"
+                aria-label="Repository configuration"
+                ref={lanesRegion}
+                tabIndex={-1}
+              >
+                {editor ? (
+                  <ConfigurationEditor
+                    key={editor === "new" ? "new" : editor.revision}
+                    session={session}
+                    channel={channel}
+                    writable={writable}
+                    previous={editor === "new" ? undefined : editor}
+                    laneId={laneId}
+                    existing={rows}
+                    onCancel={() => setEditor(undefined)}
+                    onSaved={saved}
+                  />
+                ) : (
+                  <>
+                    <InlineHeader
+                      title="Lanes"
+                      subtitle="Each lane has its own agents, instructions, and routing rules."
+                      actions={
+                        <Button
+                          disabled={loading}
+                          onClick={() => {
+                            setNotice("");
+                            setReload((value) => value + 1);
+                          }}
+                        >
+                          Reload
+                        </Button>
+                      }
+                    />
+                    {error && <p role="alert">{error}</p>}
+                    <SettingsGroup layout="cards">
+                      {selected.config.lanes.map((lane) => (
+                        <section
+                          key={lane.id}
+                          aria-label={`${lane.name} lane`}
+                          className="review-config-lane-card"
+                        >
                           <InlineHeader
-                            title="Lanes"
-                            subtitle="Each lane has its own agents, instructions, and routing rules."
+                            title={lane.name}
                             actions={
                               <Button
-                                disabled={loading}
+                                ref={(node) => {
+                                  if (laneId === lane.id)
+                                    editorTrigger.current = node;
+                                }}
+                                disabled={!writable || loading || !!error}
+                                aria-label={`Edit ${lane.name} lane`}
                                 onClick={() => {
+                                  setLaneId(lane.id);
                                   setNotice("");
-                                  setReload((value) => value + 1);
+                                  setEditor(selected);
                                 }}
                               >
-                                Reload
+                                Edit lane
                               </Button>
                             }
                           />
-                          {error && <p role="alert">{error}</p>}
-                          <SettingsGroup layout="cards">
-                            {selected.config.lanes.map((lane) => (
-                              <section
-                                key={lane.id}
-                                aria-label={`${lane.name} lane`}
-                                className="review-config-lane-card"
-                              >
-                                <InlineHeader
-                                  title={lane.name}
-                                  actions={
-                                    <Button
-                                      ref={(node) => {
-                                        if (laneId === lane.id)
-                                          editorTrigger.current = node;
-                                      }}
-                                      disabled={!writable || loading || !!error}
-                                      aria-label={`Edit ${lane.name} lane`}
-                                      onClick={() => {
-                                        setLaneId(lane.id);
-                                        setNotice("");
-                                        setEditor(selected);
-                                      }}
-                                    >
-                                      Edit lane
-                                    </Button>
-                                  }
+                          <div className="review-config-reviewers">
+                            <span className="text-caption text-subtle">
+                              Agents
+                            </span>
+                            {lane.reviewers.length ? (
+                              lane.reviewers.map((pubkey) => (
+                                <ReviewerIdentity
+                                  key={pubkey}
+                                  pubkey={pubkey}
+                                  choices={choices}
                                 />
-                                <div className="review-config-reviewers">
-                                  <span className="text-caption text-subtle">
-                                    Agents
-                                  </span>
-                                  {lane.reviewers.length ? (
-                                    lane.reviewers.map((pubkey) => (
-                                      <ReviewerIdentity
-                                        key={pubkey}
-                                        pubkey={pubkey}
-                                        choices={choices}
-                                      />
-                                    ))
-                                  ) : (
-                                    <p>No agents assigned.</p>
-                                  )}
-                                </div>
-                                <div className="review-config-summary-section">
-                                  <span className="text-caption text-subtle">
-                                    Routing rules ·{" "}
-                                    {lane.routing?.mode === "any"
-                                      ? "Match any"
-                                      : "Match all"}
-                                  </span>
-                                  {lane.routing?.rules.length ? (
-                                    <ul>
-                                      {lane.routing.rules.map((rule) => (
-                                        <li key={rule.id}>
-                                          {ruleDescription(rule)}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    <p>
-                                      All PRs · Add a routing rule when editing
-                                      this lane.
-                                    </p>
-                                  )}
-                                </div>
-                                <div className="review-config-summary-section">
-                                  <span className="text-caption text-subtle">
-                                    Instructions
-                                  </span>
-                                  <p className="review-config-instructions">
-                                    {lane.instructions}
-                                  </p>
-                                </div>
-                              </section>
-                            ))}
-                          </SettingsGroup>
-                          <div>
-                            <Button
-                              ref={(node) => {
-                                if (!laneId) editorTrigger.current = node;
-                              }}
-                              variant="prominent"
-                              disabled={
-                                !writable ||
-                                loading ||
-                                !!error ||
-                                selected.config.lanes.length >= 12
-                              }
-                              onClick={() => {
-                                setLaneId(undefined);
-                                setNotice("");
-                                setEditor(selected);
-                              }}
-                            >
-                              Add lane
-                            </Button>
+                              ))
+                            ) : (
+                              <p>No agents assigned.</p>
+                            )}
                           </div>
-                        </>
-                      )}
-                    </section>
-                  ) : (
-                    <ReviewSubmissions
-                      session={session}
-                      channel={channel}
-                      configurations={[selected]}
-                      initialPull={initialPull}
-                      disabled={loading || !!error}
-                      writable={writable}
-                      onEditingChange={submissionEditing}
-                      onOpenThread={onOpenThread}
-                      readPull={readPull}
-                    />
-                  )
-                }
-              />
+                          <div className="review-config-summary-section">
+                            <span className="text-caption text-subtle">
+                              Routing rules ·{" "}
+                              {lane.routing?.mode === "any"
+                                ? "Match any"
+                                : "Match all"}
+                            </span>
+                            {lane.routing?.rules.length ? (
+                              <ul>
+                                {lane.routing.rules.map((rule) => (
+                                  <li key={rule.id}>{ruleDescription(rule)}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p>
+                                All PRs · Add a routing rule when editing this
+                                lane.
+                              </p>
+                            )}
+                          </div>
+                          <div className="review-config-summary-section">
+                            <span className="text-caption text-subtle">
+                              Instructions
+                            </span>
+                            <p className="review-config-instructions">
+                              {lane.instructions}
+                            </p>
+                          </div>
+                        </section>
+                      ))}
+                    </SettingsGroup>
+                    <div>
+                      <Button
+                        ref={(node) => {
+                          if (!laneId) editorTrigger.current = node;
+                        }}
+                        variant="prominent"
+                        disabled={
+                          !writable ||
+                          loading ||
+                          !!error ||
+                          selected.config.lanes.length >= 12
+                        }
+                        onClick={() => {
+                          setLaneId(undefined);
+                          setNotice("");
+                          setEditor(selected);
+                        }}
+                      >
+                        Add lane
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </section>
             </>
           )}
           {editor === "new" && (

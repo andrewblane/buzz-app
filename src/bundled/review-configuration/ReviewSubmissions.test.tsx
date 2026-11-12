@@ -1,86 +1,89 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { RelaySession } from "../../features/relay/session";
 import { ReviewSubmissions } from "./ReviewSubmissions";
-import type { SavedReviewConfig } from "./configuration";
+import { loadConfigurations, type SavedReviewConfig } from "./configuration";
+import {
+  loadSubmissions,
+  submitReview,
+  type SavedSubmission,
+} from "./submissions";
 
+vi.mock("./configuration", async (original) => ({
+  ...(await original<typeof import("./configuration")>()),
+  loadConfigurations: vi.fn(),
+}));
+vi.mock("./submissions", async (original) => ({
+  ...(await original<typeof import("./submissions")>()),
+  loadSubmissions: vi.fn(),
+  submitReview: vi.fn(),
+}));
 afterEach(cleanup);
-
-it("waits for list reads before offering submission and restores trigger focus on cancel", async () => {
-  let finish: (events: []) => void = () => {};
-  const pending = new Promise<[]>((resolve) => {
-    finish = resolve;
+const configuration: SavedReviewConfig = {
+  revision: "b".repeat(64),
+  artifactId: "config",
+  config: {
+    version: 1,
+    repository: "example-org/project",
+    reminderMinutes: 15,
+    lanes: [
+      {
+        id: "ui",
+        name: "UI",
+        instructions: "Check keyboard access.",
+        reviewers: ["a".repeat(64)],
+      },
+    ],
+  },
+};
+const record: SavedSubmission = {
+  artifactId: "submission",
+  revision: "c".repeat(64),
+  value: {
+    version: 2,
+    pr: 42,
+    config: configuration.config,
+    configRevision: configuration.revision,
+    submitter: "d".repeat(64),
+    device: "device",
+    threads: [{ id: "e".repeat(64), delivered: true }],
+  },
+};
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(loadConfigurations).mockResolvedValue({
+    rows: [configuration],
+    unreadable: 0,
+    truncated: false,
   });
-  const choices = {
-    pending: false,
-    selectable: [{ pubkey: "a".repeat(64), name: "Reviewer" }],
-    archives: { status: "ready" },
-  };
-  const session = {
-    snapshotRead: () => pending,
-    agentChoices: {
-      subscribe: () => () => {},
-      snapshot: () => choices,
-      retain: () => () => {},
-      ensure() {},
+  vi.mocked(loadSubmissions).mockResolvedValue({ rows: [], warning: "" });
+  vi.mocked(submitReview).mockImplementation(
+    async (_s, _c, _config, _pr, _r, _signal, progress, _resume, facts) => {
+      if (typeof facts === "function") await facts();
+      progress({ ...record, value: { ...record.value, threads: [{}] } });
+      progress(record);
+      return record;
     },
-  } as unknown as RelaySession;
-  const configuration: SavedReviewConfig = {
-    revision: "b".repeat(64),
-    artifactId: "config",
-    config: {
-      version: 1,
-      repository: "example-org/project",
-      reminderMinutes: 15,
-      lanes: [
-        {
-          id: "general",
-          name: "General",
-          instructions: "Check tests.",
-          reviewers: ["a".repeat(64)],
-        },
-      ],
-    },
-  };
-  render(
-    <ReviewSubmissions
-      session={session}
-      channel="channel"
-      configurations={[configuration]}
-      disabled={false}
-      writable
-      onEditingChange={() => {}}
-    />,
   );
-  const submit = screen.getByRole("button", {
-    name: "Submit PR",
-  }) as HTMLButtonElement;
-  expect(submit.disabled).toBe(true);
-  await act(async () => finish([]));
-  expect(submit.disabled).toBe(false);
-  const user = userEvent.setup();
-  await user.click(submit);
-  expect(screen.getByRole("textbox", { name: "Pull request" })).toBe(
-    document.activeElement,
-  );
-  await user.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(document.activeElement).toBe(submit);
 });
-
-it("clears changed PR previews, blocks unmatched lanes, and rechecks facts before any write", async () => {
-  const { vi } = await import("vitest");
+function fixture() {
+  const agents = [{ pubkey: "a".repeat(64), name: "UI Reviewer" }];
   const choices = {
+    identities: agents,
+    selectable: agents,
     pending: false,
-    selectable: [{ pubkey: "a".repeat(64), name: "Reviewer" }],
     archives: { status: "ready" },
   };
-  const snapshotRead = vi.fn(async () => []);
-  const publish = vi.fn();
   const session = {
-    snapshotRead,
-    configArtifactWriter: { publish },
     agentChoices: {
       subscribe: () => () => {},
       snapshot: () => choices,
@@ -88,79 +91,177 @@ it("clears changed PR previews, blocks unmatched lanes, and rechecks facts befor
       ensure() {},
     },
   } as unknown as RelaySession;
-  const configuration: SavedReviewConfig = {
-    revision: "b".repeat(64),
-    artifactId: "config",
-    config: {
-      version: 1,
-      repository: "example-org/project",
-      reminderMinutes: 15,
-      lanes: [
-        {
-          id: "ui",
-          name: "UI",
-          instructions: "Check keyboard navigation.",
-          reviewers: ["a".repeat(64)],
-          routing: {
-            mode: "all",
-            rules: [
-              { id: "ui", field: "title", operator: "contains", value: "UI" },
-            ],
-          },
-        },
-      ],
-    },
-  };
-  const facts = {
+  const readPull = vi.fn(async () => ({
     repository: "example-org/project",
     pr: 42,
-    title: "Improve UI",
-    labels: [],
+    title: "UI change",
+    labels: ["ui"],
     changedFiles: 1,
-    paths: ["src/ui.tsx"],
+    paths: ["ui.tsx"],
     head: "a".repeat(40),
     base: "b".repeat(40),
-  };
-  const readPull = vi.fn(async () => facts);
-  render(
+  }));
+  const onOpenThread = vi.fn(async () => {});
+  const editing = vi.fn();
+  const view = render(
     <ReviewSubmissions
       session={session}
       channel="channel"
-      configurations={[configuration]}
-      disabled={false}
       writable
-      onEditingChange={() => {}}
+      onEditingChange={editing}
+      onOpenThread={onOpenThread}
       readPull={readPull}
     />,
   );
-  const user = userEvent.setup();
-  await act(async () => {});
+  return {
+    ...view,
+    session,
+    readPull,
+    onOpenThread,
+    editing,
+    user: userEvent.setup(),
+  };
+}
+async function enter(
+  user: ReturnType<typeof userEvent.setup>,
+  url = "https://github.com/example-org/project/pull/42",
+) {
+  await user.type(screen.getByRole("textbox", { name: "GitHub PR URL" }), url);
   await user.click(screen.getByRole("button", { name: "Submit PR" }));
-  const input = screen.getByRole("textbox", { name: "Pull request" });
-  const start = screen.getByRole("button", {
-    name: "Start review threads",
-  }) as HTMLButtonElement;
-  await user.type(input, "42");
-  expect(start.disabled).toBe(true);
-  await user.click(screen.getByRole("button", { name: "Load PR details" }));
-  await screen.findByText("Matching lanes: UI");
-  expect(start.disabled).toBe(false);
-  await user.type(input, "3");
-  expect(start.disabled).toBe(true);
-  expect(screen.queryByText("Matching lanes: UI")).toBeNull();
-  await user.clear(input);
-  await user.type(input, "42");
-  readPull.mockResolvedValueOnce({ ...facts, title: "Backend change" });
-  await user.click(screen.getByRole("button", { name: "Load PR details" }));
-  await screen.findByText(/Matching lanes: None/);
-  expect(start.disabled).toBe(true);
-  await user.click(screen.getByRole("button", { name: "Load PR details" }));
-  await screen.findByText("Matching lanes: UI");
-  readPull.mockResolvedValueOnce({ ...facts, head: "c".repeat(40) });
-  await user.click(start);
-  expect((await screen.findByRole("alert")).textContent).toContain(
-    "The PR changed",
+}
+it("submits a URL in one action and shows assigned reviewers and working thread controls", async () => {
+  const test = fixture();
+  await enter(test.user);
+  expect((await screen.findByRole("status")).textContent).toContain(
+    "Submitted — reviewers assigned",
   );
-  expect(publish).not.toHaveBeenCalled();
-  expect(snapshotRead).toHaveBeenCalledTimes(1);
+  expect(test.readPull).toHaveBeenCalledWith(
+    "example-org/project",
+    42,
+    expect.any(AbortSignal),
+  );
+  const result = screen.getByRole("region", { name: "Submission result" });
+  expect(within(result).getByText("UI Reviewer")).toBeTruthy();
+  await test.user.click(
+    within(result).getByRole("button", { name: "Open UI thread" }),
+  );
+  expect(test.onOpenThread).toHaveBeenCalledWith("channel", "e".repeat(64));
+  expect(screen.queryByRole("combobox")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Load PR details" })).toBeNull();
+});
+it("keeps unknown repositories editable and never dispatches them", async () => {
+  const test = fixture();
+  await enter(test.user, "https://github.com/example-org/unknown/pull/42");
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "not configured",
+  );
+  expect(submitReview).not.toHaveBeenCalled();
+  expect(test.readPull).not.toHaveBeenCalled();
+  await test.user.clear(screen.getByRole("textbox", { name: "GitHub PR URL" }));
+  await enter(test.user);
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toContain("Submitted"),
+  );
+});
+it("does not claim a repository is absent when configuration reads are incomplete", async () => {
+  vi.mocked(loadConfigurations).mockResolvedValue({
+    rows: [],
+    unreadable: 1,
+    truncated: false,
+  });
+  const test = fixture();
+  await enter(test.user);
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Could not confirm",
+  );
+  expect(submitReview).not.toHaveBeenCalled();
+});
+it("shows existing threads and only claims notifications after successful delivery", async () => {
+  vi.mocked(submitReview).mockImplementation(
+    async (
+      _s,
+      _c,
+      _config,
+      _pr,
+      _r,
+      _signal,
+      progress,
+      _resume,
+      _facts,
+      existing,
+    ) => {
+      existing?.();
+      progress(record);
+      return record;
+    },
+  );
+  const test = fixture();
+  await enter(test.user);
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toContain(
+      "Already exists — reviewers notified",
+    ),
+  );
+  expect(test.readPull).not.toHaveBeenCalled();
+  vi.mocked(submitReview).mockImplementationOnce(
+    async (
+      _s,
+      _c,
+      _config,
+      _pr,
+      _r,
+      _signal,
+      progress,
+      _resume,
+      _facts,
+      existing,
+    ) => {
+      existing?.();
+      progress(record);
+      throw new Error("Notification rejected");
+    },
+  );
+  await test.user.click(screen.getByRole("button", { name: "Submit PR" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Notification rejected",
+  );
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.getByRole("button", { name: "Open UI thread" })).toBeTruthy();
+});
+it("guards repeated clicks and aborts pending work when its page unmounts", async () => {
+  let finish: () => void = () => {};
+  let signal: AbortSignal | undefined;
+  vi.mocked(submitReview).mockImplementationOnce(
+    async (_s, _c, _config, _pr, _r, pending) => {
+      signal = pending;
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      return record;
+    },
+  );
+  const test = fixture();
+  await enter(test.user);
+  await waitFor(() => expect(submitReview).toHaveBeenCalledTimes(1));
+  await test.user.click(screen.getByRole("button", { name: "Submit PR" }));
+  expect(submitReview).toHaveBeenCalledTimes(1);
+  expect((screen.getByRole("textbox") as HTMLInputElement).disabled).toBe(true);
+  test.unmount();
+  expect(signal?.aborted).toBe(true);
+  await act(async () => finish());
+});
+
+it("focuses the URL after selecting a previous PR without dispatching", async () => {
+  vi.mocked(loadSubmissions).mockResolvedValue({ rows: [record], warning: "" });
+  const test = fixture();
+  await test.user.click(
+    await screen.findByRole("button", { name: /example-org\/project#42/ }),
+  );
+  await test.user.click(screen.getByRole("button", { name: "Use this PR" }));
+  const input = screen.getByRole("textbox", { name: "GitHub PR URL" });
+  expect(document.activeElement).toBe(input);
+  expect((input as HTMLInputElement).value).toBe(
+    "https://github.com/example-org/project/pull/42",
+  );
+  expect(submitReview).not.toHaveBeenCalled();
 });
