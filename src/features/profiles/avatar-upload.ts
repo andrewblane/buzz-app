@@ -139,11 +139,14 @@ export async function emojiAvatar(
   scale = emojiAvatarScale,
   offset = 0,
 ): Promise<File> {
-  const clear = color === "transparent";
-  if (!emoji || emoji.length > 64 || (!clear && !/^#[0-9a-f]{6}$/i.test(color)))
+  if (
+    !emoji ||
+    emoji.length > 64 ||
+    (color !== "transparent" && !/^#[0-9a-f]{6}$/i.test(color))
+  )
     throw new Error("Choose an emoji and a background color.");
   const canvas = document.createElement("canvas");
-  paintEmojiAvatar(canvas, emoji, clear ? undefined : color, scale, offset);
+  paintEmojiAvatar(canvas, emoji, color, scale, offset);
   const blob = await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob(
       (value) =>
