@@ -52,11 +52,10 @@ it("limits a saved update review to diagnostics for its installed folder", async
     })),
     discard: vi.fn(async () => {}),
   });
-  render(<PluginImport {...props} />);
-  const check = screen.getByRole("button", { name: "Check for updates" });
-  await waitFor(() => expect(check).toBeEnabled());
-  fireEvent.click(check);
-  fireEvent.click(await screen.findByRole("button", { name: "Update" }));
+  render(<PluginImport {...props} initialUpdateAvailable />);
+  const update = await screen.findByRole("button", { name: "Update" });
+  await waitFor(() => expect(update).toBeEnabled());
+  fireEvent.click(update);
   const review = await screen.findByRole("dialog", {
     name: "Update Remembered",
   });
