@@ -442,6 +442,38 @@ fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+/// The `/bin/sh -c` script that waits for process `pid` (this one) to exit,
+/// launches the copy installed at `target`, and then detaches `detach_mount`,
+/// the disk image this copy ran from, if there is one.
+///
+/// It launches with `open -n`. A copy of the bundle that was just replaced can
+/// still be running, because it is asked to quit and never waited for, and
+/// LaunchServices keeps that process registered under `target`. Plain `open`
+/// hands the request to that process instead of launching the bundle now at
+/// `target`, so once it finishes quitting no Buzz is running at all. `-n`
+/// starts the installed copy whatever else is registered at that path. This
+/// process has exited by then, so the new copy's single-instance guard has
+/// nothing to hand off to.
+///
+/// The paths are single-quote escaped before interpolation: the only reason a
+/// shell is involved at all is the wait-for-pid loop, and a bundle whose name
+/// contains shell metacharacters must not be able to turn that loop into
+/// arbitrary command execution.
+fn relaunch_script(pid: u32, target: &Path, detach_mount: Option<&Path>) -> String {
+    let target = shell_single_quote(&target.to_string_lossy());
+    let mut script = format!(
+        "while /bin/kill -0 {pid} >/dev/null 2>&1; do /bin/sleep 0.2; done; \
+         /usr/bin/open -n {target}"
+    );
+    if let Some(mount) = detach_mount {
+        let mount = shell_single_quote(&mount.to_string_lossy());
+        script.push_str(&format!(
+            "; /bin/sleep 1; /usr/bin/hdiutil detach {mount} >/dev/null 2>&1"
+        ));
+    }
+    script
+}
+
 #[cfg(target_os = "macos")]
 mod macos {
     use super::*;
@@ -808,22 +840,7 @@ mod macos {
     /// Spawn a detached shell that waits for this process to exit, launches the
     /// installed copy, and (optionally) detaches the disk image we ran from.
     fn relaunch_after_exit(target: &Path, detach_mount: Option<PathBuf>) -> std::io::Result<()> {
-        let pid = std::process::id();
-        // The paths are single-quote escaped before interpolation: the only
-        // reason a shell is involved at all is the wait-for-pid loop, and a
-        // bundle whose name contains shell metacharacters must not be able to
-        // turn that loop into arbitrary command execution.
-        let target = shell_single_quote(&target.to_string_lossy());
-        let mut script = format!(
-            "while /bin/kill -0 {pid} >/dev/null 2>&1; do /bin/sleep 0.2; done; \
-             /usr/bin/open {target}"
-        );
-        if let Some(mount) = detach_mount {
-            let mount = shell_single_quote(&mount.to_string_lossy());
-            script.push_str(&format!(
-                "; /bin/sleep 1; /usr/bin/hdiutil detach {mount} >/dev/null 2>&1"
-            ));
-        }
+        let script = relaunch_script(std::process::id(), target, detach_mount.as_deref());
         Command::new("/bin/sh").arg("-c").arg(script).spawn()?;
         Ok(())
     }
@@ -1661,5 +1678,33 @@ mod tests {
             .output()
             .expect("spawn /bin/sh");
         assert_eq!(String::from_utf8_lossy(&output.stdout), malicious);
+    }
+
+    #[test]
+    fn relaunch_script_launches_a_new_instance_once_this_process_exits() {
+        // `-n`: a copy of the replaced bundle that is still quitting stays
+        // registered at this path, and plain `open` would hand the launch to
+        // it instead of starting the installed copy.
+        assert_eq!(
+            relaunch_script(4711, Path::new("/Applications/Buzz.app"), None),
+            "while /bin/kill -0 4711 >/dev/null 2>&1; do /bin/sleep 0.2; done; \
+             /usr/bin/open -n '/Applications/Buzz.app'"
+        );
+    }
+
+    #[test]
+    fn relaunch_script_detaches_the_disk_image_after_launching() {
+        // A second mounted image gets a space in its mount point, and neither
+        // path may break out of its quoting.
+        assert_eq!(
+            relaunch_script(
+                4711,
+                Path::new("/Applications/Buzz's.app"),
+                Some(Path::new("/Volumes/Buzz 1")),
+            ),
+            "while /bin/kill -0 4711 >/dev/null 2>&1; do /bin/sleep 0.2; done; \
+             /usr/bin/open -n '/Applications/Buzz'\\''s.app'; \
+             /bin/sleep 1; /usr/bin/hdiutil detach '/Volumes/Buzz 1' >/dev/null 2>&1"
+        );
     }
 }
