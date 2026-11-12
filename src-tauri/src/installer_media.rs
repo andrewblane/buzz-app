@@ -342,11 +342,18 @@ fn scenario_for(
     }
 }
 
-/// The three text fields a native `NSAlert` needs.
+/// The text a native `NSAlert` needs, and which of its two buttons Return
+/// presses.
 struct AlertCopy {
     message: String,
     informative: String,
     primary_button: String,
+    /// Whether Return presses the primary button rather than "Do Not Move".
+    /// False when the move may replace a newer installed copy. An older build
+    /// can refuse data the newer one wrote, as the archive store does for a
+    /// newer schema, so that replacement has to be chosen on purpose, not by
+    /// a stray Return.
+    move_is_default: bool,
 }
 
 /// A trailing note describing how the app is currently being run, appended to
@@ -380,6 +387,7 @@ fn alert_copy(scenario: &MoveScenario, location: RunLocation) -> AlertCopy {
                  installer media.{note}"
             ),
             primary_button: "Move to Applications Folder".to_string(),
+            move_is_default: true,
         },
         MoveScenario::Upgrade { from, to } => AlertCopy {
             message: "Upgrade Buzz in your Applications folder?".to_string(),
@@ -388,6 +396,7 @@ fn alert_copy(scenario: &MoveScenario, location: RunLocation) -> AlertCopy {
                  Buzz can replace the installed copy and relaunch from it.{note}"
             ),
             primary_button: "Upgrade and Relaunch".to_string(),
+            move_is_default: true,
         },
         MoveScenario::Downgrade { from, to } => AlertCopy {
             message: "Replace the newer version in your Applications folder?".to_string(),
@@ -396,6 +405,7 @@ fn alert_copy(scenario: &MoveScenario, location: RunLocation) -> AlertCopy {
                  Buzz can replace the installed copy and relaunch from it.{note}"
             ),
             primary_button: "Replace and Relaunch".to_string(),
+            move_is_default: false,
         },
         MoveScenario::Reinstall { version } => AlertCopy {
             message: format!("Reinstall Buzz {version} in your Applications folder?"),
@@ -404,6 +414,7 @@ fn alert_copy(scenario: &MoveScenario, location: RunLocation) -> AlertCopy {
                  replace the installed copy and relaunch from it.{note}"
             ),
             primary_button: "Reinstall and Relaunch".to_string(),
+            move_is_default: true,
         },
         MoveScenario::ExistingUnknown => AlertCopy {
             message: "Replace the copy in your Applications folder?".to_string(),
@@ -412,6 +423,8 @@ fn alert_copy(scenario: &MoveScenario, location: RunLocation) -> AlertCopy {
                  installed copy and relaunch from it.{note}"
             ),
             primary_button: "Replace and Relaunch".to_string(),
+            // The installed version is unknown, so it may be the newer one.
+            move_is_default: false,
         },
     }
 }
@@ -655,8 +668,14 @@ mod macos {
         let alert = NSAlert::new(mtm);
         alert.setMessageText(&NSString::from_str(&copy.message));
         alert.setInformativeText(&NSString::from_str(&copy.informative));
-        let _ = alert.addButtonWithTitle(&NSString::from_str(&copy.primary_button));
-        let _ = alert.addButtonWithTitle(&NSString::from_str("Do Not Move"));
+        let primary = alert.addButtonWithTitle(&NSString::from_str(&copy.primary_button));
+        let do_not_move = alert.addButtonWithTitle(&NSString::from_str("Do Not Move"));
+        if !copy.move_is_default {
+            // An alert gives Return to its first button. Hand it to "Do Not
+            // Move" instead; the buttons keep their order and return codes.
+            primary.setKeyEquivalent(&NSString::from_str(""));
+            do_not_move.setKeyEquivalent(&NSString::from_str("\r"));
+        }
         alert.setShowsSuppressionButton(true);
 
         let move_requested = alert.runModal() == NSAlertFirstButtonReturn;
@@ -1537,6 +1556,7 @@ mod tests {
         let fresh = alert_copy(&MoveScenario::FreshInstall, RunLocation::DiskImage);
         assert_eq!(fresh.message, "Move to Applications folder?");
         assert_eq!(fresh.primary_button, "Move to Applications Folder");
+        assert!(fresh.move_is_default);
         assert!(fresh.informative.starts_with("Buzz can move itself"));
 
         let upgrade = alert_copy(
@@ -1548,6 +1568,7 @@ mod tests {
         );
         assert_eq!(upgrade.message, "Upgrade Buzz in your Applications folder?");
         assert_eq!(upgrade.primary_button, "Upgrade and Relaunch");
+        assert!(upgrade.move_is_default);
         assert!(upgrade
             .informative
             .contains("You have Buzz 0.7.12 installed"));
@@ -1565,6 +1586,8 @@ mod tests {
             "Replace the newer version in your Applications folder?"
         );
         assert_eq!(downgrade.primary_button, "Replace and Relaunch");
+        // Return must not replace a newer installed copy.
+        assert!(!downgrade.move_is_default);
         assert!(downgrade
             .informative
             .contains("0.8.0 installed, which is newer than this copy (0.7.12)"));
@@ -1580,6 +1603,7 @@ mod tests {
             "Reinstall Buzz 0.8.0 in your Applications folder?"
         );
         assert_eq!(reinstall.primary_button, "Reinstall and Relaunch");
+        assert!(reinstall.move_is_default);
         assert!(reinstall
             .informative
             .starts_with("Buzz 0.8.0 is already installed"));
@@ -1590,6 +1614,8 @@ mod tests {
             "Replace the copy in your Applications folder?"
         );
         assert_eq!(unknown.primary_button, "Replace and Relaunch");
+        // An unknown installed version may be the newer one.
+        assert!(!unknown.move_is_default);
         assert!(unknown
             .informative
             .starts_with("Buzz is already installed in your Applications folder."));
