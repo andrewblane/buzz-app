@@ -519,8 +519,17 @@ test("session changes discard the previous sidebar targets and manual unread sti
     await expect(
       page.getByText("Updating sidebar details…", { exact: true }),
     ).toHaveCount(0);
-    // Alpha follows the Direct messages, below this offset.
-    await scroll(page, 1800);
+    // Alpha follows the Direct messages, so the cue below already shows at the
+    // top and cannot prove this scroll landed. Wait for the scroll event itself:
+    // the user takes the viewport there, before delayed preferences reveal Alpha.
+    await list(page).evaluate(
+      (el, top) =>
+        new Promise((resolve) => {
+          el.addEventListener("scroll", () => resolve(), { once: true });
+          el.scrollTop = top;
+        }),
+      1800,
+    );
     await expect(cue(page, "below")).toBeVisible();
     // Completing delayed preferences must not replace the user's newer viewport.
     const refreshed = page.waitForResponse(
