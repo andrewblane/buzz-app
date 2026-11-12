@@ -48,7 +48,7 @@ export function LaneRules({
         }
       />
       {routing.rules.map((rule, index) => (
-        <div className="review-config-form" key={rule.id}>
+        <div className="review-config-rule" key={rule.id}>
           <Select
             label={`Lane ${lane} rule ${index + 1} field`}
             variant="field"
@@ -104,6 +104,7 @@ export function LaneRules({
           <div>
             <Button
               disabled={disabled}
+              aria-label={`Remove rule ${index + 1} from lane ${lane}`}
               onClick={() =>
                 onChange({
                   ...routing,
@@ -111,7 +112,7 @@ export function LaneRules({
                 })
               }
             >
-              Remove rule {index + 1} from lane {lane}
+              Remove
             </Button>
           </div>
         </div>

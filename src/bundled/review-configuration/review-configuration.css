@@ -35,19 +35,6 @@
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-.review-config-table {
-  width: 100%;
-  table-layout: fixed;
-  border-collapse: collapse;
-}
-.review-config-table th,
-.review-config-table td {
-  text-align: start;
-  overflow-wrap: anywhere;
-  padding: var(--space-2);
-  border-bottom: 1px solid var(--border-standard);
-}
-
 .review-config-instructions {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -59,4 +46,29 @@
   align-items: baseline;
   gap: var(--space-2) var(--space-4);
   overflow-wrap: anywhere;
+}
+
+.review-config-repositories,
+.review-config-repository-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--space-2);
+}
+.review-config-rule {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+.review-config-rule > :nth-child(3) {
+  grid-column: 1 / -1;
+}
+.review-config-form {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 480px) {
+  .review-config-rule {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

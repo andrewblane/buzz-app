@@ -1161,7 +1161,12 @@ confirmation. **Delete team** asks first; it doesn't delete the team's agents.
   reads the latest saved versions. Settings live on the community relay and are
   visible to channel readers; members who can post can edit them. A conflicting
   edit preserves your draft: copy your changes before cancelling and reloading.
-  **Submit PR** accepts a PR number or URL for a saved repository and one reviewer
+  **Submit PR** on the repository list finds the configured repository from a full
+  GitHub PR URL, then opens its matching-lane preview flow.
+  Open one repository at a time. **Configuration** contains expandable lane settings;
+  **Pull requests** contains **Submit PR** and that repository’s **Existing PRs**.
+  Save or cancel an open draft before switching views.
+  **Submit PR** accepts a PR number or URL for that repository and one reviewer
   per matching lane. Optional all/any rules match title text, exact labels, changed-file
   counts, and path patterns such as `src/**/*.tsx`. No rules matches every PR.
   **Load PR details** previews matching lanes; zero matches sends nothing.

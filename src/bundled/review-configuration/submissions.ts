@@ -43,6 +43,19 @@ export const prUrl = (value: Submission) =>
 export const threadUrl = (channel: string, id: string) =>
   `buzz://message?channel=${channel}&id=${id}`;
 
+/** A global PR entry requires a full URL so the configured repository is unambiguous. */
+export function pullRepository(input: string): string {
+  const match =
+    /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/([1-9]\d*)\/?$/i.exec(
+      input.trim(),
+    );
+  if (!match)
+    throw new Error("Enter a full GitHub PR URL to find its repository.");
+  const repository = repositoryName(match[1] ?? "");
+  pullRequest(input, repository);
+  return repository;
+}
+
 export function pullRequest(input: string, repository: string): number {
   const text = input.trim();
   const match =

@@ -25,6 +25,7 @@ export function ReviewSubmissions({
   session,
   channel,
   configurations,
+  initialPull = "",
   disabled,
   writable,
   onEditingChange,
@@ -35,6 +36,7 @@ export function ReviewSubmissions({
   readPull?: ReadPull;
   channel: string;
   configurations: readonly SavedReviewConfig[];
+  initialPull?: string;
   disabled: boolean;
   writable: boolean;
   onEditingChange: (editing: boolean) => void;
@@ -45,10 +47,17 @@ export function ReviewSubmissions({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
-  const [draft, setDraft] = useState<{
-    config: SavedReviewConfig;
-    existing?: SavedSubmission;
-  }>();
+  const [draft, setDraft] = useState<
+    | {
+        config: SavedReviewConfig;
+        existing?: SavedSubmission;
+      }
+    | undefined
+  >(() =>
+    initialPull && configurations[0]
+      ? { config: configurations[0] }
+      : undefined,
+  );
   const trigger = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     onEditingChange(!!draft);
@@ -84,16 +93,16 @@ export function ReviewSubmissions({
       });
     return () => controller.abort();
   }, [session, channel, reload]);
+  const visibleRows = rows.filter((row) =>
+    configurations.some(
+      (config) => config.config.repository === row.value.config.repository,
+    ),
+  );
   return (
     <section className="review-config-form" aria-label="PR submissions">
-      <InlineHeader title="Submit a PR" />
-      <p>
-        Submit a PR to start reviewer conversations using saved settings.
-        Delivery does not confirm that a reviewer is running. Automatic
-        reminders are off.
-      </p>
       <div className="review-config-actions">
         <Button
+          ref={trigger}
           variant="prominent"
           disabled={
             disabled ||
@@ -118,9 +127,10 @@ export function ReviewSubmissions({
           channel={channel}
           configurations={configurations}
           initial={draft.config}
+          initialPull={initialPull}
           readPull={readPull}
           existing={draft.existing}
-          writable={writable}
+          writable={writable && !loading && !error}
           onClose={() => setDraft(undefined)}
           onProgress={(record) =>
             setRows((current) => [
@@ -145,12 +155,12 @@ export function ReviewSubmissions({
           <p role="alert">{error} Use Reload submissions to try again.</p>
         )}
         {warning && <p role="alert">{warning}</p>}
-        {!loading && !error && !rows.length && (
-          <p>No PRs submitted in this channel.</p>
+        {!loading && !error && !visibleRows.length && (
+          <p>No PRs submitted for this repository.</p>
         )}
         <Accordion
           variant="form"
-          items={rows.map((row) => ({
+          items={visibleRows.map((row) => ({
             value: row.artifactId,
             title: (
               <span className="review-config-pr-summary">
@@ -242,6 +252,7 @@ function SubmissionForm({
   channel,
   configurations,
   initial,
+  initialPull,
   existing,
   writable,
   onClose,
@@ -253,6 +264,7 @@ function SubmissionForm({
   channel: string;
   configurations: readonly SavedReviewConfig[];
   initial: SavedReviewConfig;
+  initialPull: string;
   existing: SavedSubmission | undefined;
   writable: boolean;
   onClose: () => void;
@@ -260,7 +272,9 @@ function SubmissionForm({
 }) {
   const choices = useAgentChoices(session, true, true);
   const [config, setConfig] = useState(initial);
-  const [pr, setPr] = useState(existing ? String(existing.value.pr) : "");
+  const [pr, setPr] = useState(
+    existing ? String(existing.value.pr) : initialPull,
+  );
   const [reviewers, setReviewers] = useState(
     initial.config.lanes.map((lane) => lane.reviewers[0] ?? ""),
   );
@@ -374,33 +388,35 @@ function SubmissionForm({
         title={started ? "Resume saved submission" : "New PR submission"}
       />
       <SettingsGroup layout="form">
-        <Select
-          label="Repository to review"
-          variant="field"
-          value={config.config.repository}
-          disabled={busy || reading || started}
-          groups={[
-            {
-              label: "Repositories",
-              options: (existing ? [config] : configurations).map((row) => ({
-                value: row.config.repository,
-                label: row.config.repository,
-              })),
-            },
-          ]}
-          onValueChange={(repository) => {
-            const row = configurations.find(
-              (item) => item.config.repository === repository,
-            );
-            if (row) {
-              setFacts(undefined);
-              setConfig(row);
-              setReviewers(
-                row.config.lanes.map((lane) => lane.reviewers[0] ?? ""),
+        {configurations.length > 1 && (
+          <Select
+            label="Repository to review"
+            variant="field"
+            value={config.config.repository}
+            disabled={busy || reading || started}
+            groups={[
+              {
+                label: "Repositories",
+                options: (existing ? [config] : configurations).map((row) => ({
+                  value: row.config.repository,
+                  label: row.config.repository,
+                })),
+              },
+            ]}
+            onValueChange={(repository) => {
+              const row = configurations.find(
+                (item) => item.config.repository === repository,
               );
-            }
-          }}
-        />
+              if (row) {
+                setFacts(undefined);
+                setConfig(row);
+                setReviewers(
+                  row.config.lanes.map((lane) => lane.reviewers[0] ?? ""),
+                );
+              }
+            }}
+          />
+        )}
         <Field
           label="Pull request"
           description="Enter a PR number or full GitHub PR URL, then load its details to preview matching lanes."

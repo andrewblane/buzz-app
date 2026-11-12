@@ -3,11 +3,20 @@
 An optional bundled plugin with a separate sidebar page for repository review
 settings. Enable **Review Configuration** in Settings → Plugins → Manage plugins.
 Choose a channel, register a GitHub repository, add named lanes, reviewer agents, and instructions,
-and save. The repository table supports editing and an explicit reload. The page
+and save. Open a repository row to work with one repository at a time. Its **Configuration**
+section contains lane settings; **Pull requests** contains Submit PR and Existing PRs.
+Lane editors and routing rules expand on demand. Cancel or save a draft before
+switching sections or repositories. These are local page sections: reload returns
+to the repository list; they do not create separate shell tabs or history visits. The page
 remembers your channel per identity/community and selects it automatically when
 only one eligible channel is available.
 
-Use **Submit PR** to select a saved repository, enter a PR number or URL, and
+From the repository list, **Submit PR** accepts a full GitHub PR URL and finds
+its configured repository in the selected channel. Unknown repositories must be
+registered first. The matched repository opens in Pull requests with the URL
+filled in; Load PR details previews its matching lanes before sending.
+
+In a repository’s **Pull requests** section, use **Submit PR**, enter a PR number or URL, and
 load PR details to preview matching lanes, then choose one configured reviewer
 per matching lane. **Start review threads** saves the instruction snapshot,
 creates one thread per matching lane with no overview, and mentions
@@ -19,7 +28,7 @@ or reviewing. No model process or reminder timer is started by this plugin.
 
 Enable this plugin in **Settings → Plugins → Manage plugins**, then open its
 sidebar entry. Choose a channel and register a repository. For each lane, select
-reviewer agents and enter instructions, then save. Use the table to edit settings.
+reviewer agents and enter instructions, then save. Open its Configuration section to edit settings.
 These selections do not start reviews or grant agents access to the channel.
 
 ---
@@ -113,7 +122,7 @@ A missing outbox message with a known ID is checked against the relay before
 recording delivery.
 No background retries, polling, or model runtime are added.
 
-Opening a channel adds one bounded submissions read (latest 100, with truncation
+Opening Pull requests adds one bounded submissions read (latest 100, with truncation
 notice). Submission explicitly reads the current record and reviewer profiles,
 refreshes agent choices, and uses the outbox's per-message membership preflight.
 Reconnect introduces no new plugin reads.

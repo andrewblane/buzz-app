@@ -5,7 +5,12 @@ import { createOutbox, type OutgoingEvent } from "../../features/relay/outbox";
 import type { EventData, ReadFilter } from "../../features/relay/events";
 import type { RelaySession } from "../../features/relay/session";
 import { keypair, signed } from "../../features/relay/testing";
-import { loadSubmissions, pullRequest, submitReview } from "./submissions";
+import {
+  loadSubmissions,
+  pullRequest,
+  pullRepository,
+  submitReview,
+} from "./submissions";
 import type { SavedReviewConfig } from "./configuration";
 
 const channel = "11111111-1111-4111-8111-111111111111";
@@ -472,4 +477,18 @@ it("retains old overview and lane IDs when reloading and resuming a version-one 
   );
   expect(resumed.value.threads.every((thread) => thread.delivered)).toBe(true);
   expect(f.publish).toHaveBeenCalledTimes(2);
+});
+
+it("infers a canonical repository only from a valid full PR URL", () => {
+  expect(
+    pullRepository(" https://github.com/Example-Org/Project/pull/12/ "),
+  ).toBe("example-org/project");
+  for (const input of [
+    "12",
+    "https://example.org/a/b/pull/12",
+    "https://github.com/a/b/pull/0",
+    "https://github.com/a/b/pull/9007199254740992",
+    "https://user@github.com/a/b/pull/12",
+  ])
+    expect(() => pullRepository(input)).toThrow();
 });

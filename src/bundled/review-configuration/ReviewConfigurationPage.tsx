@@ -1,9 +1,16 @@
 import { createPullReader, type ReadPull } from "./pull-facts";
 const publicPullReader = createPullReader();
 import { LaneRules } from "./LaneRules";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useAgentChoices } from "../../features/agents/use-choices";
 import { ReviewSubmissions } from "./ReviewSubmissions";
+import { pullRepository } from "./submissions";
 import type { Navigation } from "../../features/navigation/controller";
 import { splitPartition } from "../../features/relay/partition";
 import { LaneReviewers } from "./LaneReviewers";
@@ -11,6 +18,9 @@ import { useChannelList, useRelayConnection } from "../../features/relay/react";
 import type { RelayData } from "../../features/relay/service";
 import type { RelaySession } from "../../features/relay/session";
 import { ListChecksIcon } from "../../shared/design-system/icons";
+import { Accordion } from "../../shared/design-system/ui/Accordion";
+import { NavigationItem } from "../../shared/design-system/ui/NavigationItem";
+import { Tabs } from "../../shared/design-system/ui/Tabs";
 import { Button } from "../../shared/design-system/ui/Button";
 import { Field } from "../../shared/design-system/ui/Field";
 import { FullPageSurface } from "../../shared/design-system/ui/FullPageSurface";
@@ -153,11 +163,6 @@ export function ReviewConfigurationCommunity({
     !!session.configArtifactWriter;
   return (
     <Frame>
-      <p>
-        Register repositories and save their review lane instructions. These are
-        saved settings; use Submit PR below to start reviewer threads. Saving
-        settings does not send messages.
-      </p>
       <Select
         label="Review channel"
         variant="field"
@@ -174,7 +179,7 @@ export function ReviewConfigurationCommunity({
             })),
           },
         ]}
-        description="Settings are shared with this channel. Members who can post can edit them. Choose a private channel for private instructions."
+        description="Repositories and reviews are shared with this channel."
       />
       {list.status === "loading" && <p role="status">Loading channels…</p>}
       {list.status === "error" && (
@@ -217,6 +222,14 @@ function ChannelConfiguration({
   onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
 }) {
   const [submitting, setSubmitting] = useState(false);
+  const [lookup, setLookup] = useState(false);
+  const [pullUrl, setPullUrl] = useState("");
+  const [lookupError, setLookupError] = useState("");
+  const [initialPull, setInitialPull] = useState("");
+  const submissionEditing = useCallback((editing: boolean) => {
+    setSubmitting(editing);
+    if (!editing) setInitialPull("");
+  }, []);
   const [rows, setRows] = useState<SavedReviewConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -225,12 +238,17 @@ function ChannelConfiguration({
   const [remaining, setRemaining] = useState(0);
   const [reload, setReload] = useState(0);
   const [editor, setEditor] = useState<SavedReviewConfig | "new">();
+  const [repository, setRepository] = useState("");
+  const [section, setSection] = useState<"configuration" | "pulls">(
+    "configuration",
+  );
+  const selected = rows.find((row) => row.config.repository === repository);
   const editorTrigger = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
-    onEditingChange(editor !== undefined || submitting);
+    onEditingChange(editor !== undefined || submitting || lookup);
     if (editor === undefined) editorTrigger.current?.focus();
     return () => onEditingChange(false);
-  }, [editor, submitting, onEditingChange]);
+  }, [editor, submitting, lookup, onEditingChange]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reload explicitly requests a fresh snapshot.
   useEffect(() => {
     const controller = new AbortController();
@@ -274,132 +292,280 @@ function ChannelConfiguration({
       });
     return () => controller.abort();
   }, [session, channel, reload]);
+  function saved(next: SavedReviewConfig) {
+    if (editor === "new") setRemaining((value) => value - 1);
+    setRows((current) =>
+      [
+        ...current.filter((row) => row.artifactId !== next.artifactId),
+        next,
+      ].sort((a, b) => a.config.repository.localeCompare(b.config.repository)),
+    );
+    setRepository(next.config.repository);
+    setEditor(undefined);
+    setNotice(`Saved ${next.config.repository}.`);
+  }
   return (
     <>
-      <InlineHeader title="Repositories" />
-      <div className="review-config-actions">
-        <Button
-          disabled={loading || !!editor || submitting}
-          onClick={() => {
-            setNotice("");
-            setReload((value) => value + 1);
-          }}
-        >
-          Reload
-        </Button>
-        <Button
-          variant="prominent"
-          disabled={
-            loading ||
-            !!error ||
-            !!editor ||
-            submitting ||
-            !writable ||
-            remaining <= 0
-          }
-          onClick={(event) => {
-            editorTrigger.current = event.currentTarget;
-            setNotice("");
-            setEditor("new");
-          }}
-        >
-          Register repository
-        </Button>
-      </div>
-      {!session.configArtifactWriter && (
-        <p role="alert">
-          This connection cannot save settings. Reconnect with a supported Buzz
-          client.
-        </p>
-      )}
-      {!loading && !error && warning && <p role="alert">{warning}</p>}
-      {loading ? (
-        <p role="status">Loading configurations…</p>
-      ) : error ? (
-        <p role="alert">{error} Use Reload to try again.</p>
-      ) : rows.length ? (
-        <table className="review-config-table">
-          <caption className="sr-only">Saved repository configurations</caption>
-          <thead>
-            <tr>
-              <th scope="col">Repository</th>
-              <th scope="col">Lanes</th>
-              <th scope="col">Settings</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.artifactId}>
-                <th scope="row">{row.config.repository}</th>
-                <td>
-                  {row.config.lanes
-                    .map(
-                      (lane) =>
-                        `${lane.name} (${lane.reviewers.length} ${lane.reviewers.length === 1 ? "reviewer" : "reviewers"})`,
-                    )
-                    .join(", ")}
-                </td>
-                <td>
-                  <Button
-                    aria-label={`Edit ${row.config.repository}`}
-                    disabled={!!editor || submitting || !writable}
-                    onClick={(event) => {
-                      editorTrigger.current = event.currentTarget;
-                      setNotice("");
-                      setEditor(row);
-                    }}
-                  >
-                    Edit
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {!selected && editor !== "new" ? (
+        <>
+          <InlineHeader title="Repositories" />
+          <div className="review-config-actions">
+            <Button
+              disabled={loading || lookup}
+              onClick={() => setReload((value) => value + 1)}
+            >
+              Reload
+            </Button>
+            <Button
+              ref={editorTrigger}
+              variant="prominent"
+              disabled={
+                loading || lookup || !!error || !writable || remaining <= 0
+              }
+              onClick={(event) => {
+                editorTrigger.current = event.currentTarget;
+                setNotice("");
+                setEditor("new");
+              }}
+            >
+              Register repository
+            </Button>
+            <Button
+              disabled={
+                loading || lookup || !!error || !writable || !rows.length
+              }
+              onClick={() => {
+                setLookup(true);
+                setLookupError("");
+              }}
+            >
+              Submit PR
+            </Button>
+          </div>
+          {lookup && (
+            <form
+              className="review-config-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                try {
+                  const name = pullRepository(pullUrl);
+                  const match = rows.find(
+                    (row) => row.config.repository === name,
+                  );
+                  if (!match)
+                    throw new Error(
+                      `${name} is not configured in this channel. Register it before submitting.`,
+                    );
+                  setRepository(name);
+                  setSection("pulls");
+                  setInitialPull(pullUrl.trim());
+                  setLookup(false);
+                } catch (reason) {
+                  setLookupError(
+                    reason instanceof Error
+                      ? reason.message
+                      : "Could not find repository.",
+                  );
+                }
+              }}
+            >
+              <Field
+                label="GitHub PR URL"
+                description="We’ll find its configured repository and match its lane rules."
+              >
+                <Input
+                  autoFocus
+                  required
+                  maxLength={300}
+                  value={pullUrl}
+                  onValueChange={setPullUrl}
+                  placeholder="https://github.com/example-org/project/pull/123"
+                />
+              </Field>
+              {lookupError && <p role="alert">{lookupError}</p>}
+              <div className="review-config-actions">
+                <Button onClick={() => setLookup(false)}>Cancel</Button>
+                <Button type="submit" variant="prominent">
+                  Continue
+                </Button>
+              </div>
+            </form>
+          )}
+          {loading ? (
+            <p role="status">Loading configurations…</p>
+          ) : error ? (
+            <p role="alert">{error} Use Reload to try again.</p>
+          ) : rows.length ? (
+            <div className="review-config-repositories">
+              {rows.map((row) => (
+                <NavigationItem
+                  key={row.artifactId}
+                  aria-label={`Open ${row.config.repository}`}
+                  multiline
+                  disabled={lookup}
+                  label={
+                    <span className="review-config-repository-label">
+                      <span>{row.config.repository}</span>
+                      <span className="text-caption text-subtle">
+                        {row.config.lanes.map((lane) => lane.name).join(" · ")}
+                      </span>
+                    </span>
+                  }
+                  trailing="Open"
+                  onClick={() => {
+                    setRepository(row.config.repository);
+                    setSection("configuration");
+                    setNotice("");
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <p>
+              {warning
+                ? "No readable configurations in this channel."
+                : "No repositories configured in this channel. Register one to save its review lanes."}
+            </p>
+          )}
+          {warning && <p role="alert">{warning}</p>}
+        </>
       ) : (
-        <p>
-          {warning
-            ? "No readable configurations in this channel."
-            : "No repositories configured in this channel. Register one to save its review lanes."}
-        </p>
+        <>
+          <div>
+            <Button
+              disabled={!!editor || submitting}
+              onClick={() => {
+                setRepository("");
+                setNotice("");
+              }}
+            >
+              All repositories
+            </Button>
+          </div>
+          {selected && (
+            <>
+              <InlineHeader title={selected.config.repository} />
+              <Tabs
+                variant="panel"
+                label="Repository sections"
+                value={section}
+                items={[
+                  {
+                    value: "configuration",
+                    label: "Configuration",
+                    disabled: !!editor || submitting,
+                  },
+                  {
+                    value: "pulls",
+                    label: "Pull requests",
+                    disabled: !!editor || submitting,
+                  },
+                ]}
+                onValueChange={setSection}
+                renderPanel={(tab) =>
+                  tab === "configuration" ? (
+                    <section
+                      className="review-config-form"
+                      aria-label="Repository configuration"
+                    >
+                      {editor ? (
+                        <ConfigurationEditor
+                          key={editor === "new" ? "new" : editor.revision}
+                          session={session}
+                          channel={channel}
+                          writable={writable}
+                          previous={editor === "new" ? undefined : editor}
+                          existing={rows}
+                          onCancel={() => setEditor(undefined)}
+                          onSaved={saved}
+                        />
+                      ) : (
+                        <>
+                          <div className="review-config-actions">
+                            <Button
+                              ref={editorTrigger}
+                              variant="prominent"
+                              disabled={!writable || loading || !!error}
+                              aria-label={`Edit ${selected.config.repository}`}
+                              onClick={(event) => {
+                                editorTrigger.current = event.currentTarget;
+                                setNotice("");
+                                setEditor(selected);
+                              }}
+                            >
+                              Edit configuration
+                            </Button>
+                            <Button
+                              disabled={loading}
+                              onClick={() => {
+                                setNotice("");
+                                setReload((value) => value + 1);
+                              }}
+                            >
+                              Reload
+                            </Button>
+                          </div>
+                          {error && <p role="alert">{error}</p>}
+                          <Accordion
+                            variant="form"
+                            items={selected.config.lanes.map((lane) => ({
+                              value: lane.id,
+                              title: (
+                                <span className="review-config-pr-summary">
+                                  <span>{lane.name}</span>
+                                  <span className="text-caption text-subtle">
+                                    {lane.reviewers.length}{" "}
+                                    {lane.reviewers.length === 1
+                                      ? "reviewer"
+                                      : "reviewers"}{" "}
+                                    ·{" "}
+                                    {lane.routing?.rules.length
+                                      ? `${lane.routing.rules.length} routing rules`
+                                      : "All PRs"}
+                                  </span>
+                                </span>
+                              ),
+                              content: (
+                                <p className="review-config-instructions">
+                                  {lane.instructions}
+                                </p>
+                              ),
+                            }))}
+                          />
+                        </>
+                      )}
+                    </section>
+                  ) : (
+                    <ReviewSubmissions
+                      session={session}
+                      channel={channel}
+                      configurations={[selected]}
+                      initialPull={initialPull}
+                      disabled={loading || !!error}
+                      writable={writable}
+                      onEditingChange={submissionEditing}
+                      onOpenThread={onOpenThread}
+                      readPull={readPull}
+                    />
+                  )
+                }
+              />
+            </>
+          )}
+          {editor === "new" && (
+            <ConfigurationEditor
+              session={session}
+              channel={channel}
+              writable={writable}
+              previous={undefined}
+              existing={rows}
+              onCancel={() => setEditor(undefined)}
+              onSaved={saved}
+            />
+          )}
+        </>
       )}
       {notice && <p role="status">{notice}</p>}
-      {editor && (
-        <ConfigurationEditor
-          key={editor === "new" ? "new" : editor.revision}
-          session={session}
-          channel={channel}
-          writable={writable}
-          previous={editor === "new" ? undefined : editor}
-          existing={rows}
-          onCancel={() => setEditor(undefined)}
-          onSaved={(saved) => {
-            if (editor === "new") setRemaining((value) => value - 1);
-            setRows((current) =>
-              [
-                ...current.filter((row) => row.artifactId !== saved.artifactId),
-                saved,
-              ].sort((a, b) =>
-                a.config.repository.localeCompare(b.config.repository),
-              ),
-            );
-            setEditor(undefined);
-            setNotice(
-              `Saved ${saved.config.repository}. Use Submit PR to start review threads.`,
-            );
-          }}
-        />
-      )}
-      <ReviewSubmissions
-        session={session}
-        channel={channel}
-        configurations={rows}
-        disabled={!!editor || loading || !!error}
-        writable={writable}
-        onEditingChange={setSubmitting}
-        onOpenThread={onOpenThread}
-        readPull={readPull}
-      />
     </>
   );
 }
@@ -440,6 +606,11 @@ function ConfigurationEditor({
         ],
       },
   );
+  const editorRegion = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (previous) editorRegion.current?.focus();
+  }, [previous]);
+  const [expanded, setExpanded] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const operation = useRef<AbortController | undefined>(undefined);
@@ -469,10 +640,12 @@ function ConfigurationEditor({
       );
       if (!controller.signal.aborted) onSaved(result);
     } catch (reason) {
-      if (!controller.signal.aborted)
+      if (!controller.signal.aborted) {
+        setExpanded(draft.lanes.map((lane) => lane.id));
         setError(
           `${reason instanceof Error ? reason.message : "Could not save settings."} Your draft is still here. If settings changed elsewhere or the save timed out, copy your changes, then Cancel and Reload before retrying.`,
         );
+      }
     } finally {
       operation.current = undefined;
       if (!controller.signal.aborted) setBusy(false);
@@ -480,32 +653,36 @@ function ConfigurationEditor({
   }
   return (
     <form
+      ref={editorRegion}
+      tabIndex={-1}
+      aria-label="Edit repository settings"
+      noValidate
       onSubmit={(event) => {
         event.preventDefault();
         void save();
       }}
       className="review-config-form"
     >
-      <InlineHeader
-        title={previous ? "Edit repository" : "Register repository"}
-      />
-      <SettingsGroup layout="form">
-        <Field
-          label="GitHub repository"
-          description="Use owner/repository or the full repository URL."
-        >
-          <Input
-            autoFocus
-            required
-            value={draft.repository}
-            readOnly={!!previous}
-            disabled={busy}
-            maxLength={250}
-            placeholder="example-org/project"
-            onValueChange={(repository) => setDraft({ ...draft, repository })}
-          />
-        </Field>
-      </SettingsGroup>
+      {!previous && <InlineHeader title="Register repository" />}
+      {!previous && (
+        <SettingsGroup layout="form">
+          <Field
+            label="GitHub repository"
+            description="Use owner/repository or the full repository URL."
+          >
+            <Input
+              autoFocus
+              required
+              value={draft.repository}
+              readOnly={!!previous}
+              disabled={busy}
+              maxLength={250}
+              placeholder="example-org/project"
+              onValueChange={(repository) => setDraft({ ...draft, repository })}
+            />
+          </Field>
+        </SettingsGroup>
+      )}
       {choices.pending && <p role="status">Loading reviewer agents…</p>}
       {!choices.pending && !choices.selectable.length && (
         <p>
@@ -545,116 +722,151 @@ function ConfigurationEditor({
           Refresh agents
         </Button>
       </div>
-      {draft.lanes.map((lane, index) => (
-        <section key={lane.id} className="review-config-lane">
-          <div className="review-config-actions">
-            <InlineHeader title={`Lane ${index + 1}`} />
-            <Button
-              disabled={busy || draft.lanes.length === 1}
-              onClick={() =>
-                setDraft({
-                  ...draft,
-                  lanes: draft.lanes.filter((item) => item.id !== lane.id),
-                })
-              }
-            >
-              Remove lane {index + 1}
-            </Button>
-          </div>
-          <SettingsGroup layout="form">
-            <Field label={`Lane ${index + 1} name`}>
-              <Input
-                required
-                maxLength={80}
-                disabled={busy}
-                value={lane.name}
-                onValueChange={(name) =>
-                  setDraft({
-                    ...draft,
-                    lanes: draft.lanes.map((item) =>
-                      item.id === lane.id ? { ...item, name } : item,
+      <Accordion
+        variant="form"
+        keepMounted
+        value={expanded}
+        onValueChange={setExpanded}
+        items={draft.lanes.map((lane, index) => ({
+          value: lane.id,
+          title: (
+            <span className="review-config-pr-summary">
+              <span>{lane.name || `Lane ${index + 1}`}</span>
+              <span className="text-caption text-subtle">
+                {lane.reviewers.length}{" "}
+                {lane.reviewers.length === 1 ? "reviewer" : "reviewers"} ·{" "}
+                {lane.routing?.rules.length
+                  ? `${lane.routing.rules.length} rules`
+                  : "All PRs"}
+              </span>
+            </span>
+          ),
+          content: (
+            <section className="review-config-lane">
+              <div className="review-config-actions">
+                <Button
+                  disabled={busy || draft.lanes.length === 1}
+                  onClick={() =>
+                    setDraft({
+                      ...draft,
+                      lanes: draft.lanes.filter((item) => item.id !== lane.id),
+                    })
+                  }
+                >
+                  Remove lane {index + 1}
+                </Button>
+              </div>
+              <SettingsGroup layout="form">
+                <Field label={`Lane ${index + 1} name`}>
+                  <Input
+                    required
+                    maxLength={80}
+                    disabled={busy}
+                    value={lane.name}
+                    onValueChange={(name) =>
+                      setDraft({
+                        ...draft,
+                        lanes: draft.lanes.map((item) =>
+                          item.id === lane.id ? { ...item, name } : item,
+                        ),
+                      })
+                    }
+                  />
+                </Field>
+                <LaneReviewers
+                  lane={index + 1}
+                  reviewers={lane.reviewers}
+                  choices={choices}
+                  disabled={busy}
+                  onChange={(reviewers) =>
+                    setDraft({
+                      ...draft,
+                      lanes: draft.lanes.map((item) =>
+                        item.id === lane.id ? { ...item, reviewers } : item,
+                      ),
+                    })
+                  }
+                />
+                <Field
+                  label={`Lane ${index + 1} instructions`}
+                  description="Save the instructions reviewers should receive for this lane."
+                >
+                  <Textarea
+                    required
+                    rows={3}
+                    maxLength={8000}
+                    disabled={busy}
+                    value={lane.instructions}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        lanes: draft.lanes.map((item) =>
+                          item.id === lane.id
+                            ? { ...item, instructions: event.target.value }
+                            : item,
+                        ),
+                      })
+                    }
+                  />
+                </Field>
+              </SettingsGroup>
+              <Accordion
+                variant="form"
+                keepMounted
+                items={[
+                  {
+                    value: "routing",
+                    title: `Routing rules (${lane.routing?.rules.length ?? 0})`,
+                    content: (
+                      <div className="review-config-form">
+                        {" "}
+                        <LaneRules
+                          lane={index + 1}
+                          value={lane.routing}
+                          disabled={busy}
+                          onChange={(routing) =>
+                            setDraft({
+                              ...draft,
+                              lanes: draft.lanes.map((item) =>
+                                item.id === lane.id
+                                  ? { ...item, routing }
+                                  : item,
+                              ),
+                            })
+                          }
+                        />
+                      </div>
                     ),
-                  })
-                }
+                  },
+                ]}
               />
-            </Field>
-            <LaneRules
-              lane={index + 1}
-              value={lane.routing}
-              disabled={busy}
-              onChange={(routing) =>
-                setDraft({
-                  ...draft,
-                  lanes: draft.lanes.map((item) =>
-                    item.id === lane.id ? { ...item, routing } : item,
-                  ),
-                })
-              }
-            />
-            <LaneReviewers
-              lane={index + 1}
-              reviewers={lane.reviewers}
-              choices={choices}
-              disabled={busy}
-              onChange={(reviewers) =>
-                setDraft({
-                  ...draft,
-                  lanes: draft.lanes.map((item) =>
-                    item.id === lane.id ? { ...item, reviewers } : item,
-                  ),
-                })
-              }
-            />
-            <Field
-              label={`Lane ${index + 1} instructions`}
-              description="Save the instructions reviewers should receive for this lane."
-            >
-              <Textarea
-                required
-                rows={5}
-                maxLength={8000}
-                disabled={busy}
-                value={lane.instructions}
-                onChange={(event) =>
-                  setDraft({
-                    ...draft,
-                    lanes: draft.lanes.map((item) =>
-                      item.id === lane.id
-                        ? { ...item, instructions: event.target.value }
-                        : item,
-                    ),
-                  })
-                }
-              />
-            </Field>
-          </SettingsGroup>
-        </section>
-      ))}
+            </section>
+          ),
+        }))}
+      />
       <div>
         <Button
           disabled={busy || draft.lanes.length >= 12}
-          onClick={() =>
+          onClick={() => {
+            const id = crypto.randomUUID();
+            setExpanded([id]);
             setDraft({
               ...draft,
               lanes: [
                 ...draft.lanes,
                 {
-                  id: crypto.randomUUID(),
+                  id,
                   name: "",
                   instructions: "",
                   reviewers: [],
                 },
               ],
-            })
-          }
+            });
+          }}
         >
           Add lane
         </Button>
       </div>
-      <p>
-        Reminder interval: 15 minutes. Automatic reminder delivery will be
-        available in a later version.
-      </p>
       {error && <p role="alert">{error}</p>}
       <div className="review-config-actions">
         <Button disabled={busy} onClick={onCancel}>
