@@ -321,12 +321,11 @@ describe("AcpRuntime", () => {
 
   it("refuses a Buzz tool call that arrives after its turn ended", async () => {
     const config = await confirmed();
-    const { fake, deliver, sync, session } = setup();
+    const { fake, runtime, deliver, sync, session, workingUntil } = setup();
     sync(config);
     await deliver(message("1", "@Opal hello"), config).run;
-    await vi.waitFor(() => expect(fake.harnesses[0]?.turns).toHaveLength(1));
+    await reported(runtime, workingUntil);
     const [harness] = fake.harnesses;
-    await flush(20);
     const late = await harness?.mcp(
       harness.turns[0]?.sessionId ?? "",
       "tools/call",
@@ -624,7 +623,7 @@ describe("AcpRuntime", () => {
     it("keeps a turn queued behind running work on its session, and moves the next one", async () => {
       const config = await confirmed();
       let memory = "Prefers tabs.";
-      const { fake, deliver, sync } = setup(
+      const { fake, deliver, sync, workingUntil } = setup(
         { hold: true },
         { core: async () => memory },
       );
@@ -639,13 +638,17 @@ describe("AcpRuntime", () => {
       const queued = message("2", "@Opal two");
       queued.tags.push(["e", root.id, "", "reply"]);
       await deliver(queued, config).run;
-      // Queued with the running work: a harness that can't be re-prompted in
-      // place keeps it on the session that work runs on, as on Goose's path.
+      // An accepted limit: a message queued behind running work keeps that
+      // work's session, and its memory, on a harness that can't be
+      // re-prompted in place, as main's fallback for such harnesses does. The
+      // next turn moves to the new memory.
       harness.turns[0]?.finish();
       await vi.waitFor(() => expect(harness.turns).toHaveLength(2));
       expect(harness.turns[1]?.sessionId).toBe(harness.turns[0]?.sessionId);
       harness.turns[1]?.finish();
-      await flush(20);
+      // The work has settled: the conversation is idle.
+      await vi.waitFor(() => expect(workingUntil).toHaveBeenCalled());
+      await Promise.all(workingUntil.mock.calls.map(([until]) => until));
       const next = message("3", "@Opal three");
       next.tags.push(["e", root.id, "", "reply"]);
       await deliver(next, config).run;
@@ -667,10 +670,8 @@ describe("AcpRuntime", () => {
         const reply = message(storage ? "2" : "1", "@Opal hello");
         if (storage) reply.tags.push(["e", "1".repeat(64), "", "reply"]);
         await run.deliver(reply, config).run;
-        await vi.waitFor(() =>
-          expect(run.fake.harnesses[0]?.turns).toHaveLength(1),
-        );
-        await flush(20);
+        // Settled and reported: its record is saved.
+        await reported(run.runtime, run.workingUntil);
         run.runtime.dispose();
         return run;
       };

@@ -818,6 +818,8 @@ function pinnedSessions(
     saved?: Record<string, SavedConversation>;
     configOptions?: true;
     restart?: () => Promise<{ ok: true }>;
+    hooks?: AcpHooks;
+    prompt?: () => string;
   }> = {},
 ) {
   const settings = { localKey: "a", context: "ctx", generation: 1 };
@@ -834,7 +836,7 @@ function pinnedSessions(
     process: {
       get: async (generation) => {
         const id = generation?.id ?? 0;
-        if (!processes.has(id)) processes.set(id, start(harness));
+        if (!processes.has(id)) processes.set(id, start(harness, {}, o.hooks));
         return processes.get(id) as Promise<AcpProcess>;
       },
       hold: (generation) => {
@@ -871,7 +873,7 @@ function pinnedSessions(
     }),
     launchFor: async () => {
       await gates.shift();
-      return { workspace: "/work", systemPrompt: "" };
+      return { workspace: "/work", systemPrompt: o.prompt?.() ?? "" };
     },
     pickFor: (_pinned, override) => ({ pick: override ?? {}, source: {} }),
   });
@@ -983,6 +985,35 @@ describe("a pinned session's record", () => {
     expect(other.writes[0]).toBe("drop chat");
     expect(harness.sent("session/new")).toHaveLength(1);
     other.sessions.dispose();
+  });
+
+  it("follows a prompt given in place, so it never resumes on the old one", async () => {
+    let prompt = "one";
+    const reprompted: string[] = [];
+    const hooks: AcpHooks = {
+      ...HOOKS,
+      systemPrompt: async (_acp, _id, text) => void reprompted.push(text),
+    };
+    const harness = fakeHarness({ hold: true });
+    const { sessions, records } = pinnedSessions(harness, {
+      hooks,
+      prompt: () => prompt,
+    });
+    const a = sessions.deliver("chat", "a", 1, { build: build(1) });
+    await until(() => harness.turns.length === 1);
+    harness.turns[0]?.finish();
+    await a;
+    expect(records.get("chat")?.context).toBe(`ctx.${digest("one")}`);
+    prompt = "two";
+    const b = sessions.deliver("chat", "b", 2, { build: build(2) });
+    await until(() => harness.turns.length === 2);
+    // Given at open, then in place; the record follows before the turn ends.
+    expect(reprompted).toEqual(["one", "two"]);
+    expect(harness.sent("session/new")).toHaveLength(1);
+    expect(records.get("chat")?.context).toBe(`ctx.${digest("two")}`);
+    harness.turns[1]?.finish();
+    await b;
+    sessions.dispose();
   });
 
   it("is dropped by a new-session reset", async () => {

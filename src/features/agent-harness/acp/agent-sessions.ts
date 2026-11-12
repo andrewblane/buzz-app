@@ -1070,7 +1070,11 @@ export class AgentSessions<S = unknown> {
         try {
           await process.reprompt(session, systemPrompt);
           live.systemPrompt = systemPrompt;
-          if (claim) claim.prompt = digest(systemPrompt);
+          if (claim) {
+            claim.prompt = digest(systemPrompt);
+            // Its saved record resumes only on the prompt it now runs on.
+            session.parity?.commit(session.covered);
+          }
         } catch (error) {
           console.warn(`${this.options.label} kept its old prompt`, error);
         }
