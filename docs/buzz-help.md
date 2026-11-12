@@ -1161,8 +1161,15 @@ confirmation. **Delete team** asks first; it doesn't delete the team's agents.
   reads the latest saved versions. Settings live on the community relay and are
   visible to channel readers; members who can post can edit them. A conflicting
   edit preserves your draft: copy your changes before cancelling and reloading.
-  This first version saves configuration and reviewer selections only. It does not
-  dispatch reviews, submit PRs, or send the planned 15-minute reminders.
+  **Submit PR** accepts a PR number or URL for a saved repository and one reviewer
+  per lane. **Start review threads** saves the instructions and creates an overview
+  plus a thread for each lane, mentioning its reviewer. The list retains delivery
+  status and **Open thread** actions. Repeating a PR reuses its saved submission;
+  **Resume submission** retries interrupted delivery from the original browser
+  profile. Reviewers must be owned by the signed-in identity and already belong
+  to the channel. A connected desktop agent runtime is needed for replies; delivery
+  alone does not mean a review started. GitHub metadata, pinned commits, review
+  verdicts, resubmission rounds, and the planned 15-minute reminders are not implemented.
 - A plugin's details in Manage plugins link to the Settings sections that hold
   its settings: sections it adds, such as GitHub comment authors, and Decisions
   API for a decision provider, such as TypeSafe. Only sections the Settings

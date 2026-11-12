@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAgentChoices } from "../../features/agents/use-choices";
+import { ReviewSubmissions } from "./ReviewSubmissions";
+import type { Navigation } from "../../features/navigation/controller";
+import { splitPartition } from "../../features/relay/partition";
 import { LaneReviewers } from "./LaneReviewers";
 import { useChannelList, useRelayConnection } from "../../features/relay/react";
 import type { RelayData } from "../../features/relay/service";
@@ -46,13 +49,34 @@ function Frame({ children }: { children: ReactNode }) {
   );
 }
 
-export function ReviewConfigurationPage({ relay }: { relay: RelayData }) {
+export function ReviewConfigurationPage({
+  relay,
+  navigator,
+}: {
+  relay: RelayData;
+  navigator?: Navigation;
+}) {
   const connection = useRelayConnection(relay);
   if (connection.status === "ready")
     return (
       <ReviewConfigurationCommunity
         key={`${connection.scope}:${connection.generation}`}
         session={connection.session}
+        onOpenThread={async (channelId, id) => {
+          const scope = splitPartition(connection.scope ?? "");
+          if (!navigator || !scope)
+            throw new Error("Thread navigation is unavailable.");
+          const result = await navigator.open({
+            version: 1,
+            kind: "conversation",
+            scope,
+            channelId,
+            messageId: id,
+            threadRootId: id,
+          });
+          if (result.status === "failed")
+            throw new Error("Could not open the review thread.");
+        }}
       />
     );
   return (
@@ -74,8 +98,10 @@ export function ReviewConfigurationPage({ relay }: { relay: RelayData }) {
 
 export function ReviewConfigurationCommunity({
   session,
+  onOpenThread,
 }: {
   session: RelaySession;
+  onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
 }) {
   const list = useChannelList(session.channels);
   const [channel, setChannel] = useState("");
@@ -99,7 +125,8 @@ export function ReviewConfigurationCommunity({
     <Frame>
       <p>
         Register repositories and save their review lane instructions. These are
-        draft settings; saving does not start reviews or send reminders.
+        saved settings; use Submit PR below to start reviewer threads. Saving
+        settings does not send messages.
       </p>
       <Select
         label="Review channel"
@@ -136,6 +163,7 @@ export function ReviewConfigurationCommunity({
           channel={channel}
           writable={writable}
           onEditingChange={setEditing}
+          onOpenThread={onOpenThread}
         />
       )}
     </Frame>
@@ -147,12 +175,15 @@ function ChannelConfiguration({
   channel,
   writable,
   onEditingChange,
+  onOpenThread,
 }: {
   session: RelaySession;
   channel: string;
   writable: boolean;
   onEditingChange: (editing: boolean) => void;
+  onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
 }) {
+  const [submitting, setSubmitting] = useState(false);
   const [rows, setRows] = useState<SavedReviewConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -163,10 +194,10 @@ function ChannelConfiguration({
   const [editor, setEditor] = useState<SavedReviewConfig | "new">();
   const editorTrigger = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
-    onEditingChange(editor !== undefined);
+    onEditingChange(editor !== undefined || submitting);
     if (editor === undefined) editorTrigger.current?.focus();
     return () => onEditingChange(false);
-  }, [editor, onEditingChange]);
+  }, [editor, submitting, onEditingChange]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reload explicitly requests a fresh snapshot.
   useEffect(() => {
     const controller = new AbortController();
@@ -215,7 +246,7 @@ function ChannelConfiguration({
       <InlineHeader title="Repositories" />
       <div className="review-config-actions">
         <Button
-          disabled={loading || !!editor}
+          disabled={loading || !!editor || submitting}
           onClick={() => {
             setNotice("");
             setReload((value) => value + 1);
@@ -226,7 +257,12 @@ function ChannelConfiguration({
         <Button
           variant="prominent"
           disabled={
-            loading || !!error || !!editor || !writable || remaining <= 0
+            loading ||
+            !!error ||
+            !!editor ||
+            submitting ||
+            !writable ||
+            remaining <= 0
           }
           onClick={(event) => {
             editorTrigger.current = event.currentTarget;
@@ -273,7 +309,7 @@ function ChannelConfiguration({
                 <td>
                   <Button
                     aria-label={`Edit ${row.config.repository}`}
-                    disabled={!!editor || !writable}
+                    disabled={!!editor || submitting || !writable}
                     onClick={(event) => {
                       editorTrigger.current = event.currentTarget;
                       setNotice("");
@@ -316,11 +352,20 @@ function ChannelConfiguration({
             );
             setEditor(undefined);
             setNotice(
-              `Saved ${saved.config.repository}. Reviews are not enabled yet.`,
+              `Saved ${saved.config.repository}. Use Submit PR to start review threads.`,
             );
           }}
         />
       )}
+      <ReviewSubmissions
+        session={session}
+        channel={channel}
+        configurations={rows}
+        disabled={!!editor || loading || !!error}
+        writable={writable}
+        onEditingChange={setSubmitting}
+        onOpenThread={onOpenThread}
+      />
     </>
   );
 }
@@ -560,7 +605,7 @@ function ConfigurationEditor({
         </Button>
       </div>
       <p>
-        Reminder interval: 15 minutes. Routing and reminder delivery will be
+        Reminder interval: 15 minutes. Automatic reminder delivery will be
         available in a later version.
       </p>
       {error && <p role="alert">{error}</p>}

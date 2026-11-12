@@ -136,7 +136,7 @@ it("registers, reloads and edits a repository through the real form and artifact
   const user = await openDraft();
   await user.click(screen.getByRole("button", { name: "Save settings" }));
   await screen.findByText(
-    "Saved example-org/project. Reviews are not enabled yet.",
+    "Saved example-org/project. Use Submit PR to start review threads.",
   );
   await user.click(screen.getByRole("button", { name: "Reload" }));
   await screen.findByRole("button", { name: "Edit example-org/project" });
@@ -159,7 +159,7 @@ it("registers, reloads and edits a repository through the real form and artifact
   );
   await user.click(screen.getByRole("button", { name: "Save settings" }));
   await screen.findByText(
-    "Saved example-org/project. Reviews are not enabled yet.",
+    "Saved example-org/project. Use Submit PR to start review threads.",
   );
   expect(test.publish).toHaveBeenCalledTimes(2);
   expect(test.publish.mock.calls[1]?.[0].tags).toContainEqual([
@@ -198,7 +198,7 @@ it("keeps the draft on rejection, prevents duplicate submissions, and recovers",
   ).toContain("keyboard navigation");
   await user.click(screen.getByRole("button", { name: "Save settings" }));
   await screen.findByText(
-    "Saved example-org/project. Reviews are not enabled yet.",
+    "Saved example-org/project. Use Submit PR to start review threads.",
   );
 });
 
@@ -255,7 +255,7 @@ it("aborts an unfinished write when the page leaves its session", async () => {
 
 it("counts unreadable records toward the limit when a new repository is saved", async () => {
   const test = fixture();
-  test.snapshotRead.mockResolvedValueOnce(
+  test.snapshotRead.mockResolvedValue(
     Array.from({ length: 99 }, () => ({
       kind: 45010,
       id: "a".repeat(64),
@@ -285,7 +285,7 @@ it("counts unreadable records toward the limit when a new repository is saved", 
   );
   await user.click(screen.getByRole("button", { name: "Save settings" }));
   await screen.findByText(
-    "Saved example-org/project. Reviews are not enabled yet.",
+    "Saved example-org/project. Use Submit PR to start review threads.",
   );
   expect(
     (
@@ -310,7 +310,7 @@ it("saves multiple lane reviewers, reloads their identities, and preserves unava
   );
   await user.click(screen.getByRole("button", { name: "Save settings" }));
   await screen.findByText(
-    "Saved example-org/project. Reviews are not enabled yet.",
+    "Saved example-org/project. Use Submit PR to start review threads.",
   );
   const content = test.publish.mock.calls[0]?.[0].content;
   expect(JSON.parse(content ?? "{}").lanes[0].reviewers).toEqual([
@@ -331,7 +331,7 @@ it("saves multiple lane reviewers, reloads their identities, and preserves unava
   );
   await user.click(screen.getByRole("button", { name: "Save settings" }));
   await screen.findByText(
-    "Saved example-org/project. Reviews are not enabled yet.",
+    "Saved example-org/project. Use Submit PR to start review threads.",
   );
   expect(
     JSON.parse(test.publish.mock.calls[1]?.[0].content ?? "{}").lanes[0]
@@ -354,7 +354,7 @@ it("refreshes failed agent and archive reads without discarding the draft", asyn
   );
   await user.click(screen.getByRole("button", { name: "Save settings" }));
   await screen.findByText(
-    "Saved example-org/project. Reviews are not enabled yet.",
+    "Saved example-org/project. Use Submit PR to start review threads.",
   );
   expect(
     JSON.parse(test.publish.mock.calls[0]?.[0].content ?? "null").lanes[0]
