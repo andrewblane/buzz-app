@@ -8,6 +8,7 @@ import { keypair, signed } from "../../features/relay/testing";
 import {
   loadSubmissions,
   deleteSubmission,
+  remindSubmission,
   pullRequest,
   pullRepository,
   submitReview,
@@ -646,7 +647,7 @@ it("retries a partially delivered notification batch with the same message ident
   expect((await test.run()).value.threads).toEqual(first.value.threads);
 });
 
-it("deletes from the shared list and restores the same threads on resubmission after reload", async () => {
+it("deletes from the shared list and starts fresh threads using current routing after reload", async () => {
   const f = await fixture();
   const record = await f.run();
   await deleteSubmission(
@@ -660,10 +661,56 @@ it("deletes from the shared list and restores the same threads on resubmission a
       .rows,
   ).toEqual([]);
   expect(f.messages.size).toBe(2);
-  const restored = await f.run("123", new AbortController().signal, true);
+  f.loseJournal();
+  const existing = vi.fn();
+  const facts = vi.fn(async () => ({
+    repository: "example-org/project",
+    pr: 123,
+    title: "Fresh review",
+    labels: [],
+    changedFiles: 1,
+    paths: ["backend.ts"],
+    head: "a".repeat(40),
+    base: "b".repeat(40),
+  }));
+  const lane = f.config.config.lanes[0];
+  if (!lane) throw new Error("Missing fixture lane");
+  const config = {
+    ...f.config,
+    config: {
+      ...f.config.config,
+      lanes: [
+        {
+          ...lane,
+          instructions: "New review instructions",
+        },
+      ],
+    },
+  };
+  const restored = await submitReview(
+    f.session,
+    channel,
+    config,
+    "123",
+    [f.agent.pubkey],
+    new AbortController().signal,
+    () => {},
+    true,
+    facts,
+    existing,
+  );
   expect(restored.value.deleted).toBeUndefined();
-  expect(restored.value.threads).toEqual(record.value.threads);
-  expect(f.messages.size).toBe(2);
+  expect(restored.value.version).toBe(3);
+  expect(restored.value.threads).toHaveLength(1);
+  expect(record.value.threads.map((t) => t.id)).not.toContain(
+    restored.value.threads[0]?.id,
+  );
+  expect(facts).toHaveBeenCalledOnce();
+  expect(existing).not.toHaveBeenCalled();
+  expect(f.messages.size).toBe(3);
+  const message = f.messages.get(restored.value.threads[0]?.id ?? "");
+  expect(message?.content).toContain("New review instructions");
+  expect(message?.tags.some((t) => t[0] === "e")).toBe(false);
   expect(
     (await loadSubmissions(f.session, channel, new AbortController().signal))
       .rows,
@@ -693,4 +740,182 @@ it("rejects foreign submitters and stale deletion without changing the saved lis
     (await loadSubmissions(f.session, channel, new AbortController().signal))
       .rows,
   ).toHaveLength(1);
+});
+
+it("isolates a fresh review from old receipts and resumes its own interrupted delivery", async () => {
+  const f = await fixture();
+  const original = f.session.outbox;
+  if (!original) throw new Error("Missing fixture outbox");
+  Object.assign(f.session, {
+    outbox: { ...original, acknowledge: async () => {} },
+  });
+  const first = await f.run();
+  await deleteSubmission(
+    f.session,
+    channel,
+    first,
+    new AbortController().signal,
+  );
+  Object.assign(f.session, { outbox: original });
+  f.publish.mockRejectedValueOnce(new Error("offline"));
+  await expect(f.run("123", undefined, true)).rejects.toThrow();
+  const incomplete = (
+    await loadSubmissions(f.session, channel, new AbortController().signal)
+  ).rows[0];
+  if (!incomplete) throw new Error("Missing incomplete submission");
+  expect(incomplete.value.threads[0]?.id).not.toBe(first.value.threads[0]?.id);
+  const resumed = await f.run("123", undefined, true);
+  expect(resumed.value.generation).toBe(incomplete.value.generation);
+  expect(resumed.value.threads[0]?.id).toBe(incomplete.value.threads[0]?.id);
+  expect(resumed.value.threads.every((t) => t.delivered)).toBe(true);
+  expect(f.messages.size).toBe(4);
+  await deleteSubmission(
+    f.session,
+    channel,
+    resumed,
+    new AbortController().signal,
+  );
+  const next = await f.run("123", undefined, true);
+  expect(next.value.generation).not.toBe(resumed.value.generation);
+  expect(f.messages.size).toBe(6);
+});
+
+it("does not send fresh threads when replacing a deleted record loses its revision race", async () => {
+  const f = await fixture();
+  const first = await f.run();
+  await deleteSubmission(
+    f.session,
+    channel,
+    first,
+    new AbortController().signal,
+  );
+  f.artifactPublish.mockRejectedValueOnce(new Error("stale revision"));
+  await expect(f.run("123", undefined, true)).rejects.toThrow("stale revision");
+  expect(f.messages.size).toBe(2);
+  expect(
+    (await loadSubmissions(f.session, channel, new AbortController().signal))
+      .rows,
+  ).toEqual([]);
+});
+
+it("refuses a foreign submitter replacing a deleted record", async () => {
+  const f = await fixture();
+  const first = await f.run();
+  await deleteSubmission(
+    f.session,
+    channel,
+    first,
+    new AbortController().signal,
+  );
+  await expect(
+    submitReview(
+      { ...f.session, viewer: keypair().pubkey },
+      channel,
+      f.config,
+      "123",
+      [f.agent.pubkey, f.agent.pubkey],
+      new AbortController().signal,
+      () => {},
+      true,
+    ),
+  ).rejects.toThrow("Only the original submitter");
+  expect(f.messages.size).toBe(2);
+});
+
+it("reminds saved reviewers without replacing threads or writing artifacts", async () => {
+  const test = await fixture();
+  const first = await test.run();
+  const writes = test.artifactPublish.mock.calls.length;
+  await remindSubmission(
+    test.session,
+    channel,
+    first,
+    new AbortController().signal,
+  );
+  const replies = [...test.messages.values()].filter((event) =>
+    event.tags.some((tag) => tag[0] === "e"),
+  );
+  expect(replies).toHaveLength(2);
+  for (const [index, reply] of replies.entries()) {
+    expect(reply.tags).toContainEqual([
+      "e",
+      first.value.threads[index]?.id,
+      "",
+      "reply",
+    ]);
+    expect(reply.tags).toContainEqual(["p", test.agent.pubkey]);
+    expect(reply.content).toContain("Review reminder.");
+  }
+  expect(test.artifactPublish).toHaveBeenCalledTimes(writes);
+  await deleteSubmission(
+    test.session,
+    channel,
+    first,
+    new AbortController().signal,
+  );
+  await expect(
+    remindSubmission(
+      test.session,
+      channel,
+      first,
+      new AbortController().signal,
+    ),
+  ).rejects.toThrow("Submission changed");
+  expect(test.publish).toHaveBeenCalledTimes(4);
+});
+
+it("retries interrupted reminder batches without duplicating accepted replies", async () => {
+  const test = await fixture();
+  const first = await test.run();
+  test.publish
+    .mockResolvedValueOnce(undefined)
+    .mockRejectedValueOnce(new Error("offline"));
+  await expect(
+    remindSubmission(
+      test.session,
+      channel,
+      first,
+      new AbortController().signal,
+    ),
+  ).rejects.toThrow("offline");
+  await remindSubmission(
+    test.session,
+    channel,
+    first,
+    new AbortController().signal,
+  );
+  const replies = [...test.messages.values()].filter((event) =>
+    event.tags.some((tag) => tag[0] === "e"),
+  );
+  // The first successful publish was stubbed; compare signed event IDs instead.
+  const sent = test.publish.mock.calls.slice(2).map(([event]) => event);
+  expect(sent).toHaveLength(3);
+  expect(sent[1]?.id).toBe(sent[2]?.id);
+  expect(sent[0]?.id).not.toBe(sent[1]?.id);
+  expect(replies).toHaveLength(1);
+});
+
+it("refuses reminders for incomplete delivery and other submitters", async () => {
+  const test = await fixture();
+  test.publish.mockRejectedValueOnce(new Error("offline"));
+  await expect(test.run()).rejects.toThrow("offline");
+  const { rows } = await loadSubmissions(
+    test.session,
+    channel,
+    new AbortController().signal,
+  );
+  const row = rows[0];
+  if (!row) throw new Error("Missing fixture submission");
+  await expect(
+    remindSubmission(test.session, channel, row, new AbortController().signal),
+  ).rejects.toThrow("Delivery is incomplete");
+  await expect(
+    remindSubmission(
+      { ...test.session, viewer: test.agent.pubkey },
+      channel,
+      row,
+      new AbortController().signal,
+    ),
+  ).rejects.toThrow("Only the original submitter");
+  expect(test.publish).toHaveBeenCalledTimes(1);
 });

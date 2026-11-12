@@ -15,6 +15,7 @@ import { createPullReader, type ReadPull } from "./pull-facts";
 import {
   loadSubmissions,
   deleteSubmission,
+  remindSubmission,
   prUrl,
   pullRepository,
   pullRequest,
@@ -165,12 +166,44 @@ export function ReviewSubmissions({
     }
   }
 
+  async function remind(row: SavedSubmission) {
+    if (operation.current || !writable) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    setBusy(true);
+    setError("");
+    const name = `${row.value.config.repository}#${row.value.pr}`;
+    setStatus(`Reminding reviewers for ${name}…`);
+    try {
+      await remindSubmission(
+        session,
+        channel,
+        row,
+        AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]),
+      );
+      if (!controller.signal.aborted)
+        setStatus(`Reviewers reminded for ${name} in their existing threads.`);
+    } catch (reason) {
+      if (!controller.signal.aborted) {
+        setStatus("");
+        setError(
+          `${reason instanceof Error ? reason.message : "Could not remind reviewers."} Unconfirmed reminders can be retried with Remind.`,
+        );
+      }
+    } finally {
+      operation.current = undefined;
+      if (!controller.signal.aborted) setBusy(false);
+    }
+  }
+
   async function remove() {
     if (!removing || operation.current || !writable) return;
     const controller = new AbortController();
     operation.current = controller;
     setBusy(true);
     setDeleteError("");
+    setError("");
+    setStatus("");
     try {
       await deleteSubmission(
         session,
@@ -280,26 +313,42 @@ export function ReviewSubmissions({
                 <td>{threads(row)}</td>
                 {deletable && (
                   <td>
-                    <IconButton
-                      icon={<TrashIcon />}
-                      title="Delete submission"
-                      size="sm"
-                      disabled={
-                        busy ||
-                        listLoading ||
-                        !writable ||
-                        row.value.submitter !== session.viewer
-                      }
-                      onClick={(event) => {
-                        deleteTrigger.current = event.currentTarget;
-                        setDeleteError("");
-                        setRemoving(row);
-                      }}
-                      aria-label={`Delete ${row.value.config.repository}#${row.value.pr}`}
-                    />
+                    <div className="review-config-actions">
+                      <Button
+                        size="sm"
+                        disabled={
+                          busy ||
+                          listLoading ||
+                          !writable ||
+                          row.value.submitter !== session.viewer ||
+                          !row.value.threads.every((thread) => thread.delivered)
+                        }
+                        aria-label={`Remind reviewers for ${row.value.config.repository}#${row.value.pr}`}
+                        onClick={() => void remind(row)}
+                      >
+                        Remind
+                      </Button>
+                      <IconButton
+                        icon={<TrashIcon />}
+                        title="Delete submission"
+                        size="sm"
+                        disabled={
+                          busy ||
+                          listLoading ||
+                          !writable ||
+                          row.value.submitter !== session.viewer
+                        }
+                        onClick={(event) => {
+                          deleteTrigger.current = event.currentTarget;
+                          setDeleteError("");
+                          setRemoving(row);
+                        }}
+                        aria-label={`Delete ${row.value.config.repository}#${row.value.pr}`}
+                      />
+                    </div>
                     {row.value.submitter !== session.viewer && (
                       <p className="text-caption text-subtle">
-                        Only the submitter can delete.
+                        Only the submitter can remind or delete.
                       </p>
                     )}
                   </td>
@@ -421,7 +470,7 @@ export function ReviewSubmissions({
       {removing && (
         <AlertDialog
           title={`Delete ${removing.value.config.repository}#${removing.value.pr}?`}
-          description="Remove this submission from the shared list. The GitHub PR and existing conversations stay available. This does not stop an active review. Submitting the same URL again restores its saved reviewers and threads."
+          description="Remove this submission from the shared list. The GitHub PR and existing conversations stay available. This does not stop an active review. Submitting the same URL again starts a new review with new threads."
           pending={busy}
           finalFocus={() =>
             deleteTrigger.current?.isConnected

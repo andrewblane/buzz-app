@@ -15,6 +15,7 @@ import { loadConfigurations, type SavedReviewConfig } from "./configuration";
 import {
   loadSubmissions,
   deleteSubmission,
+  remindSubmission,
   submitReview,
   type SavedSubmission,
 } from "./submissions";
@@ -27,6 +28,7 @@ vi.mock("./submissions", async (original) => ({
   ...(await original<typeof import("./submissions")>()),
   loadSubmissions: vi.fn(),
   deleteSubmission: vi.fn(),
+  remindSubmission: vi.fn(),
   submitReview: vi.fn(),
 }));
 afterEach(cleanup);
@@ -360,6 +362,69 @@ it("guards duplicate deletion and aborts it when leaving the page", async () => 
     (screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
+  test.unmount();
+  expect(pending?.aborted).toBe(true);
+  await act(async () => finish());
+});
+
+it("reminds from a row, guards duplicate clicks and reports success or failure", async () => {
+  vi.mocked(loadSubmissions).mockResolvedValue({ rows: [record], warning: "" });
+  let finish = () => {};
+  vi.mocked(remindSubmission).mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+  });
+  const test = fixture("all");
+  const button = await screen.findByRole("button", {
+    name: "Remind reviewers for example-org/project#42",
+  });
+  await test.user.click(button);
+  expect(screen.getByRole("status").textContent).toContain(
+    "Reminding reviewers",
+  );
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  await test.user.click(button);
+  expect(remindSubmission).toHaveBeenCalledTimes(1);
+  await act(async () => finish());
+  expect(screen.getByRole("status").textContent).toContain(
+    "Reviewers reminded",
+  );
+  expect(remindSubmission).toHaveBeenCalledWith(
+    test.session,
+    "channel",
+    record,
+    expect.any(AbortSignal),
+  );
+  expect(submitReview).not.toHaveBeenCalled();
+  vi.mocked(remindSubmission).mockRejectedValueOnce(
+    new Error("Delivery failed"),
+  );
+  await test.user.click(button);
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Delivery failed",
+  );
+  expect(screen.queryByRole("status")).toBeNull();
+});
+
+it("aborts pending reminders when leaving the page", async () => {
+  vi.mocked(loadSubmissions).mockResolvedValue({ rows: [record], warning: "" });
+  let finish = () => {};
+  let pending: AbortSignal | undefined;
+  vi.mocked(remindSubmission).mockImplementationOnce(
+    async (_s, _c, _r, signal) => {
+      pending = signal;
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    },
+  );
+  const test = fixture("all");
+  await test.user.click(
+    await screen.findByRole("button", {
+      name: "Remind reviewers for example-org/project#42",
+    }),
+  );
   test.unmount();
   expect(pending?.aborted).toBe(true);
   await act(async () => finish());

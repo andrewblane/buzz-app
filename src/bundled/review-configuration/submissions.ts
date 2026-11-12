@@ -21,7 +21,8 @@ const HEX = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f-]{36}$/;
 type Thread = { id?: string; started?: true; delivered?: true };
 export type Submission = {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
+  generation?: string;
   pr: number;
   config: ReviewConfig;
   configRevision: string;
@@ -88,7 +89,9 @@ async function decode(
   const value = JSON.parse(event.content) as Submission;
   const config = validateConfig(value.config);
   if (
-    (value.version !== 1 && value.version !== 2) ||
+    (value.version !== 1 && value.version !== 2 && value.version !== 3) ||
+    (value.version === 3 &&
+      (typeof value.generation !== "string" || !UUID.test(value.generation))) ||
     !Number.isSafeInteger(value.pr) ||
     value.pr < 1 ||
     value.submitter !== event.pubkey ||
@@ -188,7 +191,7 @@ async function write(
   return { value, artifactId, revision: event.id };
 }
 
-/** Remove from the shared list, retaining recovery and thread identity for resubmission. */
+/** Remove from the shared list. A later submission creates fresh lane threads. */
 export async function deleteSubmission(
   session: RelaySession,
   channel: string,
@@ -367,6 +370,7 @@ async function notifyReviewers(
   channel: string,
   record: SavedSubmission,
   signal: AbortSignal,
+  reminder = false,
 ) {
   const outbox = session.outbox;
   if (!outbox) throw new Error("Message delivery is unavailable.");
@@ -404,7 +408,7 @@ async function notifyReviewers(
             ["e", thread.id, "", "reply"],
             ["p", lane.reviewers[0] ?? ""],
           ],
-          content: `This PR was submitted again. Please revisit the review in this thread.\n\n${request.content}`,
+          content: `${reminder ? "Review reminder. Please review this PR and report your progress or blockers in this thread." : "This PR was submitted again. Please revisit the review in this thread."}\n\n${request.content}`,
         },
         { key, value: record.artifactId },
         active,
@@ -414,6 +418,56 @@ async function notifyReviewers(
     receipts.push(id);
   }
   for (const id of receipts) await outbox.acknowledge(id);
+}
+
+/** An explicit reminder uses only the current, fully delivered submission. */
+export async function remindSubmission(
+  session: RelaySession,
+  channel: string,
+  previous: SavedSubmission,
+  signal: AbortSignal,
+) {
+  const read = session.snapshotRead;
+  const outbox = session.outbox;
+  if (!read || !outbox?.supports(9) || !navigator.locks)
+    throw new Error("Reviewer reminders are unavailable on this client.");
+  if (!session.viewer || previous.value.submitter !== session.viewer)
+    throw new Error("Only the original submitter can remind these reviewers.");
+  return navigator.locks.request(
+    `buzz.review.submit:${session.scope}`,
+    { signal },
+    async () => {
+      await outbox.ready();
+      const events = await read(
+        [
+          {
+            kinds: [ARTIFACT_KIND],
+            "#h": [channel],
+            "#d": [previous.artifactId],
+            artifact: "current",
+            limit: 1,
+          },
+        ],
+        { signal },
+      );
+      const head = events[0];
+      if (!head) throw new Error("Submission is unavailable. Reload the list.");
+      const current = await decode(head, channel);
+      if (current.revision !== previous.revision || current.value.deleted)
+        throw new Error(
+          "Submission changed. Reload the list before reminding.",
+        );
+      if (current.value.submitter !== session.viewer)
+        throw new Error(
+          "Only the original submitter can remind these reviewers.",
+        );
+      if (!current.value.threads.every((thread) => thread.delivered))
+        throw new Error(
+          "Delivery is incomplete. Submit this PR again to finish delivery first.",
+        );
+      await notifyReviewers(session, channel, current, signal, true);
+    },
+  );
 }
 
 /** Explicit user action only. There is no background dispatcher or polling. */
@@ -459,10 +513,16 @@ export async function submitReview(
       );
       let record: SavedSubmission;
       const head = events[0];
-      if (head) {
-        record = await decode(head, channel);
+      const previous = head ? await decode(head, channel) : undefined;
+      const existing = previous && !previous.value.deleted;
+      if (existing) {
+        record = previous;
         notifyExisting?.();
       } else {
+        if (previous && previous.value.submitter !== viewer)
+          throw new Error(
+            "Only the original submitter can resubmit this deleted submission.",
+          );
         const currentFacts =
           typeof facts === "function" ? await facts() : facts;
         signal.throwIfAborted();
@@ -496,7 +556,8 @@ export async function submitReview(
           }),
         });
         const value: Submission = {
-          version: 2,
+          version: previous ? 3 : 2,
+          ...(previous ? { generation: crypto.randomUUID() } : {}),
           pr,
           config,
           configRevision: saved.revision,
@@ -505,21 +566,13 @@ export async function submitReview(
           threads: Array.from({ length: config.lanes.length }, () => ({})),
         };
         await eligible(session, value, signal);
-        record = await write(session, channel, value, undefined, signal);
-      }
-      if (record.value.deleted && (resume || notifyExisting)) {
-        if (record.value.submitter !== session.viewer)
-          throw new Error(
-            "Only the original submitter can restore this deleted submission.",
-          );
-        const { deleted: _deleted, ...value } = record.value;
-        record = await write(session, channel, value, record, signal);
+        record = await write(session, channel, value, previous, signal);
       }
       onProgress(record);
       // The dedicated Submit action may notify; passive readers never dispatch.
-      if (head && !resume && !notifyExisting) return record;
+      if (existing && !resume && !notifyExisting) return record;
       if (record.value.threads.every((thread) => thread.delivered)) {
-        if (head && notifyExisting)
+        if (existing && notifyExisting)
           await notifyReviewers(session, channel, record, signal);
         for (const thread of record.value.threads)
           if (thread.id) await outbox.acknowledge(thread.id);
@@ -532,10 +585,14 @@ export async function submitReview(
         throw new Error(
           "This PR is already submitted. Resume incomplete delivery from the original browser profile; existing threads remain available here.",
         );
-      if (head) await eligible(session, record.value, signal);
+      if (existing) await eligible(session, record.value, signal);
       for (const [index, thread] of record.value.threads.entries()) {
         signal.throwIfAborted();
-        const key = `${artifactId}:${index}`;
+        // Keep legacy recovery keys readable, but isolate each post-delete review.
+        const key =
+          record.value.version === 3
+            ? `${artifactId}:${record.value.generation}:${index}`
+            : `${artifactId}:${index}`;
         if (thread.delivered) {
           if (thread.id) await outbox.acknowledge(thread.id);
           continue;

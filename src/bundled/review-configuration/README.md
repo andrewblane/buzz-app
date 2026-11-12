@@ -13,7 +13,7 @@ Submit button. It finds the saved repository in the selected channel, loads curr
 PR metadata, and assigns the first configured reviewer per matching lane. Missing
 configuration, unavailable reviewers, and zero matching lanes produce an error
 without starting threads. Results show assigned reviewers and thread buttons.
-The separate **Pull requests** page shows previous submissions in a bordered table with delivery status, reviewer identities, and thread links. The submitter can confirm **Delete** to remove a submission from the shared list. This preserves its thread mapping and does not stop active reviews, delete conversations, or close the GitHub PR. Submitting that URL again restores the saved assignment and threads.
+The separate **Pull requests** page shows previous submissions in a bordered table with delivery status, reviewer identities, and thread links. The submitter can click **Remind** to notify saved reviewers in their current threads, with delivery feedback and retry on failure. Incomplete submissions must finish delivery through Submit PR first. The submitter can confirm **Delete** to remove a submission from the shared list. This does not stop active reviews, delete conversations, or close the GitHub PR. Submitting that URL again applies current routing and creates new reviewer threads.
 
 Submitting an already-delivered PR sends a reviewer mention in each saved lane
 thread. It preserves the saved reviewers and instructions and creates no new
@@ -23,6 +23,7 @@ the page or a thread never dispatches messages.
 
 All three pages use the shell's page navigation. Only Review Configuration appears in the sidebar; Submit PR has a Back button returning to it. Pull requests opens the existing All PRs page with Back navigation. Repository and lane editing
 remain local sections; reloading returns Configuration to its repository list.
+Restarted submissions use a versioned delivery generation; older plugin versions cannot read or resume them.
 The channel selection is remembered per identity/community; one eligible channel
 is selected automatically. Submit results can be recovered from the Pull requests table
 following reload; navigation never replays Submit automatically.
