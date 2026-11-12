@@ -100,7 +100,9 @@ export function ReviewConfigurationPage({
       <p>
         {connection.status === "connecting"
           ? "Connecting to your community…"
-          : "Connect to a community to use reviews."}
+          : submit
+            ? "Connect to a community to submit PRs."
+            : "Connect to a community to configure reviews."}
       </p>
       {connection.status === "error" && (
         <>
