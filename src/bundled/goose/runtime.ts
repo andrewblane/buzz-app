@@ -824,14 +824,19 @@ export class GooseRuntime {
     };
     // Every session of the agent shares them, so they read the settings, the
     // handle and the conversation's place as they are when called.
-    const tools: ToolServer = async (conversation, message) => {
+    const tools: ToolServer = async (conversation, message, workSignal) => {
       const handle = entry.handle;
       // A call in a conversation answers only while its turn runs unstopped.
       const current = conversation && entry.sessions.current(conversation);
+      const signal = AbortSignal.any([
+        entry.lifetime.signal,
+        workSignal ?? AbortSignal.abort(new Error("The turn has ended")),
+      ]);
       const client =
         handle &&
         appClient(handle, {
-          signal: entry.lifetime.signal,
+          signal,
+          callSignal: signal,
           ...(current && {
             check: () => {
               if (!current()) throw new Error("The Goose turn has ended");
@@ -921,14 +926,13 @@ export class GooseRuntime {
         model: entry.config.model.trim(),
         effort: entry.config.effort,
       }),
+      // The prompt's other parts, its instructions, team, name and core
+      // memory, reach a running session in place as its next turn starts.
       fingerprint: () =>
         JSON.stringify([
           entry.config.provider.trim() ? 0 : this.defaultsRevision,
           entry.config.workspace,
-          entry.config.instructions,
           entry.config.scope,
-          entry.team,
-          entry.name,
           addedKey(this.added()),
         ]),
       launch: async () => {
