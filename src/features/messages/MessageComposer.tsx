@@ -2778,6 +2778,10 @@ function Composer({
     try {
       const tokens = draftTokens(captured);
       messageTokenTags(tokens);
+      if (scheduledAt !== undefined && tokens.length)
+        throw new Error(
+          "Messages with chips cannot be scheduled yet. Send now or remove the chips.",
+        );
       if (scheduledAt !== undefined && command)
         throw new Error(
           "Commands cannot be scheduled. Write a message or send the command now.",

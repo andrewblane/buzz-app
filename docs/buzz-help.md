@@ -803,6 +803,8 @@ for 30 days expires.
   **Scheduled**. Buzz remembers your choice for this community. A clock and count
   beside **Drafts & sent** show messages waiting for scheduled delivery.
   Scheduled refreshes when opened and periodically checks for changes from other devices.
+  Messages containing composer chips cannot be scheduled yet; send them now or
+  remove the chips first. A refused schedule keeps the original draft intact.
   To change text or recipients on a scheduled message with mentions, save it to
   drafts and use the composer. Rescheduling and sending now remain available.
   Drafts save automatically as you type—leave a message unfinished, open

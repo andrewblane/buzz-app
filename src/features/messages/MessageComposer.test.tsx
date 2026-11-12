@@ -14510,7 +14510,7 @@ it("guards automatic recipient changes using the current draft prose", () => {
   act(() => expect(replace?.([second])).toBe(true));
 });
 
-it("inserts a bundled provider's chip as one atom and signs it into the sent message", async () => {
+it("keeps a chip draft when scheduling is refused and signs it on ordinary send", async () => {
   const publishes: ComposerCompletionProps["publish"][] = [];
   function Completion({ publish }: ComposerCompletionProps) {
     useLayoutEffect(() => {
@@ -14532,7 +14532,14 @@ it("inserts a bundled provider's chip as one atom and signs it into the sent mes
   const empty: [] = [];
   const none = { snapshot: () => empty, subscribe: () => () => {} };
   const h = mount();
+  const create = vi.fn(async () => {});
   h.retarget({
+    session: {
+      ...h.session,
+      scheduledMessages: { create } as unknown as NonNullable<
+        RelaySession["scheduledMessages"]
+      >,
+    },
     extensions: {
       tools: none,
       inline: none,
@@ -14552,6 +14559,35 @@ it("inserts a bundled provider's chip as one atom and signs it into the sent mes
   expect(
     within(h.input()).getByRole("img", { name: "Folder @notes" }),
   ).toHaveTextContent(/^@notes$/);
+  const editor = h.input();
+  fireEvent.click(screen.getByRole("button", { name: "Schedule message" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Custom time" }));
+  if (screen.queryByRole("menuitem", { name: "Custom time" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Custom time" }));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Schedule message",
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Schedule message" }),
+  );
+  await waitFor(() =>
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Messages with chips cannot be scheduled yet",
+    ),
+  );
+  expect(create).not.toHaveBeenCalled();
+  expect(h.messages.send).not.toHaveBeenCalled();
+  expect(editor).toHaveValue("Use /notes ");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Schedule message" }),
+    ).toBeNull(),
+  );
+  await waitFor(() => expect(h.input()).toHaveValue("Use /notes "));
+  expect(
+    within(h.input()).getByRole("img", { name: "Folder @notes" }),
+  ).toBeVisible();
   // The relay writer reads the chips the composer is signing as it sends.
   let signed: string[][] = [];
   h.messages.send.mockImplementation(() => {
