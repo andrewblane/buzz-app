@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { expect, it, vi } from "vitest";
 import { pngChunks, snapshotChunk } from "../messages/image-metadata";
-import { avatarCropBox, avatarPreview, uploadAvatar } from "./avatar-upload";
+import {
+  avatarCropBox,
+  avatarPictureError,
+  avatarPreview,
+  profilePictureError,
+  uploadAvatar,
+} from "./avatar-upload";
 
 const uploadAttachment = vi.fn(async (file: File) => ({
   type: file.type,
@@ -168,4 +174,20 @@ it("keeps a panned and zoomed image covering the avatar frame", () => {
     left: -0.7,
     top: 0,
   });
+});
+
+it("saves Buzz mobile's emoji avatar as-is in a personal profile only", () => {
+  const emoji = `data:image/svg+xml,${encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><rect width="512" height="512" rx="256" fill="#FFB84D"/><text x="50%" y="56%" dominant-baseline="middle" text-anchor="middle" font-size="258">🛹</text></svg>',
+  )}`;
+  for (const picture of [
+    emoji,
+    ` ${emoji}\n`,
+    " https://images.example/a.png ",
+  ])
+    expect(profilePictureError(picture)).toBeUndefined();
+  expect(profilePictureError("data:image/svg+xml,%3Csvg%3E")).toBeDefined();
+  // Agents save HTTPS pictures only.
+  expect(avatarPictureError(emoji)).toBeDefined();
+  expect(avatarPictureError(" https://images.example/a.png ")).toBeUndefined();
 });

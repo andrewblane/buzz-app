@@ -620,39 +620,55 @@ export function createTabs({
     revision = 0,
     choice,
     value,
+    compact = false,
+    disabled = false,
     onChange,
   }: Readonly<{
     choice: Choice;
     revision?: number;
     value: string;
+    /** A trailing choice in a host's row, as Create agent places it. */
+    compact?: boolean;
+    disabled?: boolean;
     onChange(effort: string): void;
   }>) {
-    const [efforts] = useRead(
+    const [efforts, retry] = useRead(
       () => setup.efforts(choice),
       `${choice.provider}\u0000${choice.model.trim()}:${revision}`,
     );
+    const failed =
+      efforts.status === "error"
+        ? `Could not read goose's levels: ${efforts.error}`
+        : undefined;
     const levels = efforts.value?.levels ?? [];
     const named = (level: string) =>
       level.charAt(0).toUpperCase() + level.slice(1);
-    const fallback = efforts.value?.current
-      ? named(efforts.value.current)
-      : "Automatic";
-    return (
+    // goose reports "off" both for a level set to off and for none set. With
+    // none set it often sends no level, leaving the model on its own default,
+    // so "off" cannot name what turns run on; any other level can.
+    const current = efforts.value?.current;
+    const fallback = current && current !== "off" ? named(current) : undefined;
+    const select = (
       <Select
         label="Thinking"
-        variant="preference"
+        variant={compact ? "compact" : "preference"}
+        {...(compact && { align: "end" as const })}
         value={value}
-        {...(!value ? { valueLabel: fallback } : {})}
-        {...(efforts.status === "error"
-          ? { description: `Could not read goose's levels: ${efforts.error}` }
+        {...(!value
+          ? {
+              valueLabel: fallback ?? "Default",
+              ...(compact && fallback ? { valueSuffix: " · Default" } : {}),
+            }
           : {})}
+        disabled={disabled}
+        {...(failed && !compact ? { description: failed } : {})}
         groups={[
           {
             label: "",
             options: [
               {
                 value: "",
-                label: `${fallback} · Default`,
+                label: fallback ? `${fallback} · Default` : "Default",
               },
               // A saved level the model does not offer, or not yet read.
               ...(value && !levels.includes(value)
@@ -672,6 +688,20 @@ export function createTabs({
         ]}
         onValueChange={onChange}
       />
+    );
+    // A compact choice shows no description, so a failed read says so beside
+    // it and offers another try, as the model field does.
+    return compact ? (
+      <ModelDiscoveryRecovery
+        error={failed}
+        loading={efforts.status === "loading"}
+        retry={retry}
+        disabled={disabled}
+      >
+        {select}
+      </ModelDiscoveryRecovery>
+    ) : (
+      select
     );
   }
 
@@ -799,8 +829,6 @@ export function createTabs({
     working?: string | undefined;
   }) {
     const workspace = readConfig(agent.config).workspace;
-    // Searching goose's history takes seconds, so only on request.
-    const [search, setSearch] = useState(false);
     // Read again when the conversation saves or opens another session.
     const ids = [row.sessionId, ...(row.sessions ?? [])].join(" ");
     /** With `reuse`, sessions that aren't working keep their last export. */
@@ -811,7 +839,7 @@ export function createTabs({
           workspace,
           ...(row.sessionId ? { sessionId: row.sessionId } : {}),
           ...(row.sessions ? { sessions: row.sessions } : {}),
-          ...(row.channelId ? { place: placeOf(row.key), search } : {}),
+          ...(row.channelId ? { place: placeOf(row.key) } : {}),
           ...(working ? { working } : {}),
         },
         signal,
@@ -833,37 +861,15 @@ export function createTabs({
         // or ending export every session.
         readLatest={async (signal) => (await read(signal, true))?.turns}
         readKey={`${row.key}\u0000${workspace}`}
-        readAgain={`${ids}\u0000${search}`}
+        readAgain={ids}
         working={Boolean(working)}
         reading="Reading the goose session…"
         failed="Could not read the goose session"
         missing={
-          row.channelId && !search ? (
-            <div className="grid gap-2">
-              <p className="m-0 text-body-sm text-subtle">
-                {row.sessions?.length
-                  ? "goose no longer has the sessions Buzz saved for this conversation."
-                  : "Buzz saved no goose session for this conversation."}{" "}
-                One from an earlier version of Buzz can be found by searching
-                goose's history, which can take a while.
-              </p>
-              <div>
-                <Button
-                  type="button"
-                  variant="subtle"
-                  size="sm"
-                  onClick={() => setSearch(true)}
-                >
-                  Search older sessions
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <p className="m-0 text-body-sm text-subtle">
-              goose has no session for this conversation on this computer. It
-              may have been deleted, or it ran in a different workspace.
-            </p>
-          )
+          <p className="m-0 text-body-sm text-subtle">
+            goose has no session for this conversation on this computer. It may
+            have been deleted, or it ran in a different workspace.
+          </p>
         }
         notes={(transcript) =>
           transcript.more && (
@@ -913,8 +919,8 @@ export function createTabs({
     );
     // The opened conversation's session: a thread's saved or live one, else
     // its channel's, read again each render so a first save is picked up.
-    // With neither, its transcript offers to search goose's history, in the
-    // place the agent keeps its sessions.
+    // With neither, its transcript finds the place's sessions by their goose
+    // tags, in the place the agent keeps its sessions.
     const match = (channelId: string, root?: string) =>
       conversations.find(
         (row) =>
@@ -1259,6 +1265,36 @@ export function createTabs({
     );
   }
 
+  /** Create agent's Thinking row: goose's levels for the chosen model. */
+  function CreateThinking({
+    config,
+    onChange,
+    disabled,
+  }: AgentCreateProps<Config>) {
+    const current = readConfig(config);
+    // A setup check, such as the model field's Try again, clears goose's
+    // levels; read them again once it settles.
+    const checking =
+      useSyncExternalStore(setup.subscribe, setup.snapshot).readiness ===
+      "checking";
+    const wasChecking = useRef(checking);
+    const [checks, setChecks] = useState(0);
+    useEffect(() => {
+      if (wasChecking.current && !checking) setChecks((count) => count + 1);
+      wasChecking.current = checking;
+    }, [checking]);
+    return (
+      <ThinkingField
+        compact
+        revision={checks}
+        choice={current}
+        value={current.effort}
+        disabled={disabled}
+        onChange={(effort) => onChange({ ...current, effort })}
+      />
+    );
+  }
+
   function SettingsTab({
     agent,
     save,
@@ -1375,6 +1411,7 @@ export function createTabs({
     DefaultControl,
     Create,
     CreateModel,
+    CreateThinking,
     SettingsTab,
     ActivityTab,
   };

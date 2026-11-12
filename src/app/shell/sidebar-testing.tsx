@@ -9,7 +9,11 @@ import type { RelaySession } from "../../features/relay/session";
 import type { ReadTransport } from "../../features/relay/transport";
 import type { FederatedIdentity } from "../../features/federated-identity/service";
 import type { RelayData, RelaySnapshot } from "../../features/relay/service";
-import type { Navigation } from "../../features/navigation/controller";
+import type {
+  Navigation,
+  NavigationOpenOptions,
+} from "../../features/navigation/controller";
+import type { ChannelList } from "../../features/relay/contracts";
 import {
   ChannelNavigationProvider,
   useChannelNavigation,
@@ -18,12 +22,12 @@ import type { OpenTarget } from "../../features/navigation/targets";
 import { NewMenu } from "./NewMenu";
 import type { Agents } from "../../features/agents/service";
 import { PrimarySidebar } from "./PrimarySidebar";
-import { DraftsSentNavigation } from "../../features/drafts-sent/DraftsSentNavigation";
 import { ToastProvider } from "../../shared/design-system/ui/Toast";
 import { SoloInventory } from "../../features/channel-navigation/SoloInventory";
 import { conversationTarget } from "../../features/channel-navigation/routes";
 import type { ContributionReader } from "../../features/conversation/contracts";
 import type { ChatIcon, ChatMenu } from "../../features/conversation/service";
+import type { SidebarRows } from "../../features/channel-navigation/sidebar-rows-service";
 
 export const owners: ReturnType<typeof createRelaySession>[] = [];
 export const id = "11111111-1111-4111-8111-111111111111";
@@ -46,6 +50,7 @@ export function fixture(
     transport?: ReadTransport;
     federatedIdentity?: FederatedIdentity;
     sidebarScope?: SidebarScope;
+    sidebarRows?: SidebarRows;
   } = {},
 ) {
   const owner = createRelaySession(host.transport ?? null);
@@ -86,7 +91,7 @@ export function fixture(
     durability: "saved" as const,
     sync: "pending" as const,
   }));
-  let list = {
+  let list: ChannelList = {
     status: "ready" as const,
     channels: [
       {
@@ -197,22 +202,31 @@ export function fixture(
     snapshot: () => snapshot,
     subscribe,
     retry() {},
+    tryAgain() {},
     disconnect() {},
     async clearCache() {},
   };
   let attempt = 0;
-  const open = vi.fn(async (next: OpenTarget) => {
-    target = next;
-    attempt++;
-    rendered.rerender(tree());
-    publish();
-    return { status: "opened" as const };
-  });
+  let sidebar: NavigationOpenOptions["sidebar"];
+  const open = vi.fn(
+    async (next: OpenTarget, options?: NavigationOpenOptions) => {
+      sidebar = options?.sidebar;
+      target = next;
+      attempt++;
+      rendered.rerender(tree());
+      publish();
+      return { status: "opened" as const };
+    },
+  );
   const navigator = {
     open,
     subscribe,
     snapshot: () => ({
-      attempt: { id: String(attempt), signal: new AbortController().signal },
+      attempt: {
+        id: String(attempt),
+        signal: new AbortController().signal,
+        sidebar,
+      },
     }),
   } as unknown as Navigation;
   let target: OpenTarget = conversationTarget(scope, other);
@@ -244,16 +258,12 @@ export function fixture(
                   target={target}
                   chatIcons={chatIcons}
                   chatMenus={chatMenus}
+                  sidebarRows={host.sidebarRows}
                   sidebarScope={host.sidebarScope}
                   {...(host.federatedIdentity
                     ? { federatedIdentity: host.federatedIdentity }
                     : {})}
                 >
-                  <DraftsSentNavigation
-                    relay={relay}
-                    navigator={navigator}
-                    target={target}
-                  />
                   <button type="button">Inbox</button>
                 </PrimarySidebar>
               )
@@ -267,6 +277,7 @@ export function fixture(
             target={target}
             chatIcons={chatIcons}
             chatMenus={chatMenus}
+            sidebarRows={host.sidebarRows}
           />
         )}
       </ChannelNavigationProvider>

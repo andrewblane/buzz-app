@@ -141,6 +141,7 @@ function setup(
       initialChannelId,
       readPublisherLock: async (_signal, work) => work(),
       readStateStorage: {
+        capture: async () => structuredClone(journal),
         async update(change) {
           journal = readJournal(change(journal), viewer.pubkey);
           return journal;
@@ -335,7 +336,16 @@ describe("device-local startup", () => {
           .flatMap(([filters]) => filters)
           .filter((filter) => filter.kinds?.includes(39000)),
       ).toEqual(
-        included ? [] : [{ kinds: [39000], "#d": ["alpha"], limit: 500 }],
+        included
+          ? []
+          : [
+              {
+                kinds: [39000],
+                authors: [relay.pubkey],
+                "#d": ["alpha"],
+                limit: 500,
+              },
+            ],
       );
     },
   );

@@ -1,3 +1,4 @@
+import { draftEditorId, traceDraft } from "../../shared/draft-diagnostics";
 import {
   soloModelPicksKey,
   parseSoloModelPicks,
@@ -28,7 +29,10 @@ import {
   useToastNotification,
 } from "../../shared/design-system/ui/Toast";
 import { writeClipboardText } from "../../shared/clipboard";
-import { SelectedMentionContext } from "./selected-mention-context";
+import {
+  AddressedAgentsContext,
+  SelectedMentionContext,
+} from "./selected-mention-context";
 import { DraftMentionRoster } from "./draft-mention-roster";
 import {
   allowsOutsideMentions,
@@ -38,6 +42,7 @@ import {
 } from "./mention-admission";
 import { rememberMention } from "./mention-history";
 import {
+  composerChips,
   readComposerSnapshot,
   composerMarkdownContext,
   markdownRanges,
@@ -49,6 +54,7 @@ import { useListedChannel } from "../relay/listed-channel";
 import { FileDropOverlay } from "./FileDropOverlay";
 import { useFileDrop } from "./use-file-drop";
 import { Button } from "../../shared/design-system/ui/Button";
+import { useToastClearance } from "../../shared/design-system/ui/Toast";
 import { LoadingRegion } from "../../shared/design-system/ui/LoadingRegion";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { Avatar } from "../../shared/design-system/ui/Avatar";
@@ -114,6 +120,11 @@ import {
   type RefObject,
 } from "react";
 import { fullSession, type ComposerSession } from "./composer-session";
+import {
+  draftTokens,
+  messageTokenTags,
+  signMessageTokens,
+} from "./message-tokens";
 import type { RelaySession } from "../relay/session";
 import {
   readView,
@@ -145,7 +156,6 @@ import { ComposerModels, type DraftPicks } from "./ComposerModels";
 import type { MentionPicks } from "../relay/messages";
 import type {
   ConversationExtensions,
-  CompletionEdit,
   CompletionPending,
   CompletionQuery,
   CompletionResolution,
@@ -153,8 +163,19 @@ import type {
   ComposerResource,
 } from "../conversation/contracts";
 import { ComposerCompletions } from "../conversation/ComposerCompletions";
-import { MENTION_RESOLVE_TIMEOUT_MS } from "../conversation/completion";
+import {
+  chosenWorkspace,
+  WorkspaceCompletion,
+  type WorkspaceCompletionTarget,
+} from "../conversation/workspace-completion";
+import {
+  MENTION_RESOLVE_TIMEOUT_MS,
+  type HostCompletionEdit,
+} from "../conversation/completion";
 import { useCompletionEditor } from "../conversation/useCompletionEditor";
+import { ComposerAnnotators } from "../conversation/ComposerAnnotators";
+import { AnnotationMenu } from "./AnnotationMenu";
+import type { AnnotationMenuRequest } from "./composer-dom";
 import { formatMediaTime, mediaTimeReply } from "./media-timecode";
 import { RichComposerInput } from "./RichComposerInput";
 import type { MessageLinkOrigin } from "./MessageRow";
@@ -177,6 +198,7 @@ const noChannels: ReturnType<ComposerSession["channels"]["list"]> = {
   channels: [],
 };
 const noSubscription = () => () => {};
+const noAgents: readonly string[] = [];
 
 type AcceptedDraft = {
   next: MentionDraft;
@@ -302,7 +324,11 @@ export type MessageComposerProps = {
   requireMention?: boolean | undefined;
   chatPresentation?: boolean | undefined;
   trailingTool?: ReactNode;
+  /** Only while the chat is new: `#` then offers its workspaces first. */
+  workspace?: WorkspaceCompletionTarget | undefined;
   inviteAgents?: boolean | undefined;
+  /** Narrows a submission's agents to those its owner accepts. */
+  agentFilter?: ((pubkey: string) => boolean) | undefined;
   onSend?: (id: string) => void;
   /** A plain slash command with no recipients or attachments may be consumed by
    * its conversation owner. Return false to send it as an ordinary message. */
@@ -388,7 +414,7 @@ export function MessageComposer(props: MessageComposerProps) {
 }
 
 function PersonalComposer(props: MessageComposerProps) {
-  const { session, channelId, submission } = props;
+  const { session, channelId, submission, agentFilter } = props;
   const choices = useAgentChoices(session, true, true);
   const profiles = useSyncExternalStore(
     session.profiles.subscribe,
@@ -405,7 +431,9 @@ function PersonalComposer(props: MessageComposerProps) {
   const roster = useMemo(
     () =>
       submission
-        ? choices.selectable
+        ? agentFilter
+          ? choices.selectable.filter((agent) => agentFilter(agent.pubkey))
+          : choices.selectable
         : soloRoster(
             members,
             session.viewer,
@@ -415,6 +443,7 @@ function PersonalComposer(props: MessageComposerProps) {
           ),
     [
       submission,
+      agentFilter,
       choices.selectable,
       members,
       agentPubkeys,
@@ -452,14 +481,6 @@ function PersonalComposer(props: MessageComposerProps) {
   return (
     <DraftMentionRoster.Provider value={value}>
       <Composer {...props} />
-      {choices.error && (
-        <p role="alert">
-          {choices.error}{" "}
-          <Button onClick={() => void props.session.agentChoices.refresh()}>
-            Retry agents
-          </Button>
-        </p>
-      )}
     </DraftMentionRoster.Provider>
   );
 }
@@ -530,6 +551,7 @@ function Composer({
   chatPresentation = false,
   inviteAgents = false,
   trailingTool,
+  workspace,
 }: MessageComposerProps) {
   const active = useConversationPresentation();
   // Previews replace the list on every message; subscribe to this channel's facts.
@@ -615,6 +637,23 @@ function Composer({
     return pending;
   });
   const revision = useRef(viewRevision(scope, draftKey));
+  const [diagnosticEditor] = useState(draftEditorId);
+  function diagnose(
+    operation: Parameters<typeof traceDraft>[2],
+    expected: string | null | undefined,
+    current: string | null | undefined,
+    next = JSON.stringify(valueRef.current),
+  ) {
+    traceDraft(scope, draftKey, operation, diagnosticEditor, {
+      expected,
+      current,
+      next,
+      flags:
+        Number(dirty.current) |
+        (Number(writing.current) << 1) |
+        (Number(!!sendAttempt.current) << 2),
+    });
+  }
   // Whether this mount seeded the shortcut's initial text, rather than
   // restoring a saved draft that may already have had its tag removed.
   const [seededKey] = useState(() =>
@@ -1098,14 +1137,20 @@ function Composer({
   };
   function persist(next: MentionDraft, expected = revision.current) {
     writing.current = true;
+    const current = viewRevision(scope, draftKey);
+    const serialized = JSON.stringify(next);
+    diagnose("persist", expected, current, serialized);
     // A value already saved by another writer, as the Huddle owner saves the
     // stub after a companion send, is this save's outcome, not a conflict.
     const result =
-      viewRevision(scope, draftKey) === JSON.stringify(next)
+      current === serialized
         ? "saved"
         : replaceView(scope, draftKey, expected, next);
     writing.current = false;
-    if (result === "saved") revision.current = JSON.stringify(next);
+    const saved = viewRevision(scope, draftKey);
+    const nextRevision = JSON.stringify(next);
+    diagnose(result, expected, saved, nextRevision);
+    if (result === "saved") revision.current = nextRevision;
     setConflict(result === "changed");
     setStorageFailed(result === "failed");
     return result;
@@ -1136,7 +1181,10 @@ function Composer({
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: A changed draft or edit target retires feedback about the previous paste.
   useEffect(() => {
-    setPasteTooLong(false);
+    // Clear only shown feedback. Even an unchanged value schedules a render
+    // here, inside each keystroke's commit, so fast typing would never let
+    // React's nested-update count reset (React error #185).
+    if (pasteTooLong) setPasteTooLong(false);
   }, [draft, editing.target]);
   const editScope = useMessageEditScope();
   const editableRows = () =>
@@ -1237,6 +1285,10 @@ function Composer({
     (channel) => !!channel?.archived || !!channel?.readOnly,
   );
   const editDisabled = disabled || editLocked;
+  const chips = useMemo(
+    () => composerChips(readComposerSnapshot(value.document)),
+    [value.document],
+  );
   const editingDisabled =
     disabled ||
     admitting ||
@@ -1275,6 +1327,8 @@ function Composer({
     { ids: readonly string[]; owner: Element | null } | undefined
   >(undefined);
   const form = useRef<HTMLFormElement>(null);
+  // Notices float above the composer, not over Send.
+  useToastClearance(form);
   const notify = useToastNotification();
   const handOffFocus = useEffectEvent(() => {
     if (!form.current?.contains(document.activeElement)) return;
@@ -1408,7 +1462,13 @@ function Composer({
     input,
     active && !editingDisabled && !!outbox?.supports(9),
   );
+  const [annotationMenu, setAnnotationMenu] = useState<AnnotationMenuRequest>();
+  const closeAnnotationMenu = useCallback(
+    () => setAnnotationMenu(undefined),
+    [],
+  );
   function loadSaved(raw: string | null) {
+    diagnose("load", revision.current, raw);
     let next: MentionDraft;
     try {
       next = stageChatCards(
@@ -1434,6 +1494,7 @@ function Composer({
   // remain the chat's current choices, including edits made during an upload.
   const reconcileDraft = useEffectEvent(
     (restored?: MentionDraft, recoveredPicks?: DraftPicks) => {
+      traceDraft(scope, draftKey, "reconcile", diagnosticEditor);
       if (submission || editing.target || writing.current) return;
       if (accepted) {
         // The recovered revision can precede attachment adoption. The explicit
@@ -1450,6 +1511,7 @@ function Composer({
       }
       const current = viewRevision(scope, draftKey);
       if (current === undefined) return;
+      diagnose("reconcile", revision.current, current);
       const recovering = !!restored && current === JSON.stringify(restored);
       if (current === revision.current) {
         // The storage listener usually loads the recovered revision before
@@ -1470,6 +1532,7 @@ function Composer({
       )
         loadSaved(current);
       else if (dirty.current || sendAttempt.current) {
+        diagnose("changed", revision.current, current);
         setConflict(true);
         return;
       } else loadSaved(current);
@@ -1518,6 +1581,7 @@ function Composer({
   }, [session, recoveryKey, scope, draftKey]);
   function resolveDraft(keep: boolean) {
     const current = viewRevision(scope, draftKey);
+    diagnose(keep ? "keep" : "use-saved", revision.current, current);
     if (current === undefined) {
       setStorageFailed(true);
       return;
@@ -1682,15 +1746,18 @@ function Composer({
     text: string,
     recipient?: MentionRecipient,
     range?: CompletionQuery,
-    terminator?: ":",
+    /** The typed key that ended the query: a closing emoji colon, or the key
+     * that follows a mention in place of its space. */
+    terminator?: string,
     focus = true,
   ) {
     const field = input.current;
     if (!editable() || !field || typeof text !== "string") return false;
     // Edits replace prose; they do not change the original notification recipients.
     if (editing.target && recipient) {
-      text = editMentionText(recipient);
+      text = editMentionText(recipient, terminator);
       recipient = undefined;
+      terminator = undefined;
     }
     if (recipient && !admits()(recipient.pubkey)) {
       setError(
@@ -1998,7 +2065,11 @@ function Composer({
       return false;
     // Message edits only add references, never new notification intent.
     if (editing.target)
-      return insert(unique.map(editMentionText).join(""), undefined, range);
+      return insert(
+        unique.map((person) => editMentionText(person)).join(""),
+        undefined,
+        range,
+      );
     const admitted = admits();
     if (unique.some((person) => !admitted(person.pubkey))) {
       setError(
@@ -2079,7 +2150,7 @@ function Composer({
     return input.current.insertResource(resource);
   }
   function replaceCompletion(
-    edit: CompletionEdit,
+    edit: HostCompletionEdit,
     query: CompletionQuery,
     observation: ComposerObservation,
     key?: string,
@@ -2089,8 +2160,10 @@ function Composer({
       valueRef.current.text !== observation.text
     )
       return false;
-    // A typed terminator (Space, the closing emoji colon) stays literal in code.
-    if (key === " " || key === ":") {
+    // A typed terminator (Space, closing punctuation after a name, the closing
+    // emoji colon) stays literal in code. Tab, Enter and a click are not typed.
+    const typed = key?.length === 1 ? key : undefined;
+    if (typed) {
       const doc = readComposerSnapshot(valueRef.current.document);
       const context = doc
         ? composerMarkdownContext(doc)
@@ -2102,13 +2175,21 @@ function Composer({
       )
         return false;
     }
+    const chosen = chosenWorkspace(edit);
+    if (chosen !== undefined) {
+      // The chat's workspace leaves no text behind; the control shows it.
+      if (!workspace || editing.target || !insert("", undefined, query))
+        return false;
+      workspace.choose(chosen);
+      return true;
+    }
     if ("pending" in edit && edit.pending) {
       // Edits replace prose and add no recipients, so a chip that may become
-      // one has no place there: the typed Space stays literal.
+      // one has no place there: the typed key stays literal.
       const field = input.current;
       if (editing.target || !editable() || !field) return false;
       completion.invalidate();
-      const id = field.insertPendingMention(edit.pending.name, query);
+      const id = field.insertPendingMention(edit.pending.name, query, typed);
       if (!id) return false;
       pendingMentions.current.set(id, { resolve: edit.pending.resolve });
       setError(undefined);
@@ -2117,7 +2198,12 @@ function Composer({
     if ("mentions" in edit && edit.mentions)
       return insertMentions(edit.mentions, query);
     if ("mention" in edit && edit.mention)
-      return insert(`@${edit.mention.name} `, edit.mention, query);
+      return insert(`@${edit.mention.name} `, edit.mention, query, typed);
+    if ("token" in edit && edit.token) {
+      if (editing.target) return false;
+      completion.invalidate();
+      return input.current?.insertToken(edit.token, query) ?? false;
+    }
     return (
       typeof edit.text === "string" &&
       insert(
@@ -2587,9 +2673,14 @@ function Composer({
       input.current?.reset(recovering.next);
       return;
     }
-    if (!submission && viewRevision(scope, draftKey) !== revision.current) {
-      setConflict(true);
-      return;
+    if (!submission) {
+      const current = viewRevision(scope, draftKey);
+      diagnose("send-start", revision.current, current);
+      if (current !== revision.current) {
+        diagnose("send-start-conflict", revision.current, current);
+        setConflict(true);
+        return;
+      }
     }
     const choicesNow = resolvedPicks.current;
     const picksNow = choicesNow?.source ?? committedPicks.current;
@@ -2666,6 +2757,8 @@ function Composer({
         agentKeys,
       );
     try {
+      const tokens = draftTokens(captured);
+      messageTokenTags(tokens);
       if (command && onCommand) {
         const handled = onCommand(command, attempt.signal);
         if (handled !== false) {
@@ -2673,7 +2766,9 @@ function Composer({
           if (await handled) {
             attempt.signal.throwIfAborted();
             if (valueRef.current !== captured) return;
-            if (viewRevision(scope, draftKey) !== savedRevision) {
+            const current = viewRevision(scope, draftKey);
+            if (current !== savedRevision) {
+              diagnose("send-upload-conflict", savedRevision, current);
               setConflict(true);
               return;
             }
@@ -2827,7 +2922,9 @@ function Composer({
         )
       )
         return;
-      if (viewRevision(scope, draftKey) !== savedRevision) {
+      const preparedRevision = viewRevision(scope, draftKey);
+      if (preparedRevision !== savedRevision) {
+        diagnose("send-prepare-conflict", savedRevision, preparedRevision);
         setConflict(true);
         return;
       }
@@ -2867,7 +2964,9 @@ function Composer({
         if (!(await linkSharing.prepare(linkedChats, attempt.signal, current)))
           return;
         attempt.signal.throwIfAborted();
-        if (viewRevision(scope, draftKey) !== savedRevision) {
+        const publishRevision = viewRevision(scope, draftKey);
+        if (publishRevision !== savedRevision) {
+          diagnose("send-publish-conflict", savedRevision, publishRevision);
           setConflict(true);
           return;
         }
@@ -2890,6 +2989,16 @@ function Composer({
       ) {
         if (compactingNow(recipients))
           throw new Error("Wait for compaction to finish, or interrupt it.");
+        if (!tokens.length) return publishMessage(uploaded, sender);
+        // A detached window's relay connection would drop the chips.
+        const main = fullSession(sender);
+        if (!main) throw new Error("Send chips from the main window.");
+        return signMessageTokens(tokens, () => publishMessage(uploaded, main));
+      }
+      function publishMessage(
+        uploaded: readonly UploadedAttachment[],
+        sender: ComposerSession,
+      ) {
         return threadRootId
           ? sender.messages.reply(
               channelId,
@@ -2932,6 +3041,7 @@ function Composer({
           attachments: uploaded,
           references,
           picks: sentPicks,
+          ...(tokens.length ? { tokens } : {}),
         };
         const send = followUpMessage(host, message);
         return followUpQueue(host).submit(
@@ -3301,17 +3411,53 @@ function Composer({
           {label}
         </label>
         {active && extensions?.completions && (
-          <ComposerCompletions
-            registry={extensions.completions}
-            editor={completion}
+          <WorkspaceCompletion.Provider
+            value={editing.target ? undefined : workspace}
+          >
+            <AddressedAgentsContext.Provider
+              value={editing.target ? noAgents : addressedKeys}
+            >
+              <ComposerCompletions
+                registry={extensions.completions}
+                identityMarks={extensions.identityMarks}
+                editor={completion}
+                input={input}
+                session={session}
+                scope={scope}
+                channelId={channelId}
+                threadRootId={threadRootId}
+                inviteAgents={agentChoices && !editing.target}
+                replace={replaceCompletion}
+                resolved={chips.length ? { ...value, tokens: chips } : value}
+              />
+            </AddressedAgentsContext.Provider>
+          </WorkspaceCompletion.Provider>
+        )}
+        {extensions?.annotators && (
+          // Annotators see exactly what completion providers may observe.
+          <ComposerAnnotators
+            registry={extensions.annotators}
             input={input}
+            enabled={active && !editingDisabled && !!outbox?.supports(9)}
+            epoch={[
+              scope,
+              channelId,
+              threadRootId ?? "",
+              editing.target?.id ?? "",
+            ].join("\n")}
             session={session}
             scope={scope}
             channelId={channelId}
             threadRootId={threadRootId}
             inviteAgents={agentChoices && !editing.target}
-            replace={replaceCompletion}
-            resolved={value}
+          />
+        )}
+        {annotationMenu && (
+          <AnnotationMenu
+            key={`${annotationMenu.revision}:${annotationMenu.mark.start}`}
+            request={annotationMenu}
+            input={input}
+            onClose={closeAnnotationMenu}
           />
         )}
         <BackgroundUploadStatus
@@ -3446,6 +3592,9 @@ function Composer({
               }}
               onFormatsChange={setActiveFormats}
               onEditLink={setLinkEdit}
+              onAnnotationMenu={
+                extensions?.annotators ? setAnnotationMenu : undefined
+              }
               // Pasted identity links notify admitted recipients under their
               // current names; edits never add recipients. Send still asks
               // before adding someone outside the channel.
@@ -3669,6 +3818,7 @@ function Composer({
                   resettable={stickyPicks}
                   explicitOnly={!!submission && stickyPicks}
                   onChange={changePicks}
+                  focusAfterPickerRemoval={() => input.current?.focus()}
                   onResolved={(next, error) => {
                     resolvedPicks.current =
                       next === undefined
