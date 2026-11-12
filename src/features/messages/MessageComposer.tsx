@@ -1355,6 +1355,49 @@ function Composer({
   // Notices float above the composer, not over Send.
   useToastClearance(form);
   const notify = useToastNotification();
+  // Escape also cancels a reply target while focus is elsewhere in its own
+  // conversation (or nowhere): before page Escape closes the conversation,
+  // leaving other fields, menus and dialogs their own Escape.
+  const cancelReply = useEffectEvent(() => onCancelReply?.());
+  const replying = !!onCancelReply && active;
+  useEffect(() => {
+    if (!replying) return;
+    const cancel = (event: KeyboardEvent) => {
+      const own = form.current;
+      if (
+        !own ||
+        event.key !== "Escape" ||
+        event.shiftKey ||
+        event.altKey ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.keyCode === 229
+      )
+        return;
+      const focused = event.target instanceof Element ? event.target : null;
+      // The composer's own handler owns Escape inside it.
+      if (focused && own.contains(focused)) return;
+      if (focused && focused !== own.ownerDocument.body) {
+        let surface = own.parentElement;
+        while (surface && !surface.querySelector("[data-message-id]"))
+          surface = surface.parentElement;
+        if (
+          !surface?.contains(focused) ||
+          focused.closest(
+            'input, textarea, select, [role="textbox"], [contenteditable]:not([contenteditable="false"]), [role="dialog"], [role="menu"], [role="listbox"]',
+          )
+        )
+          return;
+      } else if (own.ownerDocument.querySelector('[aria-modal="true"]')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      cancelReply();
+    };
+    document.addEventListener("keydown", cancel, true);
+    return () => document.removeEventListener("keydown", cancel, true);
+  }, [replying]);
   const handOffFocus = useEffectEvent(() => {
     if (!form.current?.contains(document.activeElement)) return;
     const text = input.current?.value ?? "";
