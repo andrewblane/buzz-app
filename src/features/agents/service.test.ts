@@ -13589,6 +13589,26 @@ it("settles a plugin's request as dismissed when another owner signs in", async 
   expect(service.creationRequests()).toEqual([]);
 });
 
+it("reports an approval in flight as created when another owner signs in", async () => {
+  const { service, native, plugin, switchViewer } = await setup();
+  const create = native.create.getMockImplementation();
+  if (!create) throw new Error("The fake creates agents");
+  native.create.mockImplementationOnce(async (...input) => {
+    switchViewer("e".repeat(64));
+    return create(...input);
+  });
+  const { requestId, outcome } = plugin.agents.requestCreation({
+    type: "example/echo",
+    name: "Helper",
+  });
+  const agent = await service.approveCreation(requestId, {
+    type: "example/echo",
+    name: "Helper",
+  });
+  await expect(outcome).resolves.toEqual({ status: "created", agent });
+  expect(service.creationRequests()).toEqual([]);
+});
+
 it("keeps a plugin's request pending after a failed approval", async () => {
   const { service, plugin } = await setup();
   const { requestId, outcome } = plugin.agents.requestCreation({

@@ -2815,7 +2815,7 @@ export class AgentsService extends Service implements Agents {
             (request) => request.owner === viewer,
           );
           for (const request of this.requests)
-            if (!kept.includes(request))
+            if (!kept.includes(request) && !this.approving.has(request.id))
               this.settleCreation(request.id, { status: "dismissed" });
           const updates = this.updates.filter(
             (request) => request.owner === viewer,
@@ -3779,6 +3779,8 @@ export class AgentsService extends Service implements Agents {
       return agent;
     } finally {
       this.approving.delete(id);
+      if (!this.requests.some((item) => item.id === id))
+        this.settleCreation(id, { status: "dismissed" });
     }
   }
   updateRequests = () => this.updates;
