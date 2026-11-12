@@ -193,5 +193,6 @@ A standalone MCP host can set `BUZZ_CHANNEL` and `BUZZ_REVIEW_THREAD` when start
 a process dedicated to that thread. Never reuse that process across threads.
 Channel-wide sessions, external MCP, and adapters without this host wiring refuse
 status updates. Merely including a thread ID in the prompt does not enable it.
-The existing standalone ACP lab launcher still needs that environment wiring;
-this feature does not add it to every adapter automatically.
+ACP hosts must pass those variables when creating each thread session and
+recreate existing sessions after adding the wiring. Updating MCP alone does not
+provide review context.
