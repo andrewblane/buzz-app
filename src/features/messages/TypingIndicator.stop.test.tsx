@@ -240,7 +240,7 @@ it("identifies each hosted thread and stops only the selected work", async () =>
   }
 });
 
-it("shows one Solo conversation row while a follow-up waits in the same agent session", async () => {
+it("uses the newest working Solo request for its one row and Stop target", async () => {
   const f = fixture();
   const user = userEvent.setup();
   const interrupt = vi.fn(async () => undefined);
@@ -271,11 +271,14 @@ it("shows one Solo conversation row while a follow-up waits in the same agent se
       state: "working" as const,
       soloChat: true as const,
       stoppable: true as const,
+      step: { tool: "Read", target: "follow-up.txt" },
     },
   ];
   f.update([], { local });
   render(<TypingIndicator session={session} channelId="channel" />);
-  await user.click(screen.getByRole("button", { name: "Reading first.txt" }));
+  await user.click(
+    screen.getByRole("button", { name: "Reading follow-up.txt" }),
+  );
   expect(screen.getAllByRole("button", { name: /^Stop Agent/ })).toHaveLength(
     1,
   );
@@ -287,7 +290,11 @@ it("shows one Solo conversation row while a follow-up waits in the same agent se
   );
   f.update([], { local });
   await user.click(screen.getByRole("button", { name: "Stop Agent" }));
-  expect(interrupt).toHaveBeenCalledExactlyOnceWith(agent, "channel", "first");
+  expect(interrupt).toHaveBeenCalledExactlyOnceWith(
+    agent,
+    "channel",
+    "follow-up",
+  );
 });
 
 it("keeps Stop for a stoppable Solo follow-up when older work cannot stop", async () => {
@@ -313,6 +320,7 @@ it("keeps Stop for a stoppable Solo follow-up when older work cannot stop", asyn
         channelId: "channel",
         threadRootId: secondRoot,
         messageId: "stoppable",
+        step: { tool: "Read", target: "follow-up.txt" },
         startedAt: 2,
         state: "working",
         soloChat: true,
@@ -329,7 +337,9 @@ it("keeps Stop for a stoppable Solo follow-up when older work cannot stop", asyn
       channelId="channel"
     />,
   );
-  await user.click(screen.getByRole("button", { name: "Reading first.txt" }));
+  await user.click(
+    screen.getByRole("button", { name: "Reading follow-up.txt" }),
+  );
   await user.click(screen.getByRole("button", { name: "Stop Agent" }));
   expect(interrupt).toHaveBeenCalledExactlyOnceWith(
     agent,

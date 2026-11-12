@@ -549,3 +549,23 @@ it("retries through the session only for this scope and accessible channels", ()
     "This request can't be retried here",
   );
 });
+
+it.each(["waiting", "working"] as const)(
+  "uses the newest %s Solo request across live projections",
+  (state) => {
+    const activity = createLocalAgentActivity();
+    const first = activity.begin({ ...request("first"), soloChat: true });
+    const second = activity.begin({ ...request("second"), soloChat: true });
+    if (state === "working") {
+      first.started();
+      second.started();
+    }
+    const snapshot = { local: activity.reader.work() };
+    expect(localActivity(snapshot, "c").get("a")?.messageId).toBe("second");
+    // A concrete thread retains its request-specific selection.
+    expect(
+      localActivity(snapshot, "c", snapshot.local[0]?.threadRootId).get("a")
+        ?.messageId,
+    ).toBe("first");
+  },
+);

@@ -67,6 +67,19 @@ test("Solo follow-ups share one agent Activity row", async ({
   await expect(
     page.getByRole("button", { name: /^View agent activity:/ }),
   ).toHaveCount(1);
+  const second = await page.evaluate(
+    () => window.localAgentFixture.pending()[1],
+  );
+  await page.evaluate((id) => {
+    window.localAgentFixture.handover(id);
+    window.localAgentFixture.step(id, "Read", "follow-up.txt");
+  }, second);
+  await expect(
+    page.getByRole("button", {
+      name: "View agent activity: Local tester, Reading follow-up.txt",
+      exact: true,
+    }),
+  ).toHaveCount(1);
   await settle(page);
   await page.screenshot({
     path: testInfo.outputPath("solo-followups-message-bubble.png"),
@@ -80,7 +93,7 @@ test("Solo follow-ups share one agent Activity row", async ({
   await setPluginEnabled(page, "Agent Activity", false);
   await closeSettings(page);
   await activity
-    .getByRole("button", { name: "Reading notes.txt", exact: true })
+    .getByRole("button", { name: "Reading follow-up.txt", exact: true })
     .click();
   const stop = page.getByRole("button", {
     name: "Stop Local tester",
@@ -105,6 +118,6 @@ test("Solo follow-ups share one agent Activity row", async ({
   await page.keyboard.press("Enter");
   await expect
     .poll(() => page.evaluate(() => window.localAgentFixture.stopped()))
-    .toEqual([first]);
+    .toEqual([second]);
   await expect(stop).toHaveCount(1);
 });

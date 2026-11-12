@@ -464,7 +464,17 @@ export function localActivity(
   };
   for (const row of rows) {
     const previous = agents.get(row.agent);
-    if (!previous || rank[row.state] > rank[previous.state])
+    if (
+      !previous ||
+      rank[row.state] > rank[previous.state] ||
+      (row.state === previous.state &&
+        (row.state === "working" || row.state === "waiting") &&
+        !threadRootId &&
+        row.soloChat &&
+        previous.soloChat &&
+        !row.thread &&
+        !previous.thread)
+    )
       agents.set(row.agent, row);
   }
   return agents;

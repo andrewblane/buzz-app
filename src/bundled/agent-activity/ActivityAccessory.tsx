@@ -197,9 +197,9 @@ function MessageActivity(
         ) {
           const current = localActivity(
             {
-              local: (snapshot.local ?? [])
-                .filter((work) => work.soloChat && !work.thread)
-                .reverse(),
+              local: (snapshot.local ?? []).filter(
+                (work) => work.soloChat && !work.thread,
+              ),
             },
             channelId,
           ).get(entry.agent);
