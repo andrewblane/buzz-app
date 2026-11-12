@@ -385,8 +385,8 @@ To update Goose, verify every target archive against the exact release identity:
 ```sh
 gh attestation verify <archive> --repo aaif-goose/goose \
   --signer-workflow aaif-goose/goose/.github/workflows/release.yml \
-  --source-ref refs/tags/v1.58.1 \
-  --source-digest c97af00bca96442611bb95155c56d6109afa42d6 \
+  --source-ref refs/tags/v1.59.0 \
+  --source-digest 5d03ef6ed07ba59826328f1aff18d9a754ff8ad2 \
   --cert-oidc-issuer https://token.actions.githubusercontent.com \
   --deny-self-hosted-runners
 ```
@@ -399,8 +399,9 @@ Never resolve
 `latest` at build time.
 The obsolete `target/goose-acp-src` and `target/goose-acp-build` caches are unused
 and can be removed locally when no old source build is running.
-Version 1.58.1 advances Goose 28 commits from v1.57.0, which itself advanced
-26 commits from the previous source pin; distribution parity alone does not
+Version 1.59.0 advances Goose 18 commits from v1.58.1; the four commits only on
+v1.58.1's release branch are release chores and cherry-picks of #13328 and
+#13340, both included in v1.59.0; distribution parity alone does not
 establish runtime compatibility. Before
 shipping, exercise provider sessions, HTTP MCP, steering/cancellation, secret
 non-persistence and session history, plus native Windows/Linux startup and
@@ -408,7 +409,7 @@ packaged signing/installers.
 The candidate is known to fail the MCP credential non-persistence check: the
 client HTTP URL and bearer header are stored in session data and export.
 An isolated canary probe reproduced this in both the old source-built 1.56.0
-executable and v1.57.0; upstream #12908 was closed unmerged, so v1.58.1 does
+executable and v1.57.0; upstream #12908 was closed unmerged, so v1.59.0 does
 not include it either. This
 remains a separate existing acceptance failure, not a distribution regression.
 
@@ -429,8 +430,11 @@ build` runs it through `beforeBuildCommand`; `just desktop` runs it with `--dev`
 (a debug build, and a failure only warns). It selects `TAURI_ENV_TARGET_TRIPLE`
 or the host, installs under `target/buzz-cli/<rev>/<target>/<profile>`, which
 lets Cargo skip an install that is already current, and replaces the staged file
-atomically. Linked worktrees use the main checkout's `target/`, so they share
-one build of each revision. A first release build takes about two minutes.
+atomically. Each revision also builds in its own `target/buzz-cli-build/<rev>`:
+Cargo trusts an earlier build of a git checkout even after the revision changes,
+so a shared build directory would stage the old CLI after a bump. Linked
+worktrees use the main checkout's `target/`, so they share one build of each
+revision. A first release build takes about two minutes.
 
 The macOS release signing service signs the executable with the Developer ID
 certificate and the hardened runtime, as it does `goose-acp` and
