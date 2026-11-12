@@ -531,8 +531,9 @@ it("shows global routes in the rail and keeps the conversation mounted across se
     return <textarea aria-label="Message draft" />;
   }
   const pages = [
-    { id: "channels", pluginId: "buzz.channels", title: "Channels" },
     { id: "inbox", pluginId: "buzz.inbox", title: "Inbox" },
+    { id: "channels", pluginId: "buzz.channels", title: "Channels" },
+    { id: "reminders", pluginId: "buzz.reminders", title: "Reminders" },
     { id: "bestie", pluginId: "buzz.bestie", title: "Bestie" },
   ].map((page) => ({
     ...page,
@@ -608,8 +609,9 @@ it.each([
     services = current;
     const onSelect = vi.fn();
     const pages = [
-      { id: "channels", pluginId: "buzz.channels", title: "Channels" },
       { id: "inbox", pluginId: "buzz.inbox", title: "Activity" },
+      { id: "channels", pluginId: "buzz.channels", title: "Channels" },
+      { id: "bestie", pluginId: "buzz.bestie", title: "Bestie" },
       {
         id: "drafts-sent",
         pluginId: "buzz.drafts-and-sent",
@@ -680,7 +682,7 @@ it("keeps a contributed sidebar alongside its current rail route", async () => {
       <AppShell
         pages={[
           page("buzz.channels", "channels", "Channels"),
-          page("buzz.inbox", "inbox", "Activity"),
+          page("buzz.bestie", "bestie", "Bestie"),
           playground,
         ]}
         selected={playground.key}

@@ -1,5 +1,6 @@
 import { useSearchSettings } from "./SearchSettings";
 import { usePagePresentation } from "./BestieNavigation";
+import { isBestiePage, useBestieConversation } from "./bestie-context";
 import {
   useCallback,
   useEffect,
@@ -113,6 +114,18 @@ export function PageSearch({
     services?.navigation?.subscribe ?? noSubscribe,
     () => services?.navigation?.snapshot().entry.target ?? null,
   );
+  const relaySession = useSyncExternalStore(
+    services?.communities?.relay.subscribe ?? noSubscribe,
+    () => services?.communities?.relay.snapshot().session,
+  );
+  const bestieChannelId = useBestieConversation(relaySession);
+  // The Bestie page presents its promoted DM, so it searches like that DM.
+  const currentChannelId =
+    currentTarget?.kind === "conversation"
+      ? currentTarget.channelId
+      : isBestiePage(currentTarget)
+        ? bestieChannelId
+        : undefined;
   const input = useRef<HTMLElement>(null);
   const returnFocus = useRef<HTMLElement>(null);
   const composerChannel = useRef<string | undefined>(undefined);
@@ -170,7 +183,7 @@ export function PageSearch({
     return () => document.removeEventListener("focusin", focused);
   }, [open]);
   const beginScoped = useCallback(() => {
-    if (currentTarget?.kind !== "conversation") return;
+    if (!currentChannelId) return;
     composerChannel.current = undefined;
     returnFocus.current =
       document.activeElement instanceof HTMLElement
@@ -179,9 +192,9 @@ export function PageSearch({
     setQuery("");
     setTab("all");
     place.current = { top: 0, key: "" };
-    setScopedChannelId(currentTarget.channelId);
+    setScopedChannelId(currentChannelId);
     setSearchOpen(true);
-  }, [currentTarget, setSearchOpen]);
+  }, [currentChannelId, setSearchOpen]);
   useEffect(
     () =>
       services?.shortcuts.registerHost({
@@ -202,10 +215,10 @@ export function PageSearch({
         binding: CONVERSATION_SEARCH_BINDING,
         order: HOST_SHORTCUT_ORDER.search + 1,
         allowInEditable: true,
-        when: () => currentTarget?.kind === "conversation",
+        when: () => !!currentChannelId,
         run: beginScoped,
       }),
-    [services, currentTarget, beginScoped],
+    [services, currentChannelId, beginScoped],
   );
   // The hint follows the person's rebind, derived from the same binding object.
   const { overrides } = useSyncExternalStore(
@@ -363,11 +376,7 @@ export function PageSearch({
                 (page) => page.key === "buzz.channels/channels",
               )}
               scopedChannelId={scopedChannelId}
-              currentChannelId={
-                currentTarget?.kind === "conversation"
-                  ? currentTarget.channelId
-                  : undefined
-              }
+              currentChannelId={currentChannelId}
               onScopeChange={(channelId) => {
                 setScopedChannelId(channelId);
                 input.current?.focus();
@@ -528,7 +537,7 @@ function CommunitySearch({
             // Retrying removes this focused button; the field owns keyboard
             // navigation, so focus returns there before the retry starts.
             input.current?.focus();
-            services.communities.relay.retry();
+            services.communities.relay.tryAgain();
           }}
         >
           Retry connection

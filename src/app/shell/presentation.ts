@@ -30,7 +30,6 @@ const bundledOrder = [
 ];
 const dockOrder = [
   "buzz.bestie/bestie",
-  "buzz.inbox/inbox",
   "buzz.channels/channels",
   "buzz.reminders/reminders",
 ];

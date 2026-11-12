@@ -18,3 +18,8 @@
   width: calc(var(--space-8) + var(--space-4));
   height: calc(var(--space-8) + var(--space-4));
 }
+
+.welcome {
+  color: var(--text-standard);
+  text-align: start;
+}

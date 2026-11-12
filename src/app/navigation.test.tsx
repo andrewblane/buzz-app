@@ -573,11 +573,12 @@ it("reconnects the selected Membership community after its transport fails", asy
   await screen.findByRole("button", { name: "Try again" });
   expect(current.communities.snapshot().selected).toBe(primary);
   expect(current.relay.snapshot().status).toBe("error");
-  const retry = vi.spyOn(current.relay, "retry");
+  const retry = vi.spyOn(current.relay, "tryAgain");
   fixture.offline(false);
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));
   await screen.findByRole("heading", { name: "Membership" });
-  expect(retry).toHaveBeenCalledOnce();
+  // The route and its relay both retry; the relay joins the second call.
+  expect(retry).toHaveBeenCalled();
   expect(current.navigation.snapshot().status).toBe("opened");
 });
 it("does not reconnect an unrelated community when the addressed Settings scope is denied", async () => {
@@ -585,7 +586,7 @@ it("does not reconnect an unrelated community when the addressed Settings scope 
   fixture.offline();
   const current = restoreMembership();
   await screen.findByRole("button", { name: "Try again" });
-  const retry = vi.spyOn(current.relay, "retry");
+  const retry = vi.spyOn(current.relay, "tryAgain");
   act(() => {
     void current.navigation.open({
       ...membershipTarget,
@@ -869,6 +870,20 @@ it("Back closes Settings onto the view beneath and Forward reopens it; other sho
   expect(current.navigation.snapshot().entry.target).toEqual(beneath);
   fireEvent.keyDown(document.body, { ctrlKey: true, key: "]" });
   expect(await screen.findByRole("dialog", { name: "Settings" })).toBeVisible();
+  await act(async () => {
+    await current.navigation.open({
+      ...settings,
+      route: { version: 1, params: "invite" },
+    });
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull(),
+  );
+  await act(async () => current.navigation.back());
+  expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+  await act(async () => current.navigation.forward());
+  expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
 });
 
 it("keeps the shell's snapshot when a visit opens, and follows any other change", () => {

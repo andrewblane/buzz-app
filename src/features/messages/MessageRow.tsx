@@ -13,6 +13,7 @@ import { ProfilePeek } from "../profiles/ProfilePeek";
 import { AgentAvatar } from "../agents/AgentAvatar";
 import {
   TypingPresentation,
+  useActivityTypingReplacement,
   useReplacedTypers,
 } from "../conversation/typing-presentation";
 import { breathing, localActivity } from "../agents/local-activity";
@@ -95,6 +96,8 @@ import { useReferenceDirectory } from "./ReferenceText";
 import { EditedMarker, MessageMarkdown } from "./MessageMarkdown";
 import { safeMessageUrl } from "../relay/message-content";
 import styles from "./Messages.module.css";
+import { LinkPreviews } from "./LinkPreviews";
+import { previewLinks } from "./preview-links";
 import { usesLargeEmojiPresentation } from "./emoji-size";
 import { separateChatCards } from "./chat-cards";
 import { MessageReactionControls, MessageReactions } from "./MessageReactions";
@@ -615,11 +618,29 @@ function MessageRowContent({
   // The host's Markdown marks an edit after the caption's last line. Plugin
   // cards are marked inside their bubble; diffs and captionless rows after the
   // payload.
-  const editedInBody =
+  const markdownBody =
     bodyShown &&
     !row.diff &&
     !!displayRow.content.trim() &&
     (!messageRenderer || messageRenderer === failedRenderer);
+  const editedInBody = markdownBody;
+  const linkPreviewRegistry = extensions?.linkPreviews;
+  const previewUrls = useMemo(
+    () =>
+      linkPreviewRegistry && markdownBody && !row.agentEnvelope
+        ? previewLinks(
+            displayRow.content,
+            row.attachments.map((attachment) => attachment.url),
+          )
+        : [],
+    [
+      linkPreviewRegistry,
+      markdownBody,
+      row.agentEnvelope,
+      displayRow.content,
+      row.attachments,
+    ],
+  );
   const claimed = (attachment: ChannelMessage["attachments"][number]) => {
     try {
       return !!claims?.call(messageRenderer, row, attachment);
@@ -1362,6 +1383,14 @@ function MessageRowContent({
                   {reactionsInBubble && reactionContent}
                 </div>
               )}
+              {previewUrls.length > 0 && (
+                <LinkPreviews
+                  urls={previewUrls}
+                  messageId={row.id}
+                  registry={linkPreviewRegistry}
+                  onOpenLink={openLink}
+                />
+              )}
               {attachmentGroups.length > 0 && (
                 <div
                   className={styles.messageAttachments}
@@ -1391,8 +1420,8 @@ function MessageRowContent({
                       const url = safeMessageUrl(attachment.url);
                       if (!url) return null;
                       const source = media(url);
-                      if (attachment.kind === "file")
-                        return (
+                      if (attachment.kind === "file") {
+                        const fallback = (
                           <FileAttachment
                             key={url}
                             attachment={{ ...attachment, url }}
@@ -1400,6 +1429,21 @@ function MessageRowContent({
                             onOpenLink={openLink}
                           />
                         );
+                        return source && extensions?.attachments ? (
+                          <AttachmentView
+                            key={url}
+                            registry={extensions.attachments}
+                            attachment={{ ...attachment, url }}
+                            source={source}
+                            placement="message"
+                            message={row}
+                            FileCard={FileAttachment}
+                            fallback={fallback}
+                          />
+                        ) : (
+                          fallback
+                        );
+                      }
                       if (attachment.kind === "audio") {
                         if (
                           source &&
@@ -1411,6 +1455,8 @@ function MessageRowContent({
                                 registry={extensions.attachments}
                                 attachment={{ ...attachment, url }}
                                 source={source}
+                                placement="message"
+                                message={row}
                                 fallback={
                                   <AudioAttachment
                                     attachment={{ ...attachment, url }}
@@ -1499,6 +1545,8 @@ function MessageRowContent({
                             registry={extensions.attachments}
                             attachment={{ ...attachment, url }}
                             source={source}
+                            placement="message"
+                            message={row}
                             fallback={image}
                           />
                         ) : (
@@ -1713,6 +1761,21 @@ function AgentsMessageRow(props: MessageRowProps & { failure?: boolean }) {
     activity?.requestId,
   );
   const active = live || (activity?.active ?? false);
+  // Its dots are then its request's working cue, so the conversation shows
+  // no second one for that request until a newer message follows its run.
+  useActivityTypingReplacement(
+    session && activity?.requestId
+      ? {
+          session,
+          channelId: row.channelId,
+          threadRootId: row.threadRootId,
+          pubkey: row.authorId,
+          requestId: activity.requestId,
+          presence: true,
+        }
+      : undefined,
+    active && !!activity?.requestId && !activity.followed,
+  );
   const keepMounted = props.keepMounted;
   useEffect(() => {
     if (open) return keepMounted?.(row.id);
@@ -1871,6 +1934,7 @@ function AgentsMessageRow(props: MessageRowProps & { failure?: boolean }) {
                     active={active}
                   />
                 )}
+                {active && <TypingDots size="message" />}
                 {open && bubble && "Collapse"}
                 {!open && (
                   <span className={styles.audiencePreviewText}>

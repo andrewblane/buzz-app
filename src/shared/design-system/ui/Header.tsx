@@ -10,6 +10,11 @@ type HeaderProps = {
   id?: string;
   level?: 1 | 2 | 3 | 4;
   headingRef?: Ref<HTMLHeadingElement>;
+  /** The heading element, for a caller that moves focus to it. */
+  ref?: Ref<HTMLHeadingElement>;
+  /** `-1` lets the heading take programmatic focus: a landing with no
+   * tabbable descendants, for when the controls it introduces go away. */
+  tabIndex?: -1;
 };
 
 /** Content hierarchy; panel chrome and dialog semantics remain with their owners. */
@@ -32,6 +37,8 @@ function ContentHeader({
   level = 2,
   inline = false,
   headingRef,
+  ref,
+  tabIndex,
 }: HeaderProps & { inline?: boolean }) {
   const Heading = `h${level}` as "h1" | "h2" | "h3" | "h4";
   return (
@@ -49,9 +56,9 @@ function ContentHeader({
       <div className="buzz-content-header-copy">
         {eyebrow && <p className="buzz-content-header-eyebrow">{eyebrow}</p>}
         <Heading
-          ref={headingRef}
-          tabIndex={headingRef ? -1 : undefined}
           id={id}
+          ref={ref ?? headingRef}
+          tabIndex={tabIndex ?? (headingRef ? -1 : undefined)}
           className="buzz-content-header-title"
         >
           {title}

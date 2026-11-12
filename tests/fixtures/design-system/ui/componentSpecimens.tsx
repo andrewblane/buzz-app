@@ -7,6 +7,7 @@ import { Calendar } from "../../../../src/shared/design-system/ui/Calendar";
 import { FieldButton } from "../../../../src/shared/design-system/ui/FieldButton";
 import {
   MenuRoot,
+  MenuItem,
   MenuTrigger,
   MenuPopup,
   MenuRadioGroup,
@@ -159,6 +160,23 @@ function FieldButtonSpecimen() {
               </MenuRadioItem>
             ))}
           </MenuRadioGroup>
+        </MenuPopup>
+      </MenuRoot>
+      <MenuRoot>
+        <MenuTrigger
+          render={
+            <FieldButton
+              appearance="masked"
+              prefix="key"
+              aria-label="Value actions"
+            />
+          }
+        >
+          <span aria-hidden="true">••••••••••••••••</span>
+        </MenuTrigger>
+        <MenuPopup>
+          <MenuItem>Copy</MenuItem>
+          <MenuItem>Reveal</MenuItem>
         </MenuPopup>
       </MenuRoot>
     </SpecimenFrame>
@@ -899,7 +917,13 @@ function TabsSpecimen() {
         variant="dock"
         value={panelDestination}
         onValueChange={setPanelDestination}
-        items={iconItems}
+        items={iconItems.map((item, index) => ({
+          ...item,
+          trailing:
+            index === 0 ? (
+              <CountBadge count={12} label="12 items" />
+            ) : undefined,
+        }))}
       />
       <Tabs
         label="Compact dock destinations"
