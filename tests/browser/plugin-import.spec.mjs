@@ -2178,7 +2178,11 @@ test("a Git-installed plugin reviews its URL self-update and survives requester 
       window.importCalls.filter(({ command }) => command === "plugin_change"),
     ),
   ).toEqual([]);
-  expect(await importCalls(page)).toEqual([
+  // Startup may check the installed Git source before this URL migration.
+  const migrationCalls = (await importCalls(page)).filter(
+    ({ command, args }) => command !== "plugin_import_git" || !args?.checkOnly,
+  );
+  expect(migrationCalls).toEqual([
     {
       command: "plugin_import_url",
       args: { url: artifactUrl, sha256: artifactSha },
