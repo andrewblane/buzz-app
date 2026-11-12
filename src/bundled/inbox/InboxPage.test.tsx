@@ -1225,7 +1225,8 @@ function fixture(
       subscribers.add(listener);
       return () => subscribers.delete(listener);
     },
-    retry: retryConnection,
+    retry() {},
+    tryAgain: retryConnection,
     disconnect() {},
     clearCache: owner.clearCache,
   };
