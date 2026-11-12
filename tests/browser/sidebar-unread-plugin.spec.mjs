@@ -27,12 +27,21 @@ test("mentions-and-DMs plugin filters the real sidebar and restores it on disabl
   await holdReadingFocus(page);
   await open(page, app);
   const list = page.getByRole("navigation", { name: "Subscribed channels" });
-  const pill = page.locator('button[data-edge="below"]');
+  const pill = page.locator('button[data-edge="above"]');
   const beta = list.locator('button[data-channel-id="beta"]');
   await expect(beta.locator("[data-channel-unread]")).toHaveCount(1);
   await list.evaluate((element) => {
-    element.scrollTop = 0;
+    element.scrollTop = element.scrollHeight;
   });
+  await expect
+    .poll(() =>
+      beta.evaluate(
+        (element) =>
+          element.getBoundingClientRect().bottom <=
+          element.closest("nav").getBoundingClientRect().top,
+      ),
+    )
+    .toBe(true);
   await expect(pill).toBeVisible();
   const baseline = Number((await pill.innerText()).match(/(\d+) unread/)[1]);
   const toggle = async (enabled) => {
@@ -43,7 +52,7 @@ test("mentions-and-DMs plugin filters the real sidebar and restores it on disabl
   };
   await toggle(true);
   await list.evaluate((element) => {
-    element.scrollTop = 0;
+    element.scrollTop = element.scrollHeight;
   });
   await expect
     .poll(async () => Number((await pill.innerText()).match(/(\d+) unread/)[1]))
@@ -58,11 +67,14 @@ test("mentions-and-DMs plugin filters the real sidebar and restores it on disabl
     "data-channel-id",
     "alpha",
   );
+  await expect(
+    list.locator('button[data-channel-type="dm"]:focus [data-channel-unread]'),
+  ).toHaveCount(1);
   await expect(beta.locator("[data-channel-unread]")).toHaveCount(1);
   await page.screenshot({ path: info.outputPath("mentions-and-dms.png") });
   await toggle(false);
   await list.evaluate((element) => {
-    element.scrollTop = 0;
+    element.scrollTop = element.scrollHeight;
   });
   await expect
     .poll(async () => Number((await pill.innerText()).match(/(\d+) unread/)[1]))
