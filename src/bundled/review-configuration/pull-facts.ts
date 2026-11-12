@@ -125,24 +125,8 @@ async function graphql(
 }
 async function publicRead(repository: string, pr: number, signal: AbortSignal) {
   const endpoint = `https://api.github.com/repos/${repository}/pulls/${pr}`;
-  async function read(url: string) {
-    const response = await fetch(url, {
-      signal,
-      credentials: "omit",
-      headers: { Accept: "application/vnd.github+json" },
-    });
-    if (!response.ok)
-      throw new Error(
-        response.status === 404
-          ? "This PR is private or unavailable. Use the desktop app with gh signed in for private PRs."
-          : response.status === 403 || response.status === 429
-            ? "GitHub's public API limit was reached. Try later or use the desktop app with gh signed in."
-            : `GitHub could not load this PR (${response.status}).`,
-      );
-    return response.json();
-  }
   const metadata = async (): Promise<PullFacts> => {
-    const pull = await read(endpoint);
+    const pull = await publicJson(endpoint, signal);
     return checked({
       repository,
       pr,
@@ -157,7 +141,10 @@ async function publicRead(repository: string, pr: number, signal: AbortSignal) {
   const first = await metadata();
   const paths: string[] = [];
   for (let page = 1; page <= Math.ceil(first.changedFiles / 100); page++) {
-    const files = await read(`${endpoint}/files?per_page=100&page=${page}`);
+    const files = await publicJson(
+      `${endpoint}/files?per_page=100&page=${page}`,
+      signal,
+    );
     if (!Array.isArray(files))
       throw new Error("GitHub returned an invalid file list.");
     paths.push(...files.map((file: { filename: string }) => file.filename));
@@ -179,5 +166,87 @@ export function createPullReader(gh?: GitHubCli): ReadPull {
       }
     }
     return publicRead(repository, pr, signal);
+  };
+}
+
+async function publicJson(url: string, signal: AbortSignal) {
+  const response = await fetch(url, {
+    signal,
+    credentials: "omit",
+    cache: "no-store",
+    headers: { Accept: "application/vnd.github+json" },
+  });
+  if (!response.ok)
+    throw new Error(
+      response.status === 404
+        ? "This PR is private or unavailable. Use the desktop app with gh signed in for private PRs."
+        : response.status === 403 || response.status === 429
+          ? "GitHub's public API limit was reached. Try later or use the desktop app with gh signed in."
+          : `GitHub could not load this PR (${response.status}).`,
+    );
+  return response.json();
+}
+
+export type PullStatus = "Open" | "Draft" | "Closed" | "Merged";
+export type ReadPullStatus = (
+  repository: string,
+  pr: number,
+  signal: AbortSignal,
+) => Promise<PullStatus>;
+const STATUS_QUERY = `query($owner:String!,$name:String!,$pr:Int!){
+ repository(owner:$owner,name:$name){pullRequest(number:$pr){state isDraft}}
+}`;
+function status(state: unknown, draft: unknown): PullStatus {
+  if (
+    typeof state !== "string" ||
+    !["OPEN", "CLOSED", "MERGED"].includes(state) ||
+    typeof draft !== "boolean"
+  )
+    throw new Error("GitHub returned an unknown PR status.");
+  return state === "MERGED"
+    ? "Merged"
+    : state === "CLOSED"
+      ? "Closed"
+      : draft
+        ? "Draft"
+        : "Open";
+}
+
+/** One metadata read, without fetching routing labels or changed files. */
+export function createPullStatusReader(gh?: GitHubCli): ReadPullStatus {
+  return async (input, pr, signal) => {
+    const repository = repositoryName(input);
+    if (!Number.isSafeInteger(pr) || pr < 1)
+      throw new Error("Invalid PR number.");
+    signal.throwIfAborted();
+    if (gh) {
+      try {
+        const [owner, name] = repository.split("/");
+        const result = await gh<{
+          repository: {
+            pullRequest: { state: string; isDraft: boolean } | null;
+          } | null;
+        }>(STATUS_QUERY, { owner, name, pr }, signal);
+        const pull = result.repository?.pullRequest;
+        if (!pull)
+          throw new Error("This PR is unavailable to your GitHub account.");
+        return status(pull.state, pull.isDraft);
+      } catch (error) {
+        if (!(error instanceof GhUnavailable) || signal.aborted) throw error;
+      }
+    }
+    const pull = await publicJson(
+      `https://api.github.com/repos/${repository}/pulls/${pr}`,
+      signal,
+    );
+    if (
+      typeof pull.merged !== "boolean" ||
+      !["open", "closed"].includes(pull.state)
+    )
+      throw new Error("GitHub returned an unknown PR status.");
+    return status(
+      pull.merged ? "MERGED" : pull.state.toUpperCase(),
+      pull.draft,
+    );
   };
 }

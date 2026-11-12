@@ -11,7 +11,13 @@ import { LoadingRegion } from "../../shared/design-system/ui/LoadingRegion";
 import { Input } from "../../shared/design-system/ui/Input";
 import { ReviewerIdentity } from "./LaneReviewers";
 import { loadConfigurations } from "./configuration";
-import { createPullReader, type ReadPull } from "./pull-facts";
+import {
+  createPullReader,
+  createPullStatusReader,
+  type PullStatus,
+  type ReadPullStatus,
+  type ReadPull,
+} from "./pull-facts";
 import {
   loadSubmissions,
   deleteSubmission,
@@ -25,6 +31,7 @@ import {
 } from "./submissions";
 
 const publicPullReader = createPullReader();
+const publicStatusReader = createPullStatusReader();
 
 export function ReviewSubmissions({
   session,
@@ -34,6 +41,7 @@ export function ReviewSubmissions({
   onEditingChange,
   onOpenThread,
   readPull = publicPullReader,
+  readStatus = publicStatusReader,
 }: {
   session: RelaySession;
   mode?: "submit" | "all";
@@ -42,6 +50,7 @@ export function ReviewSubmissions({
   onEditingChange: (editing: boolean) => void;
   onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
   readPull?: ReadPull;
+  readStatus?: ReadPullStatus;
 }) {
   const choices = useAgentChoices(session, true, true);
   const [pr, setPr] = useState("");
@@ -50,6 +59,9 @@ export function ReviewSubmissions({
   const [status, setStatus] = useState("");
   const [result, setResult] = useState<SavedSubmission>();
   const [rows, setRows] = useState<SavedSubmission[]>([]);
+  const [statuses, setStatuses] = useState<
+    Record<string, { value: PullStatus | "Unavailable"; error?: string }>
+  >({});
   const input = useRef<HTMLInputElement>(null);
   const listHeading = useRef<HTMLDivElement>(null);
   const deleteTrigger = useRef<HTMLButtonElement | null>(null);
@@ -94,6 +106,47 @@ export function ReviewSubmissions({
       });
     return () => controller.abort();
   }, [session, channel, reload, mode]);
+
+  useEffect(() => {
+    if (mode !== "all") return;
+    const controller = new AbortController();
+    setStatuses({});
+    let next = 0;
+    async function worker() {
+      while (!controller.signal.aborted) {
+        const row = rows[next++];
+        if (!row) return;
+        try {
+          const value = await readStatus(
+            row.value.config.repository,
+            row.value.pr,
+            AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]),
+          );
+          if (!controller.signal.aborted)
+            setStatuses((current) => ({
+              ...current,
+              [row.revision]: { value },
+            }));
+        } catch (reason) {
+          if (!controller.signal.aborted)
+            setStatuses((current) => ({
+              ...current,
+              [row.revision]: {
+                value: "Unavailable",
+                error:
+                  reason instanceof Error
+                    ? reason.message
+                    : "Could not read PR status.",
+              },
+            }));
+        }
+      }
+    }
+    // Limit GitHub/desktop work when the bounded saved list contains many PRs.
+    for (let index = 0; index < Math.min(rows.length, 4); index++)
+      void worker();
+    return () => controller.abort();
+  }, [rows, mode, readStatus]);
 
   async function submit() {
     if (operation.current || !writable) return;
@@ -180,6 +233,24 @@ export function ReviewSubmissions({
         channel,
         row,
         AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]),
+        async (repository, pr, signal) => {
+          try {
+            const value = await readStatus(repository, pr, signal);
+            if (!controller.signal.aborted)
+              setStatuses((current) => ({
+                ...current,
+                [row.revision]: { value },
+              }));
+            return value;
+          } catch (reason) {
+            if (!controller.signal.aborted)
+              setStatuses((current) => ({
+                ...current,
+                [row.revision]: { value: "Unavailable" },
+              }));
+            throw reason;
+          }
+        },
       );
       if (!controller.signal.aborted)
         setStatus(`Reviewers reminded for ${name} in their existing threads.`);
@@ -187,7 +258,7 @@ export function ReviewSubmissions({
       if (!controller.signal.aborted) {
         setStatus("");
         setError(
-          `${reason instanceof Error ? reason.message : "Could not remind reviewers."} Unconfirmed reminders can be retried with Remind.`,
+          `${reason instanceof Error ? reason.message : "Could not remind reviewers."} Reload to refresh PR status; use Remind to retry unconfirmed delivery when available.`,
         );
       }
     } finally {
@@ -292,6 +363,7 @@ export function ReviewSubmissions({
           <thead>
             <tr>
               <th scope="col">Pull request</th>
+              {deletable && <th scope="col">Status</th>}
               <th scope="col">Delivery</th>
               <th scope="col">Reviewers &amp; threads</th>
               {deletable && <th scope="col">Actions</th>}
@@ -305,6 +377,11 @@ export function ReviewSubmissions({
                     {row.value.config.repository}#{row.value.pr}
                   </a>
                 </th>
+                {deletable && (
+                  <td title={statuses[row.revision]?.error}>
+                    {statuses[row.revision]?.value ?? "Loading…"}
+                  </td>
+                )}
                 <td>
                   {row.value.threads.every((thread) => thread.delivered)
                     ? "Requests delivered"
@@ -321,6 +398,9 @@ export function ReviewSubmissions({
                           listLoading ||
                           !writable ||
                           row.value.submitter !== session.viewer ||
+                          !["Open", "Draft"].includes(
+                            statuses[row.revision]?.value ?? "",
+                          ) ||
                           !row.value.threads.every((thread) => thread.delivered)
                         }
                         aria-label={`Remind reviewers for ${row.value.config.repository}#${row.value.pr}`}
@@ -439,6 +519,7 @@ export function ReviewSubmissions({
                   disabled={busy || listLoading || !!removing}
                   onClick={() => {
                     setStatus("");
+                    setError("");
                     setReload((value) => value + 1);
                   }}
                 >
@@ -463,6 +544,14 @@ export function ReviewSubmissions({
           </LoadingRegion>
           {listError && (
             <p role="alert">{listError} Use Reload to try again.</p>
+          )}
+          {Object.values(statuses).some(
+            (status) => status.value === "Unavailable",
+          ) && (
+            <p role="alert">
+              Some GitHub statuses could not be loaded. Remind is disabled for
+              those PRs. Use Reload to try again.
+            </p>
           )}
           {warning && <p role="alert">{warning}</p>}
         </section>

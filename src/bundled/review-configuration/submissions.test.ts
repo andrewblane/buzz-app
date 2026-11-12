@@ -831,6 +831,7 @@ it("reminds saved reviewers without replacing threads or writing artifacts", asy
     channel,
     first,
     new AbortController().signal,
+    async () => "Open",
   );
   const replies = [...test.messages.values()].filter((event) =>
     event.tags.some((tag) => tag[0] === "e"),
@@ -859,6 +860,7 @@ it("reminds saved reviewers without replacing threads or writing artifacts", asy
       channel,
       first,
       new AbortController().signal,
+      async () => "Open",
     ),
   ).rejects.toThrow("Submission changed");
   expect(test.publish).toHaveBeenCalledTimes(4);
@@ -876,6 +878,7 @@ it("retries interrupted reminder batches without duplicating accepted replies", 
       channel,
       first,
       new AbortController().signal,
+      async () => "Open",
     ),
   ).rejects.toThrow("offline");
   await remindSubmission(
@@ -883,6 +886,7 @@ it("retries interrupted reminder batches without duplicating accepted replies", 
     channel,
     first,
     new AbortController().signal,
+    async () => "Open",
   );
   const replies = [...test.messages.values()].filter((event) =>
     event.tags.some((tag) => tag[0] === "e"),
@@ -907,7 +911,13 @@ it("refuses reminders for incomplete delivery and other submitters", async () =>
   const row = rows[0];
   if (!row) throw new Error("Missing fixture submission");
   await expect(
-    remindSubmission(test.session, channel, row, new AbortController().signal),
+    remindSubmission(
+      test.session,
+      channel,
+      row,
+      new AbortController().signal,
+      async () => "Open",
+    ),
   ).rejects.toThrow("Delivery is incomplete");
   await expect(
     remindSubmission(
@@ -915,7 +925,49 @@ it("refuses reminders for incomplete delivery and other submitters", async () =>
       channel,
       row,
       new AbortController().signal,
+      async () => "Open",
     ),
   ).rejects.toThrow("Only the original submitter");
   expect(test.publish).toHaveBeenCalledTimes(1);
+});
+
+it.each(["Closed", "Merged"] as const)(
+  "does not remind a PR that is now %s",
+  async (status) => {
+    const test = await fixture();
+    const row = await test.run();
+    const readStatus = vi.fn(async () => status);
+    await expect(
+      remindSubmission(
+        test.session,
+        channel,
+        row,
+        new AbortController().signal,
+        readStatus,
+      ),
+    ).rejects.toThrow("closed or merged");
+    expect(readStatus).toHaveBeenCalledWith(
+      "example-org/project",
+      123,
+      expect.any(AbortSignal),
+    );
+    expect(test.publish).toHaveBeenCalledTimes(2);
+  },
+);
+
+it("sends nothing when GitHub status cannot be confirmed", async () => {
+  const test = await fixture();
+  const row = await test.run();
+  await expect(
+    remindSubmission(
+      test.session,
+      channel,
+      row,
+      new AbortController().signal,
+      async () => {
+        throw new Error("GitHub unavailable");
+      },
+    ),
+  ).rejects.toThrow("GitHub unavailable");
+  expect(test.publish).toHaveBeenCalledTimes(2);
 });

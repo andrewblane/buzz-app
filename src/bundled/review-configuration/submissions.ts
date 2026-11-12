@@ -1,3 +1,4 @@
+import type { ReadPullStatus } from "./pull-facts";
 import { laneMatches, type PullFacts } from "./routing";
 import { npubEncode } from "nostr-tools/nip19";
 import { profileMentionLink } from "../../features/messages/message-edit";
@@ -426,6 +427,7 @@ export async function remindSubmission(
   channel: string,
   previous: SavedSubmission,
   signal: AbortSignal,
+  readStatus: ReadPullStatus,
 ) {
   const read = session.snapshotRead;
   const outbox = session.outbox;
@@ -464,6 +466,16 @@ export async function remindSubmission(
       if (!current.value.threads.every((thread) => thread.delivered))
         throw new Error(
           "Delivery is incomplete. Submit this PR again to finish delivery first.",
+        );
+      const status = await readStatus(
+        current.value.config.repository,
+        current.value.pr,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (status !== "Open" && status !== "Draft")
+        throw new Error(
+          "This PR is closed or merged. Reviewers were not reminded.",
         );
       await notifyReviewers(session, channel, current, signal, true);
     },

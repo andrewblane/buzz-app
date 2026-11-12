@@ -1171,7 +1171,7 @@ confirmation. **Delete team** asks first; it doesn't delete the team's agents.
   Submit button. It finds the repository in the selected review channel, reads
   current PR details, and assigns the first configured reviewer in each matching
   lane. Missing configuration or zero matching lanes sends nothing. Results show
-  assigned agents and their thread buttons. Choose **Pull requests** on the main page to see previous submissions in a bordered table. The original submitter can click **Remind** to notify assigned reviewers in their current threads, or confirm **Delete** to remove a submission from the shared list; its conversations and GitHub PR remain. Deleting does not stop active reviews. Resubmitting a deleted PR applies current routing and creates new reviewer threads.
+  assigned agents and their thread buttons. Choose **Pull requests** on the main page to see previous submissions in a bordered table. The table shows GitHub status (Open, Draft, Closed, or Merged); Reload refreshes it. Remind is disabled for closed, merged, loading, or unavailable PRs and rechecks GitHub before sending. The original submitter can click **Remind** to notify assigned reviewers in their current threads, or confirm **Delete** to remove a submission from the shared list; its conversations and GitHub PR remain. Deleting does not stop active reviews. Resubmitting a deleted PR applies current routing and creates new reviewer threads.
   Submitting an existing PR reuses its saved reviewers and threads and mentions
   them again in those threads. Incomplete initial delivery resumes from the original
   browser profile. An interrupted notification retries its saved messages.

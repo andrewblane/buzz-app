@@ -10,6 +10,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { RelaySession } from "../../features/relay/session";
+import type { ReadPullStatus } from "./pull-facts";
 import { ReviewSubmissions } from "./ReviewSubmissions";
 import { loadConfigurations, type SavedReviewConfig } from "./configuration";
 import {
@@ -82,6 +83,7 @@ beforeEach(() => {
 function fixture(
   mode: "submit" | "all" = "submit",
   viewer = record.value.submitter,
+  readStatus: ReadPullStatus = vi.fn(async () => "Open" as const),
 ) {
   const agents = [{ pubkey: "a".repeat(64), name: "UI Reviewer" }];
   const choices = {
@@ -120,12 +122,14 @@ function fixture(
       onEditingChange={editing}
       onOpenThread={onOpenThread}
       readPull={readPull}
+      readStatus={readStatus}
     />,
   );
   return {
     ...view,
     session,
     readPull,
+    readStatus,
     onOpenThread,
     editing,
     user: userEvent.setup(),
@@ -395,6 +399,7 @@ it("reminds from a row, guards duplicate clicks and reports success or failure",
     "channel",
     record,
     expect.any(AbortSignal),
+    expect.any(Function),
   );
   expect(submitReview).not.toHaveBeenCalled();
   vi.mocked(remindSubmission).mockRejectedValueOnce(
@@ -428,4 +433,75 @@ it("aborts pending reminders when leaving the page", async () => {
   test.unmount();
   expect(pending?.aborted).toBe(true);
   await act(async () => finish());
+});
+
+it.each(["Closed", "Merged", "Draft", "Open"] as const)(
+  "shows %s and enables Remind only for open PRs",
+  async (status) => {
+    vi.mocked(loadSubmissions).mockResolvedValue({
+      rows: [record],
+      warning: "",
+    });
+    fixture("all", record.value.submitter, async () => status);
+    await screen.findByRole("cell", { name: status });
+    const button = screen.getByRole("button", {
+      name: "Remind reviewers for example-org/project#42",
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(status === "Closed" || status === "Merged");
+  },
+);
+
+it("keeps Remind disabled while loading or unavailable and refreshes status on Reload", async () => {
+  vi.mocked(loadSubmissions).mockImplementation(async () => ({
+    rows: [record],
+    warning: "",
+  }));
+  let reject = (_error: Error) => {};
+  const readStatus = vi
+    .fn<ReadPullStatus>()
+    .mockImplementationOnce(
+      () =>
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        }),
+    )
+    .mockResolvedValue("Open");
+  const test = fixture("all", record.value.submitter, readStatus);
+  const button = (await screen.findByRole("button", {
+    name: "Remind reviewers for example-org/project#42",
+  })) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  await act(async () => reject(new Error("GitHub unavailable")));
+  await screen.findByRole("cell", { name: "Unavailable" });
+  expect(button.disabled).toBe(true);
+  await test.user.click(screen.getByRole("button", { name: "Reload" }));
+  await screen.findByRole("cell", { name: "Open" });
+  expect(button.disabled).toBe(false);
+});
+
+it("limits status reads and aborts queued work when leaving the list", async () => {
+  const rows = Array.from({ length: 6 }, (_, index) => ({
+    ...record,
+    artifactId: `submission-${index}`,
+    revision: `revision-${index}`,
+    value: { ...record.value, pr: index + 1 },
+  }));
+  vi.mocked(loadSubmissions).mockResolvedValue({ rows, warning: "" });
+  const signals: AbortSignal[] = [];
+  const finish: (() => void)[] = [];
+  const readStatus = vi.fn<ReadPullStatus>(async (_repo, _pr, signal) => {
+    signals.push(signal);
+    await new Promise<void>((resolve) => {
+      finish.push(resolve);
+    });
+    return "Open";
+  });
+  const test = fixture("all", record.value.submitter, readStatus);
+  await waitFor(() => expect(readStatus).toHaveBeenCalledTimes(4));
+  test.unmount();
+  expect(signals.every((signal) => signal.aborted)).toBe(true);
+  await act(async () => {
+    for (const resolve of finish) resolve();
+  });
+  expect(readStatus).toHaveBeenCalledTimes(4);
 });

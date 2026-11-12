@@ -1,5 +1,5 @@
 import { gitHubCli } from "../github/gh";
-import { createPullReader } from "./pull-facts";
+import { createPullReader, createPullStatusReader } from "./pull-facts";
 import type { PluginModule } from "../../plugins/api";
 import {
   ReviewConfigurationPage,
@@ -10,7 +10,9 @@ import {
 export const inject = ["pages", "relay", "navigation", "host"];
 export const apply: PluginModule["apply"] = (ctx) => {
   const { relay, navigation: navigator } = ctx;
-  const readPull = createPullReader(gitHubCli(ctx.host));
+  const gh = gitHubCli(ctx.host);
+  const readPull = createPullReader(gh);
+  const readStatus = createPullStatusReader(gh);
   for (const page of ["configuration", "submit", "all"] satisfies ReviewPage[])
     ctx.pages.register({
       id: page,
@@ -24,6 +26,7 @@ export const apply: PluginModule["apply"] = (ctx) => {
           relay={relay}
           navigator={navigator}
           readPull={readPull}
+          readStatus={readStatus}
         />
       ),
     });

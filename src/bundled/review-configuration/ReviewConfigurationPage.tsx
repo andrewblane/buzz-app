@@ -1,5 +1,11 @@
-import { createPullReader, type ReadPull } from "./pull-facts";
+import {
+  createPullReader,
+  createPullStatusReader,
+  type ReadPull,
+  type ReadPullStatus,
+} from "./pull-facts";
 const publicPullReader = createPullReader();
+const publicStatusReader = createPullStatusReader();
 import { LaneRules, ruleDescription } from "./LaneRules";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAgentChoices } from "../../features/agents/use-choices";
@@ -73,12 +79,14 @@ export function ReviewConfigurationPage({
   relay,
   navigator,
   readPull = publicPullReader,
+  readStatus = publicStatusReader,
   page = "configuration",
 }: {
   page?: ReviewPage;
   relay: RelayData;
   navigator?: Navigation;
   readPull?: ReadPull;
+  readStatus?: ReadPullStatus;
 }) {
   const connection = useRelayConnection(relay);
   if (connection.status === "ready")
@@ -88,6 +96,7 @@ export function ReviewConfigurationPage({
         session={connection.session}
         page={page}
         readPull={readPull}
+        readStatus={readStatus}
         onNavigate={
           navigator
             ? async (page) => {
@@ -143,11 +152,13 @@ export function ReviewConfigurationCommunity({
   onOpenThread,
   onNavigate,
   readPull = publicPullReader,
+  readStatus = publicStatusReader,
   page = "configuration",
 }: {
   session: RelaySession;
   page?: ReviewPage;
   readPull?: ReadPull;
+  readStatus?: ReadPullStatus;
   onNavigate?: ((page: ReviewPage) => Promise<void>) | undefined;
   onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
 }) {
@@ -266,6 +277,7 @@ export function ReviewConfigurationCommunity({
             onEditingChange={setEditing}
             onOpenThread={onOpenThread}
             readPull={readPull}
+            readStatus={readStatus}
           />
         ) : (
           <ChannelConfiguration
