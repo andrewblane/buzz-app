@@ -555,7 +555,7 @@ it("explicit resubmission resets review requests in existing threads without Git
     ]);
     expect(reply.tags).toContainEqual(["p", test.agent.pubkey]);
     expect(reply.tags.some((tag) => tag[0] === "subject")).toBe(false);
-    expect(reply.content).toContain("submitted again");
+    expect(reply.content).toContain("**Review requested again:**");
   }
   await again();
   expect(test.publish).toHaveBeenCalledTimes(6);
@@ -1105,18 +1105,19 @@ it("completes the status-only review loop, resets on Remind, and ignores other r
       { status: "lgtm_not_approved" },
     ),
   ).rejects.toThrow("no unique active review");
-  await expect(report(0, "approved")).rejects.toThrow(
-    "Automatic approval is disabled",
-  );
   expect(publish).not.toHaveBeenCalled();
   await report(0, "reviewing");
   await report(0, "reviewing");
   expect(publish).toHaveBeenCalledTimes(1);
+  await expect(report(0, "approved")).rejects.toThrow(
+    "Automatic approval is disabled",
+  );
   expect(
     (await loadSubmissions(test.session, channel, new AbortController().signal))
       .rows[0]?.reviewStates,
   ).toEqual(["reviewing", "need_review"]);
   await report(0, "request_changes");
+  await report(1, "reviewing");
   await report(1, "lgtm_not_approved");
   const read = () =>
     loadSubmissions(test.session, channel, new AbortController().signal);
@@ -1125,7 +1126,7 @@ it("completes the status-only review loop, resets on Remind, and ignores other r
     "lgtm_not_approved",
   ]);
   await report(0, "request_changes");
-  expect(publish).toHaveBeenCalledTimes(3);
+  expect(publish).toHaveBeenCalledTimes(4);
   await report(0, "lgtm_not_approved");
   expect((await read()).rows[0]?.reviewStates).toEqual([
     "lgtm_not_approved",
@@ -1155,6 +1156,21 @@ it("completes the status-only review loop, resets on Remind, and ignores other r
     "need_review",
     "need_review",
   ]);
+  for (const status of ["request_changes", "lgtm_not_approved"]) {
+    await expect(report(0, status)).rejects.toThrow("Set reviewing first");
+    expect((await read()).rows[0]?.reviewStates).toEqual([
+      "need_review",
+      "need_review",
+    ]);
+  }
+  const corrections = [...test.messages.values()].filter((event) =>
+    event.tags.some(
+      (tag) => tag[0] === "t" && tag[1] === "buzz.review.sequence-correction",
+    ),
+  );
+  expect(corrections).toHaveLength(1);
+  expect(corrections[0]?.tags).toContainEqual(["p", test.agent.pubkey]);
+  await report(0, "reviewing");
   await report(0, "lgtm_not_approved");
   expect((await read()).rows[0]?.reviewStates).toEqual([
     "lgtm_not_approved",
@@ -1163,7 +1179,18 @@ it("completes the status-only review loop, resets on Remind, and ignores other r
   const reminder = [...test.messages.values()].find((event) =>
     event.content.includes("Review reminder."),
   );
-  expect(reminder?.content).toContain("Tool-owned instructions");
+  if (!reminder) throw new Error("Missing reminder");
+  expect(reminder.content).toContain("Tool-owned instructions");
+  expect(reminder?.content).toContain(
+    "**Your reminder message**\n\n> Please have another look at keyboard access.",
+  );
+  expect(reminder?.content).toContain("**Lane instructions**");
+  expect(reminder.content.indexOf("**Your reminder message**")).toBeLessThan(
+    reminder.content.indexOf("**Lane instructions**"),
+  );
+  expect(reminder.content.indexOf("**Lane instructions**")).toBeLessThan(
+    reminder.content.indexOf("**Required steps**"),
+  );
   expect(reminder?.content).toContain(
     "Please have another look at keyboard access.",
   );
@@ -1504,7 +1531,7 @@ it("reminds only the selected lane and preserves another lane's completed review
       ?.reviewStates,
   ).toEqual(["need_review", "done"]);
   const reminders = [...test.messages.values()].filter((event) =>
-    event.content.startsWith("Review reminder."),
+    event.content.startsWith("**Review reminder.**"),
   );
   expect(reminders).toHaveLength(1);
   expect(reminders[0]?.tags).toContainEqual([

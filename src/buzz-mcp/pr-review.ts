@@ -1,4 +1,5 @@
 import type { BuzzClient, Context } from "./client";
+import { npubEncode } from "nostr-tools/nip19";
 import {
   REVIEW_REPORT,
   REVIEW_STATUSES,
@@ -50,10 +51,6 @@ export async function updateReviewStatus(
   const target = targets[0];
   if (targets.length !== 1 || !target)
     throw new Error("This thread has no unique active review assigned to you.");
-  if (args.status === "approved" && !target.autoApprove)
-    throw new Error(
-      "Automatic approval is disabled for this lane. Do not approve on GitHub; report lgtm_not_approved if the review looks good.",
-    );
   const current = async () => {
     const head = (
       await client.query([
@@ -98,6 +95,44 @@ export async function updateReviewStatus(
     );
   const previous = latestReport(reports, target);
   await current();
+  if (
+    args.status !== "reviewing" &&
+    !reports.some((report) => reportStatus(report, target) === "reviewing")
+  ) {
+    const message =
+      'Set reviewing first: call pr_review_status_update({"status":"reviewing"}) and wait for success, then review and report the outcome. No outcome was saved.';
+    const corrections = await client.query([
+      {
+        kinds: [9],
+        authors: [client.pubkey],
+        "#h": [target.channel],
+        "#t": ["buzz.review.sequence-correction"],
+        "#r": [target.request],
+        limit: 1,
+        consistency: "strong",
+      },
+    ]);
+    await current();
+    if (!corrections.length) {
+      client.signal?.throwIfAborted();
+      await client.publish({
+        kind: 9,
+        tags: [
+          ["h", target.channel],
+          ["e", target.root, "", "reply"],
+          ["p", target.reviewer],
+          ["t", "buzz.review.sequence-correction"],
+          ["r", target.request],
+        ],
+        content: `**Review step required** · [@Reviewer](nostr:${npubEncode(target.reviewer)})\n\nCall \`pr_review_status_update({"status":"reviewing"})\` and wait for success before reviewing and reporting an outcome. **No outcome was saved.**`,
+      });
+    }
+    throw new Error(message);
+  }
+  if (args.status === "approved" && !target.autoApprove)
+    throw new Error(
+      "Automatic approval is disabled for this lane. Do not approve on GitHub; report lgtm_not_approved if the review looks good.",
+    );
   if (previous && reportStatus(previous, target) === args.status)
     return `Review status already saved: ${args.status}.`;
   client.signal?.throwIfAborted();

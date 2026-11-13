@@ -160,9 +160,13 @@ Metadata is fetched during new submission and before continuing an admitted tria
 ## Internal review status (POC)
 
 Each lane starts at **Needs review**. Its assigned reviewer calls the standard
-Buzz tool `pr_review_status_update` with only `status: "request_changes"`, `status: "lgtm_not_approved"`, or
+Buzz tool `pr_review_status_update` with `status: "reviewing"` first, then only `status: "request_changes"`, `status: "lgtm_not_approved"`, or
 `status: "approved"`. The host supplies the review thread outside the model's
 arguments; the tool resolves its current assignment and checks the reviewer.
+Outcomes require a valid signed Reviewing report for the current request. A
+skipped step returns the required call and posts a tagged correction, deduplicated
+on retries. Reminders start a new request and require Reviewing again.
+This is tool enforcement, not a new relay authorization rule.
 One review is active per PR; re-reviews happen sequentially in the saved lane
 threads. This POC does not bind a late call from an older turn to an older round.
 
@@ -182,9 +186,10 @@ submission changes and missed reports. A full snapshot uses one artifact read
 and up to twelve report reads, in batches of 100 current request tokens; capped
 report pages fail visibly rather than supplying incomplete statuses.
 
-The plugin obtains the tool's description and schema with
+The plugin obtains the tool's concise workflow description with
 `agents.describeTool("pr_review_status_update")` when composing a request and
-appends them after lane instructions. It maintains no copy of that documentation.
+places it after prominent lane instructions and the approval policy. Reminder
+notes appear first under **Your reminder message** as a blockquote.
 
 Native Codex thread sessions and the shared HarnessKit provide review context.
 A standalone MCP host can set `BUZZ_CHANNEL` and `BUZZ_REVIEW_THREAD` when starting

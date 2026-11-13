@@ -460,30 +460,30 @@ export function threadMessage(
     content: lane
       ? `**Review request:** ${prUrl(value)}
 
-Reviewer: ${profileMentionLink(`@${reviewerName}`, `nostr:${npubEncode(lane.reviewers[0] ?? "")}`)}
-Lane: ${lane.name}
+${profileMentionLink(`@${reviewerName}`, `nostr:${npubEncode(lane.reviewers[0] ?? "")}`)} · ${lane.name}
+${
+  value.reminderMessage
+    ? `
+**Your reminder message**
 
-**1. Accept the review**
-
-**Required first action—even for acknowledgment-only requests:** call \`pr_review_status_update({"status":"reviewing"})\`. Wait for success before your acknowledgment. A chat reply alone does not count; the tool changes the table from Needs review to Reviewing.
-
-Then add your configured GitHub account to this PR’s requested reviewers if it is not already listed. Use your authenticated GitHub identity, never a guessed username from your Buzz name. Preserve existing reviewers. If your account is the PR author, access is unavailable, or your runtime forbids the action, explain the limitation in this thread and continue the review.
-
-**2. Approval policy**
-
-${lane.autoApprove ? "**AUTOMATIC APPROVAL: ALLOWED FOR THIS LANE.** If your review finds no issues, you may approve the current commit on GitHub." : "**AUTOMATIC APPROVAL: OFF — DO NOT APPROVE THIS PR ON GITHUB.**"}
-
-**Never merge the PR.**
-
-**3. What to review**
+${value.reminderMessage
+  .split("\n")
+  .map((line) => `> ${line}`)
+  .join("\n")}
+`
+    : ""
+}
+**Lane instructions**
 
 ${lane.instructions}
 
-Verify the current PR and repository. Post the reviewed commit, findings, and any blockers in this thread.
+${lane.autoApprove ? "**AUTOMATIC APPROVAL: ALLOWED FOR THIS LANE.** Approve only after reviewing the current commit." : "**AUTOMATIC APPROVAL: OFF — DO NOT APPROVE THIS PR ON GITHUB.**"} **Never merge.**
 
-**4. Report the outcome**
+**Required steps**
 
-${documentation || "Use pr_review_status_update after posting your findings. Report request_changes if author changes are needed, lgtm_not_approved if reviewed and good without GitHub approval, or approved only after a permitted GitHub approval succeeds."}${value.version === 1 ? `\n\nOverview: ${threadUrl(channel, value.threads[0]?.id ?? "")}` : ""}`
+${documentation || 'First call `pr_review_status_update({"status":"reviewing"})` and wait for success, even for acknowledgment-only requests. After reviewing, post the commit, findings and blockers; report `request_changes`, `lgtm_not_approved`, or `approved` only after a permitted GitHub approval succeeds.'}
+
+Add your authenticated GitHub account to requested reviewers, preserving others. If you are the author, lack access, or your runtime forbids it, explain and continue.${value.version === 1 ? `\n\nOverview: ${threadUrl(channel, value.threads[0]?.id ?? "")}` : ""}`
       : `Review request: ${prUrl(value)}\n\nLanes: ${value.config.lanes.map((item) => item.name).join(", ")}\n\nLane threads and delivery status are listed in Review Configuration. A delivered request does not mean the reviewer has started. Automatic reminders are off.`,
   };
 }
@@ -673,7 +673,10 @@ async function notifyReviewers(
             ["e", thread.id, "", "reply"],
             ["p", lane.reviewers[0] ?? ""],
           ],
-          content: `${reminder ? "Review reminder. Status changed to needs review. Please review this PR and report your findings in this thread." : "This PR was submitted again. Please revisit the review in this thread."}\n\n${record.value.reminderMessage ? `Message from submitter:\n${record.value.reminderMessage}\n\n` : ""}${request.content}`,
+          content: request.content.replace(
+            "**Review request:**",
+            reminder ? "**Review reminder.**" : "**Review requested again:**",
+          ),
         },
         { key, value: record.artifactId },
         active,

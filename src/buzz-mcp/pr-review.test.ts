@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { updateReviewStatus } from "./pr-review";
-import type { BuzzClient, Template } from "./client";
+import type { BuzzClient, BuzzEvent, Template } from "./client";
 import { keypair, signed } from "../features/relay/testing";
 import { uuidv5 } from "../features/agents/agent-config-artifacts";
 import {
@@ -41,18 +41,67 @@ it.each([undefined, false, true])(
         ],
       }),
     });
-    const publish = vi.fn(async (template: Template) =>
-      signed(agent, {
+    const events: BuzzEvent[] = [];
+    const publish = vi.fn(async (template: Template) => {
+      const event = signed(agent, {
         ...template,
         tags: template.tags.map((tag) => [...tag]),
-      }),
-    );
+      });
+      events.push(event);
+      return event;
+    });
     const client = {
       pubkey: agent.pubkey,
-      query: vi.fn(async (filters) => (filters[0].artifact ? [head] : [])),
+      query: vi.fn(async (filters) =>
+        filters[0].artifact
+          ? [head]
+          : events.filter((event) =>
+              event.tags.some(
+                (tag) => tag[0] === "t" && filters[0]["#t"].includes(tag[1]),
+              ),
+            ),
+      ),
       publish,
     } as unknown as BuzzClient;
     if (autoApprove) {
+      // A Reviewing report from an older request cannot unlock this round.
+      const stale = signed(agent, {
+        kind: 9,
+        content: "Review status: Reviewing.",
+        tags: [
+          ["h", channel],
+          ["e", root, "", "reply"],
+          ["t", "buzz.review.status"],
+          ["r", "33333333-3333-4333-8333-333333333333"],
+          ["review", artifact, "0"],
+          ["review-sequence", "1"],
+          ["status", "reviewing"],
+        ],
+      });
+      events.push(stale);
+      await expect(
+        updateReviewStatus(
+          client,
+          { review: { channel, root } },
+          { status: "approved" },
+        ),
+      ).rejects.toThrow("Set reviewing first");
+      expect(events[1]?.tags).toContainEqual(["p", agent.pubkey]);
+      expect(events[1]?.tags).toContainEqual(["e", root, "", "reply"]);
+      expect(events[1]?.tags.some((tag) => tag[0] === "status")).toBe(false);
+      await expect(
+        updateReviewStatus(
+          client,
+          { review: { channel, root } },
+          { status: "approved" },
+        ),
+      ).rejects.toThrow("Set reviewing first");
+      expect(events).toHaveLength(2);
+      await updateReviewStatus(
+        client,
+        { review: { channel, root } },
+        { status: "reviewing" },
+      );
       await expect(
         updateReviewStatus(
           client,
@@ -60,7 +109,8 @@ it.each([undefined, false, true])(
           { status: "approved" },
         ),
       ).resolves.toContain("saved: approved");
-      const event = await publish.mock.results[0]?.value;
+      const event = events.at(-1);
+      if (!event) throw new Error("Missing approved report");
       expect(
         reportStatus(
           event,
@@ -68,6 +118,19 @@ it.each([undefined, false, true])(
         ),
       ).toBe("approved");
     } else {
+      await expect(
+        updateReviewStatus(
+          client,
+          { review: { channel, root } },
+          { status: "approved" },
+        ),
+      ).rejects.toThrow("Set reviewing first");
+      await updateReviewStatus(
+        client,
+        { review: { channel, root } },
+        { status: "reviewing" },
+      );
+      publish.mockClear();
       await expect(
         updateReviewStatus(
           client,
