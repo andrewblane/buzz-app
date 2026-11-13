@@ -2823,6 +2823,50 @@ it("a link that fails after the key is created blocks setup with Try again, whic
   identity.dispose();
 });
 
+it("a link whose Builderlab sign-in ended offers no Try again, which would send the same credential", async () => {
+  vi.mocked(invoke).mockImplementation((command) => {
+    if (command === "nsec_backup_choice")
+      return Promise.resolve({
+        available: false,
+        pubkey: viewer,
+        automatic: null,
+      });
+    if (command === "identity_restore") return Promise.resolve(null);
+    if (command === "identity_legacy_available") return Promise.resolve(false);
+    if (command === "identity_create") return Promise.resolve(viewer);
+    throw new Error(`Unexpected command ${command}`);
+  });
+  // What the account client throws for kgoose's 401.
+  const bind = vi.fn((_pubkey: string) =>
+    Promise.reject(
+      Object.assign(new Error("Your Builderlab sign-in ended."), {
+        retryable: false,
+      }),
+    ),
+  );
+  const user = userEvent.setup();
+  render(
+    <Welcome
+      identity={createIdentity()}
+      communities={noJoin}
+      invites={invites}
+      account={unlinkedWith(bind)}
+      connect={vi.fn().mockResolvedValue(credential)}
+    >
+      <p>Signed in</p>
+    </Welcome>,
+  );
+  await user.click(await screen.findByRole("button", { name: SIGN_IN }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Your Builderlab sign-in ended.",
+  );
+  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Use a different account" }),
+  ).toBeVisible();
+  expect(bind).toHaveBeenCalledTimes(1);
+});
+
 it("a link refused for good after the key is created offers only Use a different account, which keeps the key and returns to a landing that asks the next sign-in to check it", async () => {
   vi.mocked(invoke).mockImplementation((command) => {
     if (command === "nsec_backup_choice")
@@ -6365,6 +6409,25 @@ it("an invite link stays named on a failed setup that Continue without backup ca
   expectNoNext();
 });
 
+it("an invite link is not named on a failed setup that offers no Try again, which only leaving is left for", async () => {
+  // What the account client throws when the Builderlab sign-in has ended.
+  await signedInHolding(
+    "an invite link",
+    unlinkedWith(() =>
+      Promise.reject(
+        Object.assign(new Error("Your Builderlab sign-in ended."), {
+          retryable: false,
+        }),
+      ),
+    ),
+  );
+  expect(
+    await screen.findByRole("heading", { name: "Couldn’t finish setup" }),
+  ).toBeVisible();
+  expect(landingButtons()).toEqual(["Use a different account"]);
+  expectNoNext();
+});
+
 it("no community is named as a next step when first run holds none: not on setup's progress page, on Connect to a community or on Create a community", async () => {
   const backedUp = deferred<void>();
   const page = connectPage(creatingWith({ backUp: () => backedUp.promise }));
@@ -7006,6 +7069,12 @@ it("a linked account is welcomed back with its npub, accepts only the linked key
   const user = userEvent.setup();
   await welcomeBackPage(user, identity, linkedTo(owned.pubkey));
   expect(screen.getByTitle(linkedNpub)).toBeVisible();
+  // Backup status is unavailable: nothing says a backup exists.
+  expect(
+    screen.getByText(
+      "Your account’s key isn’t on this device. Enter its private key to continue.",
+    ),
+  ).toBeVisible();
   expect(screen.getByRole("button", { name: /^Saved key,/ })).toBeEnabled();
   expect(screen.queryByText(owned.pubkey)).toBeNull();
   for (const name of ["Set me up", "Use an existing key"])
@@ -7582,7 +7651,7 @@ it.each([
   },
 );
 
-it("a backup status lookup that fails hides Restore from backup, and Enter your private key still backs up the key", async () => {
+it("a backup status lookup that fails still offers the restore, whose page offers Enter my private key when no backup holds the key", async () => {
   vi.mocked(invoke).mockImplementation((command) => {
     if (command === "nsec_backup_choice")
       return Promise.resolve({
@@ -7592,6 +7661,15 @@ it("a backup status lookup that fails hides Restore from backup, and Enter your 
       });
     if (command === "identity_restore") return Promise.resolve(null);
     if (command === "identity_legacy_available") return Promise.resolve(false);
+    if (command === "nsec_restore_begin")
+      return Promise.resolve({ attempt: "attempt-1" });
+    if (command === "nsec_restore_wait")
+      return Promise.resolve({
+        candidates: [],
+        currentPubkey: null,
+        failedCount: 0,
+      });
+    if (command === "nsec_restore_cancel") return Promise.resolve();
     if (command === "identity_import") return Promise.resolve(owned.pubkey);
     throw new Error(`Unexpected command ${command}`);
   });
@@ -7603,14 +7681,35 @@ it("a backup status lookup that fails hides Restore from backup, and Enter your 
   await welcomeBackPage(
     user,
     identity,
-    linkedTo(owned.pubkey, [], { backupStatus }),
+    linkedTo(owned.pubkey, [], {
+      backupStatus,
+      recovery: recoveryFor(identity),
+    }),
   );
   expect(backupStatus).toHaveBeenCalledTimes(1);
   expect(
-    screen.queryByRole("button", { name: "Restore from backup" }),
-  ).toBeNull();
+    screen.getByText(
+      "Your account’s key isn’t on this device. Try restoring it from a backup, or enter its private key.",
+    ),
+  ).toBeVisible();
   expect(screen.queryByRole("alert")).toBeNull();
-  await importLinkedKey(user);
+  await restoreLinkedKey(user);
+  expect(invoke).toHaveBeenCalledWith("nsec_restore_begin");
+  expect(
+    await screen.findByText(
+      "We couldn’t find a key backup in this Builderlab account. If you have a copy of your private key, you can enter it instead.",
+    ),
+  ).toBeVisible();
+  await user.click(
+    screen.getByRole("button", { name: "Enter my private key" }),
+  );
+  await user.paste(ownedNsec);
+  await user.click(continueWithKey());
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("identity_import", {
+      nsec: ownedNsec,
+    }),
+  );
   identity.dispose();
 });
 
@@ -7864,9 +7963,7 @@ it.each([
 it("a restore that fails for a reason a retry may clear offers Try again, and Back returns to Welcome back", async () => {
   const wait = vi
     .fn()
-    .mockRejectedValueOnce(
-      "Try again, or enter your private key if you have a copy.",
-    )
+    .mockRejectedValueOnce("Restore was canceled. Try again.")
     .mockImplementationOnce(() => new Promise(() => {}));
   const account = backedUpAccount({
     nsec_restore_begin: () => ({ attempt: "attempt-1" }),
@@ -7877,8 +7974,9 @@ it("a restore that fails for a reason a retry may clear offers Try again, and Ba
   const user = userEvent.setup();
   await welcomeBackPage(user, identity, account);
   await restoreLinkedKey(user);
+  // The welcome-back screen names native's cause, not generic advice.
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Try again, or enter your private key if you have a copy.",
+    "Restore was canceled. Try again. Or enter your private key if you have a copy.",
   );
   expect(storedSecurely()).toBeNull();
   expect(
@@ -8738,48 +8836,53 @@ it("a development seed's fail-once backup fails only the first backup, and Try a
   identity.dispose();
 });
 
-it("a development seed's unlink status fails Start over's unlink as kgoose would, still without a request", async () => {
-  vi.stubEnv(
-    "VITE_BUZZ_FIRST_RUN_ACCOUNT",
-    JSON.stringify({ npub: linkedNpub, unlink: 503 }),
-  );
-  vi.mocked(invoke).mockImplementation((command) => {
-    if (command === "nsec_backup_choice")
-      return Promise.resolve({
-        available: false,
-        pubkey: viewer,
-        automatic: null,
-      });
-    if (command === "identity_restore") return Promise.resolve(null);
-    if (command === "identity_legacy_available") return Promise.resolve(false);
-    if (command === "identity_create") return Promise.resolve(viewer);
-    throw new Error(`Unexpected command ${command}`);
-  });
-  const identity = createIdentity();
-  const user = userEvent.setup();
-  await welcomeBackPage(user, identity, undefined);
-  await startOver(user);
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Builderlab account unlink failed (HTTP 503).",
-  );
-  // The failed unlink blocks: Try again is the only action, and the seed
-  // fails it again.
-  expect(
-    screen.queryByRole("button", { name: "Continue without linking" }),
-  ).toBeNull();
-  expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Try again" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Builderlab account unlink failed (HTTP 503).",
-  );
-  expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled();
-  expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual([
-    "identity_restore",
-    "identity_legacy_available",
-    "identity_create",
-  ]);
-  identity.dispose();
-});
+it.each([
+  [503, "Builderlab account unlink failed (HTTP 503)."],
+  // A refusal takes the production error path too, and still keeps Try
+  // again: it is the page's only way past the unlink.
+  [403, "Builderlab account unlink failed (HTTP 403)."],
+])(
+  "a development seed's unlink status %i fails Start over's unlink as kgoose would, still without a request",
+  async (unlink, message) => {
+    vi.stubEnv(
+      "VITE_BUZZ_FIRST_RUN_ACCOUNT",
+      JSON.stringify({ npub: linkedNpub, unlink }),
+    );
+    vi.mocked(invoke).mockImplementation((command) => {
+      if (command === "nsec_backup_choice")
+        return Promise.resolve({
+          available: false,
+          pubkey: viewer,
+          automatic: null,
+        });
+      if (command === "identity_restore") return Promise.resolve(null);
+      if (command === "identity_legacy_available")
+        return Promise.resolve(false);
+      if (command === "identity_create") return Promise.resolve(viewer);
+      throw new Error(`Unexpected command ${command}`);
+    });
+    const identity = createIdentity();
+    const user = userEvent.setup();
+    await welcomeBackPage(user, identity, undefined);
+    await startOver(user);
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    // The failed unlink blocks: Try again is the only action, and the seed
+    // fails it again.
+    expect(
+      screen.queryByRole("button", { name: "Continue without linking" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled();
+    expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual([
+      "identity_restore",
+      "identity_legacy_available",
+      "identity_create",
+    ]);
+    identity.dispose();
+  },
+);
 
 it("restores the backed-up key and continues without a welcome-back confirmation", async () => {
   vi.stubEnv(
@@ -9091,8 +9194,9 @@ it("copies without revealing and cancels a pending export on blur before clipboa
   const identity = createIdentity();
   await identity.ready;
   const user = userEvent.setup();
-  // The macOS app copies through the host clipboard.
-  vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  // On every platform the app copies a key through the host clipboard,
+  // which clears it after a minute if it still holds the key.
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
   const writes = () =>
     vi
       .mocked(invoke)
@@ -9100,7 +9204,9 @@ it("copies without revealing and cancels a pending export on blur before clipboa
   vi.mocked(invoke).mockResolvedValueOnce(key);
   render(<PrivateKey identity={identity} />);
   await user.click(screen.getByRole("button", { name: "Copy private key" }));
-  expect(writes()).toEqual([["clipboard_write_text", { text: key }]]);
+  expect(writes()).toEqual([
+    ["clipboard_write_text", { text: key, clearAfterSecs: 60 }],
+  ]);
   expect(screen.getByLabelText("Private key (nsec)")).toHaveValue(
     "••••••••••••••••",
   );
@@ -10110,8 +10216,9 @@ const anotherKeyOnDevice = (
       return { seq: 1, pass: 0, builderlab: true, status: "idle" };
     if (command === "nsec_backup_confirmed") return confirmed;
     if (command === "sign_out") return signedOut();
-    // Replace's copy of a device key with no backup.
+    // Replace's copy of a device key with no backup, through the host clipboard.
     if (command === "identity_export") return key;
+    if (command === "clipboard_write_text") return undefined;
     throw new Error(`Unexpected command ${command}`);
   });
 const AFTER_RESTART = "buzz.sign-in-after-restart.v1";
@@ -10314,7 +10421,12 @@ it("Replace waits until a device key with no backup is copied and the user has i
   expect(await replaceDialog()).toHaveTextContent(MAYBE_NOT_BACKED_UP);
   expect(replaceKeyButton()).toBeDisabled();
   await copyDeviceKey(user);
-  expect(await navigator.clipboard.readText()).toBe(key);
+  // The host writes the key and clears it after a minute.
+  expect(
+    vi
+      .mocked(invoke)
+      .mock.calls.filter(([command]) => command === "clipboard_write_text"),
+  ).toEqual([["clipboard_write_text", { text: key, clearAfterSecs: 60 }]]);
   expect(signOuts()).toEqual([]);
   await user.click(screen.getByRole("button", { name: "Replace" }));
   await waitFor(() =>
