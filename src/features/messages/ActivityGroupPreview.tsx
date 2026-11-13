@@ -104,13 +104,7 @@ export function ActivityGroupPreview({
   const profile = profiles.get(primary);
   const named = (id: string) =>
     resolveName(id, profiles.get(id)?.name ?? id.slice(0, 10));
-  // The byline names everyone in the run, as its avatars show them.
-  const names = participants.map(named);
-  const name = new Intl.ListFormat(undefined, { type: "conjunction" }).format(
-    names.length > 3
-      ? [...names.slice(0, 2), `${names.length - 2} others`]
-      : names,
-  );
+  const name = named(primary);
   const previewRow = group.workingUpdate ?? row;
   const speaker = named(previewRow.authorId);
   const text = Array.from(
@@ -135,15 +129,12 @@ export function ActivityGroupPreview({
   return (
     <AgentResponsePreview
       name={name}
-      // Its execution hint describes one agent, so only a one-agent byline has it.
       bylineHint={
-        participants.length === 1 && (
-          <RemoteAgentHint
-            session={session}
-            viewer={session?.viewer}
-            pubkey={primary}
-          />
-        )
+        <RemoteAgentHint
+          session={session}
+          viewer={session?.viewer}
+          pubkey={primary}
+        />
       }
       participants={participants.map((id) => ({
         id,
