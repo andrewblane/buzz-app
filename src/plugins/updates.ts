@@ -822,12 +822,17 @@ export function createPluginUpdates(
   };
   const isCurrentToken = (token: PluginUpdateToken) => {
     const update = resolveCandidate(token);
-    const checkedAt = update && checked.get(update.id)?.at;
+    const checkedAt =
+      update &&
+      pluginUpdateCheck(
+        observedChecks?.snapshot() ?? {},
+        installed(update.id),
+        update.source,
+      )?.checkedAt;
     return (
       !closed &&
       !!plugins.imports &&
       !checking &&
-      lastCheck !== undefined &&
       checkedAt !== undefined &&
       Date.now() - checkedAt < 3_600_000 &&
       !!update

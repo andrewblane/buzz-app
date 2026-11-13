@@ -2558,6 +2558,44 @@ it.each(
   },
 );
 
+it.each(["offline", "expired"])(
+  "opens a freshly acquired shared candidate after %s discovery without postponing automatic checks",
+  async (state) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    const f = fixture();
+    const updates = createPluginUpdates(
+      f.manager,
+      f.authorize,
+      () => state !== "offline",
+    );
+    try {
+      await updates.check();
+      if (state === "expired") {
+        const token = updates.snapshot()[0]?.token;
+        vi.setSystemTime(Date.now() + 3_600_000);
+        expect(token && updates.isCurrentToken(token)).toBe(false);
+      }
+      const scheduled = updates.nextCheck();
+      await sharedPluginUpdateChecks(f.manager.imports).check(
+        f.plugin,
+        f.authorize,
+      );
+      expect(updates.nextCheck()).toBe(scheduled);
+      const token = updates.snapshot()[0]?.token;
+      expect(token && updates.isCurrentToken(token)).toBe(true);
+      if (!token) throw new Error("Expected an explicit update candidate");
+      expect(updates.capability.queueUpdates([token])).toBeDefined();
+      expect(startReview(updates)?.token).toBe(token);
+      vi.setSystemTime(Date.now() + 3_600_000);
+      expect(token && updates.isCurrentToken(token)).toBe(false);
+      expect(f.imports.install).not.toHaveBeenCalled();
+    } finally {
+      updates.dispose();
+    }
+  },
+);
+
 it.each(["new", "old"])(
   "reconciles public checker health after an explicit failure and recovery to %s",
   async (revision) => {

@@ -1552,6 +1552,29 @@ it("keeps Check again and the generic sentence when an authorized HTTPS check is
   expect(screen.queryByText(/Git needs a sign-in/)).toBeNull();
 });
 
+it("opens an offline explicit-check notification on its first click without another discovery", async () => {
+  const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  try {
+    const f = fixture();
+    f.mount();
+    await act(async () => {
+      await sharedPluginUpdateChecks(f.manager.imports).check(f.plugin);
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Update and reload" }),
+    );
+    const review = await screen.findByRole("dialog", { name: "Update Notes" });
+    expect(
+      await within(review).findByRole("button", { name: "Update" }),
+    ).toBeEnabled();
+    expect(f.imports.checkGit).toHaveBeenCalledOnce();
+    expect(f.imports.git).toHaveBeenCalledOnce();
+    expect(f.installImport).not.toHaveBeenCalled();
+  } finally {
+    online.mockRestore();
+  }
+});
+
 it("doesn’t check in the background while offline, and checks when the connection returns", async () => {
   const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
   try {

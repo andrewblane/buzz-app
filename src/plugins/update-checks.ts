@@ -16,6 +16,7 @@ export type UpdateCheck = {
   discoverySource: string;
   sequence: number;
   checking: boolean;
+  checkedAt?: number | undefined;
   release: PluginRelease | undefined;
   error: string | null;
   candidate?: ImportPreview["candidates"][number] | undefined;
@@ -157,6 +158,7 @@ export function createPluginUpdateChecks(imports: PluginImports | undefined) {
       discoverySource: discoveryIdentity(source, false),
       sequence: request.sequence,
       checking: true,
+      checkedAt: previous?.checkedAt,
       release: previous?.release,
       error: null,
     };
@@ -190,7 +192,12 @@ export function createPluginUpdateChecks(imports: PluginImports | undefined) {
       publish(id, {
         ...snapshot[id],
         checking: false,
-        ...(active() && { release, error, candidate }),
+        ...(active() && {
+          release,
+          error,
+          candidate,
+          checkedAt: error ? undefined : Date.now(),
+        }),
       });
   }
   return {
@@ -228,6 +235,7 @@ export function createPluginUpdateChecks(imports: PluginImports | undefined) {
           ),
           sequence: started,
           checking: false,
+          checkedAt: error ? undefined : Date.now(),
           release,
           error,
           candidate,
