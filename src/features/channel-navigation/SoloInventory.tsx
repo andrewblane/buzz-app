@@ -175,7 +175,7 @@ export function SoloInventory({
         channelId,
         agent,
         trigger: document.querySelector<HTMLElement>(
-          `[data-solo-channel-id="${CSS.escape(channelId)}"]`,
+          `[data-solo-channel-id="${CSS.escape(channelId)}"]:not([inert] *)`,
         ),
         // A Solo chat is one conversation, so its transcript is known.
         transcript: {},
@@ -467,7 +467,7 @@ function SoloConversationRow({
       if (document.activeElement !== button) return;
       const rows = [
         ...(panel?.querySelectorAll<HTMLElement>(
-          "button[data-solo-channel-id]",
+          "button[data-solo-channel-id]:not([inert] *)",
         ) ?? []),
       ];
       const index = rows.indexOf(button);
@@ -487,7 +487,7 @@ function SoloConversationRow({
           return;
         const find = (id: string) =>
           sidebar.querySelector<HTMLElement>(
-            `button[data-solo-channel-id="${CSS.escape(id)}"]`,
+            `button[data-solo-channel-id="${CSS.escape(id)}"]:not([inert] *)`,
           );
         const candidates = [
           find(id),
