@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { RegisteredPage } from "../../features/pages/service";
 import {
+  BellIcon,
   BrowserIcon,
   ChatsCircleIcon,
   RobotIcon,
@@ -28,13 +29,14 @@ function page(key: string, title: string, icon?: string): RegisteredPage {
 }
 
 const messages = page("buzz.channels/channels", "Channels");
+const inbox = page("buzz.inbox/inbox", "Inbox");
 const bestie = page("buzz.bestie/bestie", "Bestie");
 const projects = page("fixture.projects/projects", "Projects");
 
 test("bundled page order ignores activation order without mutating the registry", () => {
-  const input = Object.freeze([projects, bestie, messages]);
-  expect(orderPages(input)).toEqual([messages, bestie, projects]);
-  expect(input).toEqual([projects, bestie, messages]);
+  const input = Object.freeze([projects, bestie, messages, inbox]);
+  expect(orderPages(input)).toEqual([messages, inbox, bestie, projects]);
+  expect(input).toEqual([projects, bestie, messages, inbox]);
   expect(orderPages([messages, projects])).toEqual([messages, projects]);
   expect(orderPages([projects])).toEqual([projects]);
   expect(orderPages([])).toEqual([]);
@@ -48,6 +50,7 @@ test("other pages sort by label then full key and cannot claim bundled slots", (
   const zulu = page("example.zulu/page", "Zulu");
   const expected = [
     messages,
+    inbox,
     bestie,
     alpha,
     alpha2,
@@ -66,12 +69,14 @@ test("other pages sort by label then full key and cannot claim bundled slots", (
       zulu,
       foreignInbox,
       messages,
+      inbox,
       alpha,
     ]),
   ).toEqual(expected);
 });
 
 test("bundled pages get their own icons", () => {
+  expect(pagePresentation(inbox).icon).toBe(BellIcon);
   expect(pagePresentation(page("buzz.agents/agents", "Agents")).icon).toBe(
     RobotIcon,
   );
@@ -94,6 +99,11 @@ describe("page mark precedence", () => {
       "an external page without an icon gets no image key",
       page("example.plugin/main", "Example"),
       { label: "Example", icon: BrowserIcon },
+    ],
+    [
+      "bundled Inbox keeps BellIcon and ignores a declared icon",
+      page("buzz.inbox/inbox", "Inbox", owl),
+      { label: "Inbox", icon: BellIcon },
     ],
     [
       "bundled channels stays Messages and ignores a declared icon",
@@ -124,6 +134,19 @@ test.each([undefined, "toolbar"] as const)(
     expect(
       pagePlacement({
         ...messages,
+        primary: true,
+        ...(placement ? { placement } : {}),
+      }),
+    ).toBe("dock");
+  },
+);
+
+test.each([undefined, "dock"] as const)(
+  "bundled Activity owns its workspace regardless of registered %s placement",
+  (placement) => {
+    expect(
+      pagePlacement({
+        ...inbox,
         primary: true,
         ...(placement ? { placement } : {}),
       }),

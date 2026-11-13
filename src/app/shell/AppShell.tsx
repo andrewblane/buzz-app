@@ -1,3 +1,4 @@
+import { ActivityNavigationProvider } from "./ActivityNavigation";
 import { PageNavigation } from "./PageNavigation";
 import { AppDock } from "./AppDock";
 import { RailNavigation } from "./RailNavigation";
@@ -66,7 +67,12 @@ export function AppShell(props: ComponentProps<typeof AppShellContent>) {
       pages={props.pages}
       relay={props.communities.relay}
     >
-      <AppShellContent {...props} />
+      <ActivityNavigationProvider
+        pages={props.pages}
+        relay={props.communities.relay}
+      >
+        <AppShellContent {...props} />
+      </ActivityNavigationProvider>
     </BestieNavigationProvider>
   );
 }
@@ -332,6 +338,15 @@ function AppShellContent({
       content
     );
   }, [pages, selected, sidebar, sidebarScope, onSelect]);
+  const dockPages = useMemo(
+    () =>
+      orderPages(
+        pages.filter((page) => page.primary && page.key === "buzz.inbox/inbox"),
+        "dock",
+      ),
+    [pages],
+  );
+  const activityPage = selected === "buzz.inbox/inbox";
   const search = (
     <PageSearch
       pages={pages}
@@ -401,7 +416,7 @@ function AppShellContent({
         else setSidebarOpen(false);
         navigationToggle.current?.focus();
       }}
-      pages={noPages}
+      pages={dockPages}
       selected={owner}
       currentPage={selected}
       onSelect={onSelect}
@@ -421,7 +436,6 @@ function AppShellContent({
           navigator={railNavigator}
           listNavigator={listNavigator ?? searchServices.navigation}
           openInSection={openInSection}
-          shortcuts={searchServices.shortcuts}
           list={listSection && { section: listSection.section, slot: listSlot }}
           pages={pages}
           selected={selected}
@@ -433,7 +447,9 @@ function AppShellContent({
       ) : (
         <PageNavigation
           placement={compactRail ? "dock" : "sidebar"}
-          pages={pages.filter((page) => page.primary)}
+          pages={pages.filter(
+            (page) => page.primary && page.key !== "buzz.inbox/inbox",
+          )}
           selected={selected}
           onSelect={onSelect}
         />
@@ -516,6 +532,7 @@ function AppShellContent({
       <div
         className="shell-workspace"
         data-detail-container=""
+        data-feed-layout={activityPage || undefined}
         data-rail-open={visibleRail || undefined}
         data-rail-compact={compactRail || undefined}
         data-side-panel={sidePanels > 0 || undefined}
@@ -649,5 +666,3 @@ function AppShellContent({
     </div>
   );
 }
-
-const noPages: readonly RegisteredPage[] = [];

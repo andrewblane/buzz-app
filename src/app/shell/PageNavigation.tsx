@@ -1,3 +1,5 @@
+import { ACTIVITY_PAGE } from "./activity-context";
+import { ActivityNavigationIcon } from "./ActivityNavigation";
 import {
   cloneElement,
   useEffect,
@@ -84,6 +86,15 @@ export function PageNavigation({
                 shape={avatar.shape}
                 size="small"
               />
+            ) : page.key === ACTIVITY_PAGE ? (
+              <ActivityNavigationIcon>
+                <PageIcon
+                  icon={icon}
+                  image={image}
+                  size={top ? 16 : 20}
+                  strokeWidth={2.5}
+                />
+              </ActivityNavigationIcon>
             ) : (
               <PageIcon
                 icon={icon}
@@ -148,6 +159,10 @@ export function PageNavigation({
         shape={avatar.shape}
         size="compact"
       />
+    ) : page.key === ACTIVITY_PAGE ? (
+      <ActivityNavigationIcon key={page.key}>
+        <PageIcon icon={icon} image={image} size={16} strokeWidth={2.5} />
+      </ActivityNavigationIcon>
     ) : (
       <PageIcon
         key={page.key}

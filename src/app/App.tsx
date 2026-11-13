@@ -368,7 +368,12 @@ function ConnectedAppContent({ services }: { services: AppServices }) {
       services.navigation.snapshot().ingress &&
       services.navigation.snapshot().retryable;
     services.communities.select(id);
-    if (!recovering) select("buzz.channels/channels");
+    if (!recovering)
+      select(
+        route.pages.some((page) => page.key === "buzz.inbox/inbox")
+          ? "buzz.inbox/inbox"
+          : "buzz.channels/channels",
+      );
   };
   if (firstRun)
     return (

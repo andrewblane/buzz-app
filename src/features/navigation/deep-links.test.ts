@@ -146,8 +146,8 @@ function harness(initial: Client, pending: string[] = []) {
   let client = initial;
   const clientListeners = new Set<() => void>();
   const log: string[] = [];
-  let homeStatus: "loading" | "ready" = "ready";
-  const homeListeners = new Set<() => void>();
+  let inboxStatus: "loading" | "on" | "off" = "on";
+  const inboxListeners = new Set<() => void>();
   const controller = createNavigationController(createMemoryHistory());
   const host = {
     navigation: {
@@ -170,12 +170,12 @@ function harness(initial: Client, pending: string[] = []) {
     rejected: vi.fn(() => {
       log.push("rejected");
     }),
-    home: {
-      status: vi.fn((): "loading" | "ready" => homeStatus),
+    inbox: {
+      status: vi.fn((): "loading" | "on" | "off" => inboxStatus),
       subscribe(fn: () => void) {
-        homeListeners.add(fn);
+        inboxListeners.add(fn);
         return () => {
-          homeListeners.delete(fn);
+          inboxListeners.delete(fn);
         };
       },
     },
@@ -213,13 +213,13 @@ function harness(initial: Client, pending: string[] = []) {
       client = { ...client, ...next };
       for (const fn of clientListeners) fn();
     },
-    home(status: typeof homeStatus) {
-      homeStatus = status;
-      for (const fn of homeListeners) fn();
+    inbox(status: typeof inboxStatus) {
+      inboxStatus = status;
+      for (const fn of inboxListeners) fn();
     },
   };
 }
-const homeReady = { status: () => "ready" as const, subscribe: () => () => {} };
+const inboxOn = { status: () => "on" as const, subscribe: () => () => {} };
 const ready: Client = { status: "ready", viewer, selected: origin };
 const loading: Client = { status: "loading", selected: null };
 
@@ -249,14 +249,14 @@ const channelOpen = `open:${JSON.stringify({
   scope: { viewer, communityOrigin: origin },
   channelId: "general",
 })}`;
-const team = {
+const inbox = {
   version: 1,
   kind: "page",
-  pluginId: "buzz.channels",
-  pageId: "channels",
+  pluginId: "buzz.inbox",
+  pageId: "inbox",
   scope: { viewer, communityOrigin: origin },
 } as const;
-const teamOpen = `open:${JSON.stringify(team)}`;
+const inboxOpen = `open:${JSON.stringify(inbox)}`;
 
 it.each([""])(
   "holds a cold invite through identity setup without claiming (path %j)",
@@ -277,7 +277,7 @@ it.each([""])(
         fail,
         invite,
         rejected,
-        home: homeReady,
+        inbox: inboxOn,
         accepted: vi.fn(),
       },
       {
@@ -339,7 +339,7 @@ it.each([""])(
         fail,
         invite,
         rejected,
-        home: homeReady,
+        inbox: inboxOn,
         accepted: vi.fn(),
       },
       { snapshot: () => ready, subscribe: () => () => {} },
@@ -395,18 +395,18 @@ it("hands the sign-in link to first-run without holding, binding or rejecting it
   expect(t.host.fail).not.toHaveBeenCalled();
   t.stop();
 });
-it("holds a malformed cold-start link until Team can open, then explains it once", async () => {
+it("holds a malformed cold-start link until Inbox can open, then explains it once", async () => {
   const t = harness(loading, ["buzz://join?relay=example"]);
   await settle();
   t.become({ status: "unavailable" });
   t.become({ status: "ready", viewer });
   expect(t.log).toEqual([]);
   t.become(ready);
-  expect(t.log).toEqual(["rejected", teamOpen]);
-  expect(t.host.navigation.snapshot().entry.target).toEqual(team);
+  expect(t.log).toEqual(["rejected", inboxOpen]);
+  expect(t.host.navigation.snapshot().entry.target).toEqual(inbox);
   expect(t.host.fail).not.toHaveBeenCalled();
   t.become({ selected: elsewhere });
-  expect(t.log).toEqual(["rejected", teamOpen]);
+  expect(t.log).toEqual(["rejected", inboxOpen]);
   t.stop();
 });
 it.each([
@@ -427,7 +427,7 @@ it.each([
     expect(t.host.rejected).toHaveBeenCalledTimes(1);
     expect(t.host.navigation.open).toHaveBeenCalledTimes(1);
     expect(t.host.fail).not.toHaveBeenCalled();
-    expect(t.host.home.status).not.toHaveBeenCalled();
+    expect(t.host.inbox.status).not.toHaveBeenCalled();
     expect(t.host.navigation.snapshot()).toMatchObject({
       entry: { id: before.entry.id },
       status: "opened",
@@ -483,7 +483,7 @@ it.each([
     t.stop();
   },
 );
-it("a bare launch link opens the ordinary start page, not Team with a notice", async () => {
+it("a bare launch link opens the ordinary start page, not Inbox with a notice", async () => {
   const t = harness(loading, ["buzz://"]);
   await vi.waitFor(() => expect(t.take).toHaveBeenCalledTimes(1));
   await settle();
@@ -555,24 +555,49 @@ it.each([
     }
   },
 );
-it("holds a malformed launch link until Team can open", async () => {
+it("explains a malformed launch link over the start page, adding no visit, when Inbox is turned off", async () => {
   const t = harness(loading, ["buzz://unknown"]);
-  t.home("loading");
+  t.inbox("off");
   await settle();
+  const before = t.host.navigation.snapshot();
   t.become(ready);
-  expect(t.log).toEqual([]);
-  t.home("ready");
-  t.home("ready");
-  expect(t.log).toEqual(["rejected", teamOpen]);
+  expect(t.host.rejected).toHaveBeenCalledTimes(1);
+  expect(t.host.navigation.open).not.toHaveBeenCalled();
+  expect(t.host.navigation.snapshot()).toMatchObject({
+    entry: { id: before.entry.id },
+    canGoForward: false,
+  });
   t.stop();
 });
-it("a newer user visit cancels a malformed launch link waiting for Team", async () => {
+it.each(["on", "off"] as const)(
+  "holds a malformed launch link until Inbox availability settles (%s)",
+  async (settled) => {
+    const t = harness(loading, ["buzz://unknown"]);
+    t.inbox("loading");
+    await settle();
+    const before = t.host.navigation.snapshot();
+    t.become(ready);
+    expect(t.log).toEqual([]);
+    t.inbox(settled);
+    t.inbox(settled);
+    if (settled === "on") expect(t.log).toEqual(["rejected", inboxOpen]);
+    else {
+      expect(t.log).toEqual(["rejected"]);
+      expect(t.host.navigation.snapshot()).toMatchObject({
+        entry: { id: before.entry.id },
+        canGoForward: false,
+      });
+    }
+    t.stop();
+  },
+);
+it("a newer user visit cancels a malformed launch link waiting for Inbox", async () => {
   const t = harness(loading, ["buzz://unknown"]);
-  t.home("loading");
+  t.inbox("loading");
   await settle();
   t.become(ready);
   await t.host.navigation.open({ version: 1, kind: "home" });
-  t.home("ready");
+  t.inbox("on");
   expect(t.host.rejected).not.toHaveBeenCalled();
   expect(t.host.navigation.open).toHaveBeenCalledTimes(1);
   t.stop();
@@ -588,7 +613,7 @@ it("never reports a held malformed link as denied when the account changes", asy
     expect(t.log).toEqual([
       "rejected",
       `open:${JSON.stringify({
-        ...team,
+        ...inbox,
         scope: { viewer: other, communityOrigin: elsewhere },
       })}`,
     ]);
@@ -755,8 +780,8 @@ it("a malformed newer arrival replaces retained recovery without reviving the ol
     await vi.waitFor(() => expect(t.take).toHaveBeenCalledTimes(2));
     await settle();
     t.become(ready);
-    expect(t.log).toEqual(["fail:unavailable", "rejected", teamOpen]);
-    expect(t.host.navigation.snapshot().entry.target).toEqual(team);
+    expect(t.log).toEqual(["fail:unavailable", "rejected", inboxOpen]);
+    expect(t.host.navigation.snapshot().entry.target).toEqual(inbox);
   } finally {
     t.stop();
   }
@@ -983,7 +1008,7 @@ it("still drains once when the shell cannot deliver updates, without aborting st
     ...controller,
     fail: vi.fn(),
     rejected: vi.fn(),
-    home: homeReady,
+    inbox: inboxOn,
     accepted: vi.fn(),
   };
   const stop = bindDeepLinks(
@@ -1021,7 +1046,7 @@ it("is a no-op in the browser build, where no shell exists", async () => {
   const host = createNavigationController(createMemoryHistory());
   const subscribe = vi.fn(() => () => {});
   const stop = bindDeepLinks(
-    { ...host, rejected: vi.fn(), home: homeReady, accepted: vi.fn() },
+    { ...host, rejected: vi.fn(), inbox: inboxOn, accepted: vi.fn() },
     { snapshot: () => ready, subscribe },
   );
   await settle();
@@ -1078,7 +1103,7 @@ it("drains URLs arriving between startup take and deferred native watch registra
     ...controller,
     fail: vi.fn(),
     rejected: vi.fn(),
-    home: homeReady,
+    inbox: inboxOn,
     accepted: vi.fn(),
   };
   const stop = bindDeepLinks(host, {

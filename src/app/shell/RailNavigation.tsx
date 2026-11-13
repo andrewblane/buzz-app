@@ -11,7 +11,6 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal, flushSync } from "react-dom";
-import type { ShortcutsService } from "../../features/shortcuts/service";
 import type { RelaySession } from "../../features/relay/session";
 import { RailConversationItem } from "./RailConversationItem";
 import type { NavigationScope } from "../../features/navigation/targets";
@@ -79,7 +78,6 @@ export function RailNavigation({
   list: listColumn,
   listNavigator = directNavigator,
   openInSection,
-  shortcuts,
   compact = false,
 }: {
   session: RelaySession;
@@ -99,8 +97,6 @@ export function RailNavigation({
   listNavigator?: Navigation;
   /** Opens a conversation with the list showing the section it was opened from. */
   openInSection?: ((section: string, target: OpenTarget) => void) | undefined;
-  /** Registers the chords that open Team on one of its views. */
-  shortcuts?: Pick<ShortcutsService, "registerHost"> | undefined;
   compact?: boolean;
 }) {
   const partition = `${scope.communityOrigin}:${scope.viewer}`;
@@ -138,30 +134,6 @@ export function RailNavigation({
   const { layout: railLayout, reset: resetPlacement } =
     useRailLayout(partition);
   const [messageView, setMessageView] = useActivityView(partition);
-  const openTeamView = useRef<(view: Partial<ActivityView>) => void>(() => {});
-  useLayoutEffect(() => {
-    openTeamView.current = (view) => {
-      setMessageView({ ...messageView, ...view });
-      void directNavigator.open(sidebarSectionTarget(scope, "messages"));
-    };
-  });
-  // Slack's chords for a filtered list, including from the composer.
-  useEffect(() => {
-    if (!shortcuts) return;
-    const stops = teamViewShortcuts.map(([id, title, key, order, view]) =>
-      shortcuts.registerHost({
-        id,
-        title,
-        binding: { key, mod: true, shift: true },
-        order,
-        allowInEditable: true,
-        run: () => openTeamView.current(view),
-      }),
-    );
-    return () => {
-      for (const stop of stops) stop();
-    };
-  }, [shortcuts]);
   const { pins, setPinned } = useRailPins(partition);
   const list = useSyncExternalStore(
     session.channels.subscribeList,
@@ -555,11 +527,15 @@ export function RailNavigation({
         page.primary &&
         ![
           "buzz.channels/channels",
+          "buzz.inbox/inbox",
           "buzz.drafts-and-sent/drafts-sent",
           "buzz.agents/agents",
         ].includes(page.key),
     );
-    const teamPageIds = ["buzz.drafts-and-sent/drafts-sent"];
+    const teamPageIds = [
+      "buzz.inbox/inbox",
+      "buzz.drafts-and-sent/drafts-sent",
+    ];
     const teamPages = teamPageIds.flatMap((key) =>
       pages.filter((page) => page.key === key),
     );
@@ -1035,23 +1011,3 @@ const pluginCatalog: RailEntry = {
 const emptySections: readonly import("../../features/channel-navigation/sidebar-sections-service").RegisteredSidebarSection[] =
   [];
 const noSections = () => emptySections;
-
-const teamViewShortcuts: readonly (readonly [
-  id: string,
-  title: string,
-  key: string,
-  order: number,
-  view: Partial<ActivityView>,
-])[] = [
-  [
-    "open-unread",
-    "Open unread in Team",
-    "a",
-    20,
-    { filter: "all", unread: true },
-  ],
-  ["open-threads", "Open threads in Team", "t", 30, { filter: "threads" }],
-  // Direct lists mentions and DMs together, so both chords open it.
-  ["open-mentions", "Open mentions in Team", "m", 40, { filter: "direct" }],
-  ["open-dms", "Open DMs in Team", "k", 50, { filter: "direct" }],
-];

@@ -109,14 +109,14 @@ test.each([false, true])(
 
 test("saved Plugins shortcuts move to Team and can still be moved afterward", async () => {
   const entry: RailEntry = {
-    id: "buzz.drafts-and-sent/drafts-sent",
-    label: "Drafts & sent",
+    id: "buzz.inbox/inbox",
+    label: "Activity",
     kind: "page",
     target: {
       version: 1,
       kind: "page",
-      pluginId: "buzz.drafts-and-sent",
-      pageId: "drafts-sent",
+      pluginId: "buzz.inbox",
+      pageId: "inbox",
     },
   };
   writeView("saved-shortcuts", "navigation-layout:v1", {
@@ -155,20 +155,18 @@ test("saved Plugins shortcuts move to Team and can still be moved afterward", as
   );
   if (!(team instanceof HTMLElement) || !(plugins instanceof HTMLElement))
     throw new Error("Missing sidebar cards");
-  const drafts = within(team).getByRole("button", {
-    name: "Drafts & sent",
+  const activity = within(team).getByRole("button", {
+    name: "Activity",
   });
   expect(
-    within(plugins).queryByRole("button", { name: "Drafts & sent" }),
+    within(plugins).queryByRole("button", { name: "Activity" }),
   ).toBeNull();
-  fireEvent.contextMenu(drafts);
+  fireEvent.contextMenu(activity);
   fireEvent.click(await screen.findByRole("menuitem", { name: "Plugins" }));
   expect(
-    within(plugins).getByRole("button", { name: "Drafts & sent" }),
+    within(plugins).getByRole("button", { name: "Activity" }),
   ).not.toBeNull();
-  expect(
-    within(team).queryByRole("button", { name: "Drafts & sent" }),
-  ).toBeNull();
+  expect(within(team).queryByRole("button", { name: "Activity" })).toBeNull();
 });
 
 test.each(["pins", "custom:work", "agents"])(

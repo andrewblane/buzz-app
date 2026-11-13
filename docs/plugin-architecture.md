@@ -88,6 +88,7 @@ features/agents/        session-owned agent inventory, choices, local agents and
 features/agent-harness/ Buzz base prompt, memory reads, attention prompts and wakes shared by harness plugins
 bundled/github/         builtin GitHub panel plugin
 bundled/bestie/         builtin Bestie page
+bundled/inbox/          builtin Inbox page for unread conversations and mentions
 ```
 
 The host composes the conversation sidebar (Solo and Team inventories) beside
@@ -1201,7 +1202,7 @@ contracts with their own layout and local navigation.
 
 **Channels is the only required bundled plugin.** Todos, Usage, Reminders,
 Workflows, Changesets, Shared compute and Charts are off by default for fresh installs. Bestie,
-Feedback, Diff viewer, Identity Naming, Agent Activity, Terminal, Links, GitHub,
+Feedback, Diff viewer, Identity Naming, Agent Activity, Terminal, Links, GitHub, Inbox,
 Repositories, Agents, Claude, Codex, Builderlab,
 Membership, and Moderation are on by default, but optional. Both browser and
 native catalogs declare that policy.
@@ -2825,7 +2826,8 @@ reply target chosen in it) once it can take focus, unless the user clicks or
 types first; an open at a message reveals it instead, and a tab restored when
 the page remounts takes no focus. `close(target)` closes that conversation's tab, leaving focus to the page unless it opens a tab in the same update, and returns false when none is open; `isOpen(target)` says whether it has one, and a thread opened at a reply keeps its tab once its root resolves. `id` keys the page's tabs, which last for its community session as
 Channels tabs do; they keep no Back/Forward visits. Showing a tab enters its
-channel visit, as in Channels; `visits: false` leaves reading to the page.
+channel visit, as in Channels; `visits: false` leaves reading to the page, as
+Inbox does.
 The tab workspace belongs to Channels, which supplies it with
 `conversation.registerTabs(component)`; the conversation service only holds that
 slot. `ui.Tabs` is undefined while no enabled plugin provides it, so a page reads
@@ -3391,14 +3393,11 @@ so rebinding a shortcut onto one warns. Slack's ⌘⇧C (code), ⌘⇧9 (quote),
 Shortcuts, which is built the first time it is shown rather than with every
 Settings open. ⌘⇧Y opens Set a status while the profile menu
 can (the message editor keeps it as Redo). Home is on the placeholder ⌘⇧O while
-⌘⇧A opens Team's list on unread conversations. ⌘⇧A, ⌘⇧T, ⌘⇧M and ⌘⇧K are host
-bindings the rail registers (`teamViewShortcuts` in `app/shell/RailNavigation.tsx`),
-including from the composer: each sets Team's saved list view and opens Team's
-list, ⌘⇧A on All with Unread only, ⌘⇧T on Threads, and both ⌘⇧M and ⌘⇧K on
-Direct, which lists mentions and DMs together; the last three keep the saved
-Unread only choice. As host bindings they are reserved, so a plugin claiming the
-same chord does not win it. Settings → Shortcuts marks such rows "Also used by";
-rebinding either one resolves it.
+⌘⇧A opens Inbox's unread view. Inbox's ⌘⇧A, ⌘⇧T, ⌘⇧M and ⌘⇧K are ordinary
+`buzz.inbox` plugin contributions, so they follow the plugin precedence above: a
+plugin whose namespaced ID sorts first and claims the same chord wins it while
+eligible. Settings → Shortcuts marks such rows "Also used by"; rebinding either one
+resolves it.
 
 Known limitations. Capture and matching both use the logical `KeyboardEvent.key`.
 On macOS an Option chord reports the composed character, so Option+K is stored

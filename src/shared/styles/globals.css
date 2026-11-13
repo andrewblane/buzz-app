@@ -388,7 +388,8 @@
     grid-template-columns: minmax(0, 1fr);
   }
   @media (max-width: 650px) {
-    .shell-workspace {
+    .shell-workspace,
+    .shell-workspace[data-feed-layout] {
       grid-template-columns: minmax(0, 1fr);
       column-gap: 0;
     }

@@ -1,0 +1,137 @@
+import type { ReactNode, Ref } from "react";
+import { IconButton } from "../../shared/design-system/ui/IconButton";
+import { Tabs } from "../../shared/design-system/ui/Tabs";
+import {
+  MenuRoot,
+  MenuTrigger,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuGroupLabel,
+  MenuSeparator,
+} from "../../shared/design-system/ui/Menu";
+import {
+  BellIcon,
+  MessageReplyIcon,
+  AtIcon,
+  ChatCircleIcon,
+  SmileyIcon,
+  Filter2Icon,
+  UsersIcon,
+  CircleNotchIcon,
+  ClockIcon,
+  HashIcon,
+} from "../../shared/design-system/icons";
+
+export type ActivityFilter =
+  | "all"
+  | "channels"
+  | "threads"
+  | "mentions"
+  | "dms"
+  | "reactions"
+  | "direct"
+  | "working"
+  | "waiting";
+export type SenderFilter = "everyone" | "humans" | "agents";
+export const activityViews = [
+  { value: "all", label: "All", icon: <BellIcon size={20} /> },
+  { value: "threads", label: "Threads", icon: <MessageReplyIcon size={20} /> },
+  { value: "direct", label: "Direct", icon: <UsersIcon size={20} /> },
+  { value: "working", label: "Working", icon: <CircleNotchIcon size={20} /> },
+  { value: "waiting", label: "Waiting", icon: <ClockIcon size={20} /> },
+  { value: "channels", label: "Channels", icon: <HashIcon size={20} /> },
+  { value: "mentions", label: "Mentions", icon: <AtIcon size={20} /> },
+  { value: "dms", label: "DMs", icon: <ChatCircleIcon size={20} /> },
+  { value: "reactions", label: "Reactions", icon: <SmileyIcon size={20} /> },
+] as const;
+
+const senders = [
+  { value: "everyone", label: "Anyone" },
+  { value: "humans", label: "People" },
+  { value: "agents", label: "Agents" },
+] as const satisfies readonly { value: SenderFilter; label: string }[];
+
+/** Activity's view selection stays independent of the list's sender/unread menu. */
+export function InboxViewFilter({
+  view,
+  onViewChange,
+  leadingAction,
+}: {
+  view: ActivityFilter;
+  onViewChange(view: ActivityFilter): void;
+  leadingAction?: ReactNode;
+}) {
+  return (
+    <Tabs
+      label="Activity views"
+      variant="buttons"
+      leadingAction={leadingAction}
+      value={view}
+      items={activityViews}
+      onValueChange={onViewChange}
+    />
+  );
+}
+
+export function InboxFilters({
+  sender,
+  unreadOnly,
+  triggerRef,
+  onSenderChange,
+  onUnreadChange,
+}: {
+  sender: SenderFilter;
+  unreadOnly: boolean;
+  triggerRef: Ref<HTMLButtonElement>;
+  onSenderChange(sender: SenderFilter): void;
+  onUnreadChange(checked: boolean): void;
+}) {
+  const from = senders.find((entry) => entry.value === sender) ?? senders[0];
+  const fromLabel = `From ${from.label.toLowerCase()}`;
+  return (
+    <MenuRoot>
+      <MenuTrigger
+        ref={triggerRef}
+        render={
+          <IconButton
+            size="sm"
+            variant="inset"
+            shape="round"
+            aria-label={fromLabel}
+            title={`${fromLabel}${unreadOnly ? ", unread only" : ""}`}
+            icon={<Filter2Icon size={16} aria-hidden="true" />}
+          />
+        }
+      />
+      <MenuPopup aria-label="Activity filters">
+        <MenuRadioGroup
+          value={sender}
+          onValueChange={(value) => onSenderChange(value as SenderFilter)}
+          aria-label="From"
+        >
+          <MenuGroupLabel>From</MenuGroupLabel>
+          {senders.map(({ value, label }) => (
+            <MenuRadioItem key={value} value={value} closeOnClick>
+              {label}
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+        <MenuSeparator />
+        <MenuRadioGroup
+          value={unreadOnly ? "unread" : "all"}
+          onValueChange={(value) => onUnreadChange(value === "unread")}
+          aria-label="Show"
+        >
+          <MenuGroupLabel>Show</MenuGroupLabel>
+          <MenuRadioItem value="all" closeOnClick>
+            All activity
+          </MenuRadioItem>
+          <MenuRadioItem value="unread" closeOnClick>
+            Unread only
+          </MenuRadioItem>
+        </MenuRadioGroup>
+      </MenuPopup>
+    </MenuRoot>
+  );
+}
