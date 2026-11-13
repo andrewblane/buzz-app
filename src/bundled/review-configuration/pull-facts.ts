@@ -169,7 +169,7 @@ export function createPullReader(gh?: GitHubCli): ReadPull {
   };
 }
 
-async function publicJson(url: string, signal: AbortSignal) {
+export async function publicJson(url: string, signal: AbortSignal) {
   const response = await fetch(url, {
     signal,
     credentials: "omit",

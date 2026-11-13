@@ -18,8 +18,8 @@ The separate **Pull requests** page shows previous submissions in a bordered tab
 Submitting an already-delivered PR sends a reviewer mention in each saved lane
 thread. It preserves the saved reviewers and instructions and creates no new
 threads. It resets each lane to Needs review. Incomplete original submissions resume delivery from
-the original browser profile instead. These actions run only on Submit; opening
-the page or a thread never dispatches messages.
+the original browser profile instead. Existing review notifications run only on Submit.
+Agent admission continues automatically as described below.
 
 All three pages use the shell's page navigation. Only Review Configuration appears in the sidebar; Submit PR has a Back button returning to it. Pull requests opens the existing All PRs page with Back navigation. Repository and lane editing
 remain local sections; reloading returns Configuration to its repository list.
@@ -73,8 +73,7 @@ changes before Cancel → Reload, then inspect the saved version before retrying
 An unsupported or malformed row shows a warning without hiding valid rows.
 Channel metadata reconfirmation disables Save while retaining an open draft.
 
-Opening a channel or clicking Reload makes one bounded snapshot query. There
-are no reconnect subscriptions or polling timers. The first version supports
+Opening a channel or clicking Reload makes one bounded snapshot query. Configuration reads do not poll. The first version supports
 100 configurations per channel, 12 lanes per repository, and a 32 KB payload.
 Larger result sets are explicitly marked incomplete; use a separate channel.
 The reminder interval is saved for the planned executor but has no effect yet.
@@ -131,8 +130,8 @@ A failed notification leaves existing thread buttons available and reports failu
 
 Opening Submit PR reads the latest 100 submissions once, with truncation/error
 feedback. Submit reads configurations and the current submission, then verifies
-reviewer profiles and ownership before dispatch. No polling or reconnect reads
-are added. No GitHub comments or scheduled reminders are added.
+reviewer profiles and ownership before dispatch. Pending agent triage also resumes
+on reconnect; there is no polling. No GitHub comments or scheduled reminders are added.
 
 Try a fresh test PR URL → Submit PR → Open a lane thread. Check its URL, reviewer
 mention, and complete instructions. Submit the same URL again: the same threads
@@ -155,7 +154,7 @@ Desktop reads use the existing signed-in GitHub CLI. Browser reads use GitHub's
 public API without credentials, so private PRs and rate-limited requests need the
 desktop host. The reader rejects incomplete/changing metadata and supports at
 most 3,000 changed files and 100 labels; it never routes on a truncated file list.
-Metadata is fetched during new submission only; there is no poller.
+Metadata is fetched during new submission and before continuing an admitted triage; there is no poller.
 
 
 ## Internal review status (POC)
@@ -196,3 +195,45 @@ status updates. Merely including a thread ID in the prompt does not enable it.
 ACP hosts must pass those variables when creating each thread session and
 recreate existing sessions after adding the wiring. Updating MCP alone does not
 provide review context.
+
+## Admission checks and agent triage
+
+Open a repository's **Admission checks** to enable any combination of:
+
+- **Require ready for review:** reject drafts.
+- **Require green CI:** require all reported commit statuses/check runs to pass;
+  successful, neutral, and skipped checks count as passing. Missing or pending
+  CI blocks submission. Browser reads support up to 100 statuses and 100 check runs.
+- **Require no merge conflicts:** require GitHub to confirm the PR is mergeable.
+  An unknown result blocks submission until GitHub finishes calculating it.
+- **Enable agent triage:** select one owned agent and provide instructions, such
+  as checking for duplicate PRs. **Refresh agents** updates available choices.
+
+All checkboxes start off. Save them before editing lanes or leaving the repository.
+Changes apply to new submissions; existing submissions retain their configuration.
+All selected basic checks must pass before triage or reviewer threads are created.
+A failure shows its reason without closing or modifying the GitHub PR.
+
+Agent triage creates one dedicated thread and shows **Awaiting triage**. The
+assigned agent calls `pr_triage_decision` with `decision: "admit"` or `"reject"`
+and a nonempty `message`. Buzz supplies the target through the same trusted
+thread context as review reporting; model-supplied PR/thread IDs are refused.
+The request includes documentation read from the tool registry.
+
+Admission reloads PR metadata and checks that its head and base still match the
+triaged snapshot, reruns enabled basic checks, and then applies existing lane
+routing. A changed snapshot is rejected; delete and resubmit for new triage.
+Rejection saves the reason and triage-thread link and creates no lane threads.
+A saved agent decision cannot be changed; repeated identical calls are harmless.
+Transient read or delivery failures remain visible and can be retried through Submit PR.
+
+Continuation runs while the plugin is enabled on the original submitting device,
+including with its pages closed. It resumes after reconnect/restart using a local
+list of at most 100 pending entries. Each entry causes one current-artifact read,
+followed by a current-head/report check when work remains. Startup and reconnect
+are jittered; live decisions and saved updates trigger targeted reconciliation.
+No channel-wide recovery scan or polling is added. Local hints cannot authorize
+routing: signed current state, submitter/device ownership, Web Locks, artifact
+CAS, and the existing durable outbox are checked before sending. Keep that
+browser profile; missing outbox data stops ambiguous sends. Submissions with
+triage use version 4 and require clients supporting this version.

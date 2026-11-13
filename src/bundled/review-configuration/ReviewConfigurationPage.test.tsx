@@ -675,3 +675,61 @@ it("opens the PR table from the home page action", async () => {
   await user.click(screen.getByRole("button", { name: "Submit PR" }));
   expect(onNavigate).toHaveBeenCalledWith("submit");
 });
+
+it("saves independent admission checkboxes and preserves them through lane edits", async () => {
+  const test = fixture();
+  render(<ReviewConfigurationCommunity session={test.session} />);
+  const user = await openDraft();
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
+  const ready = await screen.findByRole("checkbox", {
+    name: "Require ready for review (non-draft)",
+  });
+  expect(ready.getAttribute("aria-checked")).toBe("false");
+  await user.click(ready);
+  expect(
+    screen.getByRole("button", { name: "Edit General lane" }),
+  ).toHaveProperty("disabled", true);
+  expect(
+    screen.getByRole("button", { name: "Back to repositories" }),
+  ).toHaveProperty("disabled", true);
+  await user.click(
+    screen.getByRole("checkbox", { name: "Enable agent triage" }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Save admission checks" }),
+  );
+  await screen.findByRole("alert");
+  await user.click(screen.getByRole("combobox", { name: "Triage agent" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Backend reviewer" }),
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Triage instructions" }),
+    "Reject duplicate PRs.",
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Save admission checks" }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Edit General lane" }),
+    ).toHaveProperty("disabled", false),
+  );
+  const admission = JSON.parse(
+    test.publish.mock.calls[1]?.[0].content ?? "{}",
+  ).admission;
+  expect(admission).toMatchObject({
+    ready: true,
+    ci: false,
+    conflicts: false,
+    triage: true,
+    agent: "a".repeat(64),
+    instructions: "Reject duplicate PRs.",
+  });
+  await user.click(screen.getByRole("button", { name: "Edit General lane" }));
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
+  await waitFor(() => expect(test.publish).toHaveBeenCalledTimes(3));
+  expect(
+    JSON.parse(test.publish.mock.calls[2]?.[0].content ?? "{}").admission,
+  ).toEqual(admission);
+});

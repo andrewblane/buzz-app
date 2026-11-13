@@ -47,8 +47,9 @@ export async function reviewTarget(
     head.kind !== 45010 ||
     reviewTag(head, "h") !== channel ||
     reviewTag(head, "type") !== REVIEW_SUBMISSION ||
-    ![1, 2, 3].includes(value.version) ||
+    ![1, 2, 3, 4].includes(value.version) ||
     value.deleted ||
+    (value.version === 4 && value.triage?.state !== "admitted") ||
     value.submitter !== head.pubkey ||
     !hex.test(root) ||
     !Number.isSafeInteger(value.pr) ||

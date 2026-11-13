@@ -583,3 +583,67 @@ it("recovers a report received while a reminder is still sending", async () => {
   test.emit([report]);
   expect(vi.mocked(test.readStatus).mock.calls.length).toBe(reads);
 });
+
+it("updates review reports in the live submission result, including snapshot buffering", async () => {
+  const request = "11111111-1111-4111-8111-111111111111";
+  const current = {
+    ...record,
+    value: {
+      ...record.value,
+      threads: [{ ...record.value.threads[0], request }],
+    },
+  };
+  vi.mocked(submitReview).mockImplementation(
+    async (_s, _c, _config, _pr, _r, _signal, progress) => {
+      progress(current);
+      return current;
+    },
+  );
+  let finish: (value: { rows: SavedSubmission[]; warning: string }) => void =
+    () => {};
+  vi.mocked(loadSubmissions).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const test = fixture();
+  await enter(test.user);
+  await waitFor(() => expect(loadSubmissions).toHaveBeenCalledOnce());
+  const report = {
+    id: "1".repeat(64),
+    kind: 9,
+    created_at: 100,
+    pubkey: "a".repeat(64),
+    content: "Review status: Done.",
+    tags: [
+      ["h", "channel"],
+      ["t", "buzz.review.status"],
+      ["r", request],
+      ["review", record.artifactId, "0"],
+      ["e", "e".repeat(64), "", "reply"],
+      ["status", "done"],
+      ["review-sequence", "1"],
+    ],
+  } as import("../../features/relay/events").RelayEvent;
+  test.emit([report]);
+  await act(async () => finish({ rows: [current], warning: "" }));
+  const result = screen.getByRole("region", { name: "Submission result" });
+  expect(within(result).getAllByText("Done", { exact: true })).toHaveLength(2);
+  test.emit([
+    {
+      ...report,
+      id: "2".repeat(64),
+      tags: report.tags.map((tag) =>
+        tag[0] === "status"
+          ? ["status", "wait_author"]
+          : tag[0] === "review-sequence"
+            ? ["review-sequence", "2"]
+            : tag,
+      ),
+    },
+  ]);
+  expect(
+    within(result).getAllByText("Waiting on author", { exact: true }),
+  ).toHaveLength(2);
+});

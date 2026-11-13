@@ -1,3 +1,4 @@
+import { recordTriageDecision } from "./pr-triage";
 import { messageAuthor } from "../features/relay/fold";
 import { updateReviewStatus } from "./pr-review";
 // The Buzz tools: what an agent does in Buzz, in the wire formats the `buzz`
@@ -141,6 +142,16 @@ export async function captureToolBody(
 }
 
 export const TOOLS: readonly Tool[] = [
+  tool(
+    "pr_triage_decision",
+    "Record your final admission decision for the PR assigned to you in this triage thread. Follow the supplied triage instructions; call admit to start review routing or reject to stop it, with a message explaining why. Buzz supplies the target. Never supply PR, thread or request IDs. Only consider the decision saved after success; report missing host context in the thread.",
+    {
+      decision: { type: "string", enum: ["admit", "reject"] },
+      message: { type: "string", minLength: 1, maxLength: 4000 },
+    },
+    ["decision", "message"],
+    { readOnlyHint: false, destructiveHint: false },
+  ),
   tool(
     "pr_review_status_update",
     "Record the result of the current PR review assigned to you in this thread. After posting findings, call with done when no author action remains, or wait_author when changes are needed. Buzz supplies the exact review request; never supply a PR, thread or request ID. Only consider status saved after success. Missing or stale review context is refused; explain the blocker in the thread if unavailable.",
@@ -499,6 +510,8 @@ export function callTool(
 }
 
 const HANDLERS: Readonly<Record<string, Handler>> = {
+  pr_triage_decision: ({ client, context }, args) =>
+    recordTriageDecision(client, context, args),
   pr_review_status_update: ({ client, context }, args) =>
     updateReviewStatus(client, context, args),
   async buzz_help() {

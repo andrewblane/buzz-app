@@ -292,3 +292,20 @@ it("requires rules on new or edited lanes while keeping legacy configurations re
     saveConfiguration(test.session, channel, edited, previous, signal()),
   ).rejects.toThrow("at least one routing rule");
 });
+
+it("keeps legacy defaults and validates optional admission configuration", async () => {
+  const { DEFAULT_ADMISSION } = await import("./configuration");
+  expect(validateConfig(config).admission).toBeUndefined();
+  const admission = {
+    ...DEFAULT_ADMISSION,
+    ready: true,
+    triage: true,
+    agent: "a".repeat(64),
+    instructions: "Reject duplicates",
+  };
+  expect(validateConfig({ ...config, admission }).admission).toEqual(admission);
+  for (const change of [{ agent: "" }, { instructions: " " }, { ready: "yes" }])
+    expect(() =>
+      validateConfig({ ...config, admission: { ...admission, ...change } }),
+    ).toThrow();
+});

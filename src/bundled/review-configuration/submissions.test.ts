@@ -108,8 +108,19 @@ async function fixture() {
         throw new Error("unsupported artifact predicate");
       if (filter.kinds?.includes(0)) return [profile];
       if (filter.kinds?.includes(9))
-        return [...messages.values()].filter((event) =>
-          filter.ids?.includes(event.id),
+        return [...messages.values()].filter(
+          (event) =>
+            (!filter.ids || filter.ids.includes(event.id)) &&
+            (!filter.authors || filter.authors.includes(event.pubkey)) &&
+            Object.entries(filter).every(
+              ([key, values]) =>
+                !key.startsWith("#") ||
+                (values as string[]).some((value) =>
+                  event.tags.some(
+                    (tag) => tag[0] === key.slice(1) && tag[1] === value,
+                  ),
+                ),
+            ),
         );
       return [...heads.values()].filter(
         (event) =>
@@ -1141,4 +1152,261 @@ it("refuses a capped report snapshot instead of showing missing reports as needs
   await expect(
     loadSubmissions(test.session, channel, new AbortController().signal),
   ).rejects.toThrow("read reached its limit");
+});
+
+async function triageFixture() {
+  const f = await fixture();
+  const { DEFAULT_ADMISSION } = await import("./configuration");
+  const { recordTriageDecision } = await import("../../buzz-mcp/pr-triage");
+  const config = {
+    ...f.config,
+    config: {
+      ...f.config.config,
+      admission: {
+        ...DEFAULT_ADMISSION,
+        triage: true,
+        agent: f.agent.pubkey,
+        instructions: "Reject duplicates.",
+      },
+    },
+  };
+  const facts = {
+    repository: config.config.repository,
+    pr: 123,
+    title: "Fix",
+    labels: [],
+    paths: ["src/a.ts"],
+    changedFiles: 1,
+    head: "a".repeat(40),
+    base: "b".repeat(40),
+  };
+  const admission = vi.fn(async () => ({
+    head: facts.head,
+    open: true,
+    draft: false,
+    mergeable: true,
+    ci: "pass" as const,
+  }));
+  const run = () =>
+    submitReview(
+      f.session,
+      channel,
+      config,
+      "123",
+      [f.agent.pubkey, f.agent.pubkey],
+      new AbortController().signal,
+      () => {},
+      true,
+      () => Promise.resolve(facts),
+      undefined,
+      "Review tool docs",
+      { read: admission, documentation: "Triage tool docs" },
+    );
+  const client = {
+    pubkey: f.agent.pubkey,
+    query: (filters: ReadFilter[]) => f.session.snapshotRead?.(filters, {}),
+    publish: async (template: Parameters<typeof signed>[1]) => {
+      const event = signed(f.agent, template);
+      f.messages.set(event.id, event);
+      return event;
+    },
+  } as unknown as import("../../buzz-mcp/client").BuzzClient;
+  const decide = (
+    root: string,
+    decision: "admit" | "reject",
+    message = "Decision reason",
+  ) =>
+    recordTriageDecision(
+      client,
+      { review: { channel, root } },
+      { decision, message },
+    );
+  return { ...f, config, facts, admission, run, decide, client };
+}
+
+it("runs enabled admission checks before creating any submission or thread", async () => {
+  const f = await triageFixture();
+  f.config.config.admission.ready = true;
+  f.admission.mockResolvedValue({
+    head: f.facts.head,
+    open: true,
+    draft: true,
+    mergeable: true,
+    ci: "pass",
+  });
+  await expect(f.run()).rejects.toThrow("still a draft");
+  expect(f.heads.size).toBe(0);
+  expect(f.messages.size).toBe(0);
+  f.config.config.admission.ready = false;
+  await f.run();
+  expect(f.admission).toHaveBeenCalledTimes(1);
+  expect(f.messages.size).toBe(1);
+});
+
+it("triages once, accepts a trusted tool decision, then routes exactly once", async () => {
+  const f = await triageFixture();
+  const pending = await f.run();
+  expect(pending.value.triage?.state).toBe("pending");
+  expect(pending.value.threads).toEqual([]);
+  expect(f.messages.size).toBe(1);
+  const root = pending.value.triage?.thread.id ?? "";
+  expect(f.messages.get(root)?.content).toContain("Triage tool docs");
+  expect(f.messages.get(root)?.content).toContain("Reject duplicates.");
+  await expect(f.decide(root, "admit")).resolves.toContain("saved");
+  await expect(f.decide(root, "admit")).resolves.toContain("already saved");
+  const admitted = await f.run();
+  expect(admitted.value.triage?.state).toBe("admitted");
+  expect(admitted.value.threads).toHaveLength(2);
+  expect(admitted.value.threads.every((thread) => thread.delivered)).toBe(true);
+  expect(f.messages.size).toBe(4); // Triage, signed decision, two lane requests.
+  const again = await f.run();
+  expect(again.value.threads).toEqual(admitted.value.threads);
+  expect(f.messages.size).toBe(4);
+  expect(
+    (await loadSubmissions(f.session, channel, new AbortController().signal))
+      .rows[0]?.value.triage?.state,
+  ).toBe("admitted");
+  await expect(f.decide(root, "reject")).rejects.toThrow(
+    "final triage decision",
+  );
+});
+
+it("rejects without lane requests and isolates a new triage after deletion", async () => {
+  const f = await triageFixture();
+  const pending = await f.run();
+  const root = pending.value.triage?.thread.id ?? "";
+  await f.decide(root, "reject", "Duplicate of #10");
+  const rejected = await f.run();
+  expect(rejected.value.triage).toMatchObject({
+    state: "rejected",
+    message: "Duplicate of #10",
+  });
+  expect(f.messages.size).toBe(2);
+  await expect(
+    remindSubmission(
+      f.session,
+      channel,
+      rejected,
+      new AbortController().signal,
+      async () => "Open",
+    ),
+  ).rejects.toThrow("not been admitted");
+  await deleteSubmission(
+    f.session,
+    channel,
+    rejected,
+    new AbortController().signal,
+  );
+  const fresh = await f.run();
+  expect(fresh.value.triage?.thread.id).not.toBe(root);
+  expect(fresh.value.triage?.state).toBe("pending");
+  await expect(f.decide(root, "admit")).rejects.toThrow(
+    "no unique active triage",
+  );
+});
+
+it("refuses stale commit decisions, foreign callers, model targeting and missing host context", async () => {
+  const f = await triageFixture();
+  const { recordTriageDecision } = await import("../../buzz-mcp/pr-triage");
+  const pending = await f.run();
+  const root = pending.value.triage?.thread.id ?? "";
+  await expect(
+    recordTriageDecision(f.client, {}, { decision: "admit", message: "ok" }),
+  ).rejects.toThrow("host has not supplied");
+  await expect(
+    recordTriageDecision(
+      f.client,
+      { review: { channel, root } },
+      { decision: "admit", message: "ok", pr: 123 },
+    ),
+  ).rejects.toThrow("Supply only");
+  await expect(
+    recordTriageDecision(
+      { ...f.client, pubkey: keypair().pubkey },
+      { review: { channel, root } },
+      { decision: "admit", message: "ok" },
+    ),
+  ).rejects.toThrow("no unique active triage");
+  await f.decide(root, "admit");
+  f.facts.head = "c".repeat(40);
+  const result = await f.run();
+  expect(result.value.triage?.state).toBe("rejected");
+  expect(result.value.triage?.message).toContain("PR changed");
+  expect(result.value.threads).toEqual([]);
+});
+
+it("automatically resumes after an offline decision with no PR page mounted", async () => {
+  const f = await triageFixture();
+  const pending = await f.run();
+  await f.decide(pending.value.triage?.thread.id ?? "", "admit");
+  const { watchTriage } = await import("./triage-coordinator");
+  const { pendingTriage } = await import("./triage-recovery");
+  vi.stubGlobal("window", new EventTarget());
+  const listeners = new Set<(batch: { events: EventData[] }) => void>();
+  Object.assign(f.session, {
+    subscribeLive: (listener: (batch: { events: EventData[] }) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    live: {
+      snapshot: () => ({ status: "connected" }),
+      subscribe: () => () => {},
+    },
+  });
+  const stop = watchTriage(
+    f.session,
+    async () => f.facts,
+    f.admission,
+    (name) => name,
+  );
+  cleanups.push(stop);
+  // Replay is an explicit recovery trigger, independent of startup jitter.
+  for (const listener of listeners)
+    listener({ events: [...f.messages.values()] });
+  await vi.waitFor(() => expect(pendingTriage(f.session.scope)).toEqual([]));
+  const rows = await loadSubmissions(
+    f.session,
+    channel,
+    new AbortController().signal,
+  );
+  expect(rows.rows[0]?.value.triage?.state).toBe("admitted");
+  expect(f.messages.size).toBe(4);
+  for (const listener of listeners)
+    listener({ events: [...f.messages.values()] });
+  stop();
+  expect(f.messages.size).toBe(4);
+});
+
+it("serializes opposing triage tool calls and never confirms both decisions", async () => {
+  const f = await triageFixture();
+  const pending = await f.run();
+  const root = pending.value.triage?.thread.id ?? "";
+  const original = f.client.publish.bind(f.client);
+  let release: () => void = () => {};
+  let started: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const entered = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const publish = vi.fn(async (event: Parameters<typeof original>[0]) => {
+    started();
+    await gate;
+    return original(event);
+  });
+  Object.assign(f.client, { publish });
+  const admit = f.decide(root, "admit");
+  await entered;
+  const reject = f.decide(root, "reject");
+  const refused = expect(reject).rejects.toThrow("final triage decision");
+  try {
+    expect(publish).toHaveBeenCalledTimes(1);
+  } finally {
+    release();
+  }
+  await admit;
+  await refused;
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect((await f.run()).value.triage?.state).toBe("admitted");
 });

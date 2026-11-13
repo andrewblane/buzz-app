@@ -1,3 +1,9 @@
+import { rememberTriage, forgetTriage } from "./triage-recovery";
+import { admissionFailure, type ReadAdmission } from "./admission";
+import {
+  TRIAGE_REPORT,
+  latestTriageDecision,
+} from "../../features/agents/pr-triage";
 import {
   REVIEW_REPORT,
   REVIEW_SUBMISSION,
@@ -35,7 +41,18 @@ type Thread = {
   request?: string;
 };
 export type Submission = {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
+  triage?: {
+    state: "pending" | "admitted" | "rejected";
+    agent: string;
+    instructions: string;
+    head: string;
+    base: string;
+    reviewers: readonly string[];
+    thread: Thread;
+    decision?: string;
+    message?: string;
+  };
   generation?: string;
   pr: number;
   config: ReviewConfig;
@@ -93,7 +110,7 @@ export function pullRequest(input: string, repository: string): number {
   return number;
 }
 
-async function decode(
+export async function decodeSubmission(
   event: EventData,
   channel: string,
 ): Promise<SavedSubmission> {
@@ -106,8 +123,8 @@ async function decode(
   const value = JSON.parse(event.content) as Submission;
   const config = validateConfig(value.config);
   if (
-    (value.version !== 1 && value.version !== 2 && value.version !== 3) ||
-    (value.version === 3 &&
+    ![1, 2, 3, 4].includes(value.version) ||
+    ((value.version === 3 || value.version === 4) &&
       (typeof value.generation !== "string" || !UUID.test(value.generation))) ||
     !Number.isSafeInteger(value.pr) ||
     value.pr < 1 ||
@@ -116,10 +133,13 @@ async function decode(
     !UUID.test(value.device) ||
     (value.deleted !== undefined && value.deleted !== true) ||
     (value.notifying !== undefined && value.notifying !== true) ||
-    config.lanes.some((lane) => lane.reviewers.length !== 1) ||
+    (!(value.version === 4 && value.triage?.state !== "admitted") &&
+      config.lanes.some((lane) => lane.reviewers.length !== 1)) ||
     !Array.isArray(value.threads) ||
     value.threads.length !==
-      config.lanes.length + (value.version === 1 ? 1 : 0) ||
+      (value.version === 4 && value.triage?.state !== "admitted"
+        ? 0
+        : config.lanes.length + (value.version === 1 ? 1 : 0)) ||
     value.threads.some(
       (thread) =>
         !thread ||
@@ -133,6 +153,38 @@ async function decode(
     )
   )
     throw new Error("Invalid review submission.");
+  if (value.version === 4) {
+    const triage = value.triage;
+    if (
+      !triage ||
+      !["pending", "admitted", "rejected"].includes(triage.state) ||
+      !HEX.test(triage.agent) ||
+      typeof triage.instructions !== "string" ||
+      !triage.instructions.trim() ||
+      triage.instructions.length > 8000 ||
+      !/^[0-9a-f]{40,64}$/.test(triage.head) ||
+      !/^[0-9a-f]{40,64}$/.test(triage.base) ||
+      !Array.isArray(triage.reviewers) ||
+      triage.reviewers.length > 12 ||
+      triage.reviewers.some(
+        (key) => typeof key !== "string" || (key !== "" && !HEX.test(key)),
+      ) ||
+      !triage.thread ||
+      !reviewToken.test(triage.thread.request ?? "") ||
+      (triage.thread.id !== undefined && !HEX.test(triage.thread.id)) ||
+      (triage.thread.started !== undefined && triage.thread.started !== true) ||
+      (triage.thread.delivered !== undefined &&
+        (triage.thread.delivered !== true || !triage.thread.id)) ||
+      (triage.decision !== undefined && !HEX.test(triage.decision)) ||
+      (triage.message !== undefined &&
+        (typeof triage.message !== "string" || triage.message.length > 4000)) ||
+      (triage.state !== "pending" && (!triage.decision || !triage.message)) ||
+      (triage.state === "pending" &&
+        (triage.decision !== undefined || triage.message !== undefined))
+    )
+      throw new Error("Invalid triage submission.");
+  } else if (value.triage !== undefined)
+    throw new Error("Unexpected triage state.");
   const artifactId = await identity(channel, config.repository, value.pr);
   if (tag(event, "d") !== artifactId)
     throw new Error("Invalid submission identity.");
@@ -159,7 +211,7 @@ export async function loadSubmissions(
     { signal },
   );
   const results = await Promise.allSettled(
-    events.slice(0, 100).map((event) => decode(event, channel)),
+    events.slice(0, 100).map((event) => decodeSubmission(event, channel)),
   );
   const rows = results.flatMap((result) =>
     result.status === "fulfilled" && !result.value.value.deleted
@@ -263,7 +315,23 @@ async function write(
     },
     signal,
   );
+  if (
+    value.triage &&
+    !value.deleted &&
+    value.triage.state !== "rejected" &&
+    (value.triage.state === "pending" ||
+      value.threads.some((thread) => !thread.delivered))
+  )
+    rememberTriage(session.scope, { channel, artifact: artifactId });
   await writer.publish(event, signal);
+  if (
+    value.triage &&
+    (value.deleted ||
+      value.triage.state === "rejected" ||
+      (value.triage.state === "admitted" &&
+        value.threads.every((thread) => thread.delivered)))
+  )
+    forgetTriage(session.scope, artifactId);
   return { value, artifactId, revision: event.id };
 }
 
@@ -297,7 +365,7 @@ export async function deleteSubmission(
       );
       const head = events[0];
       if (!head) throw new Error("Submission is unavailable. Reload the list.");
-      const current = await decode(head, channel);
+      const current = await decodeSubmission(head, channel);
       if (current.value.submitter !== session.viewer)
         throw new Error(
           "Only the original submitter can delete this submission.",
@@ -318,7 +386,7 @@ export async function deleteSubmission(
 /** Device ownership is recovery coordination, never permission. The relay still
  * authorizes every write. Shared Web Locks serialize tabs; artifact create/CAS
  * serializes devices. Losing this profile cannot authorize replacement sends. */
-function deviceId(scope: string) {
+export function deviceId(scope: string) {
   const key = `buzz.review.device:${scope}`;
   let value = localStorage.getItem(key);
   if (!value) {
@@ -334,6 +402,23 @@ export function submissionLane(value: Submission, index: number) {
   return value.config.lanes[index - (value.version === 1 ? 1 : 0)];
 }
 
+export function deliveryThreads(value: Submission): Thread[] {
+  return value.triage?.state === "pending"
+    ? [value.triage.thread]
+    : value.threads;
+}
+function replaceDeliveryThread(
+  value: Submission,
+  index: number,
+  thread: Thread,
+): Submission {
+  return value.triage?.state === "pending"
+    ? { ...value, triage: { ...value.triage, thread } }
+    : {
+        ...value,
+        threads: value.threads.map((item, i) => (i === index ? thread : item)),
+      };
+}
 export function threadMessage(
   value: Submission,
   channel: string,
@@ -341,6 +426,18 @@ export function threadMessage(
   reviewerName = "Reviewer",
   documentation = "",
 ) {
+  if (value.triage?.state === "pending") {
+    const triage = value.triage;
+    return {
+      kind: 9,
+      tags: [
+        ["h", channel],
+        ["subject", `${value.config.repository}#${value.pr} · Triage`],
+        ["p", triage.agent],
+      ],
+      content: `Triage request: ${prUrl(value)}\n\nTriage agent: ${profileMentionLink(`@${reviewerName}`, `nostr:${npubEncode(triage.agent)}`)}\nCommit: ${triage.head}\n\n${triage.instructions}\n\n${documentation}\n\nCheck this PR before admitting it to review. Explain your decision in the tool message. Admission does not close or modify the GitHub PR.`,
+    };
+  }
   const lane = submissionLane(value, index);
   const title = `${value.config.repository}#${value.pr}${lane ? ` · ${lane.name}` : " · Review"}`;
   return {
@@ -369,7 +466,11 @@ async function eligible(
       "Refresh agents after archive access is restored before submitting.",
     );
   const keys = [
-    ...new Set(value.config.lanes.map((lane) => lane.reviewers[0] ?? "")),
+    ...new Set(
+      value.triage?.state === "pending"
+        ? [value.triage.agent]
+        : value.config.lanes.map((lane) => lane.reviewers[0] ?? ""),
+    ),
   ];
   if (
     keys.some(
@@ -560,7 +661,7 @@ export async function remindSubmission(
       );
       const head = events[0];
       if (!head) throw new Error("Submission is unavailable. Reload the list.");
-      const current = await decode(head, channel);
+      const current = await decodeSubmission(head, channel);
       if (current.revision !== previous.revision || current.value.deleted)
         throw new Error(
           "Submission changed. Reload the list before reminding.",
@@ -569,6 +670,8 @@ export async function remindSubmission(
         throw new Error(
           "Only the original submitter can remind these reviewers.",
         );
+      if (current.value.triage && current.value.triage.state !== "admitted")
+        throw new Error("This PR has not been admitted to review.");
       if (!current.value.threads.every((thread) => thread.delivered))
         throw new Error(
           "Delivery is incomplete. Submit this PR again to finish delivery first.",
@@ -595,7 +698,46 @@ export async function remindSubmission(
   );
 }
 
-/** Explicit user action only. There is no background dispatcher or polling. */
+function routeConfig(
+  config: ReviewConfig,
+  reviewers: readonly string[],
+  facts?: PullFacts,
+): ReviewConfig {
+  const matched = config.lanes.flatMap((lane, i) =>
+    !facts || laneMatches(lane.routing, facts) ? [{ lane, i }] : [],
+  );
+  if (!matched.length)
+    throw new Error("No lanes match this PR. No review requests were sent.");
+  return validateConfig({
+    ...config,
+    lanes: matched.map(({ lane, i }) => {
+      const reviewer = reviewers[i];
+      if (!reviewer || !lane.reviewers.includes(reviewer))
+        throw new Error(`Choose a configured reviewer for ${lane.name}.`);
+      return { ...lane, reviewers: [reviewer] };
+    }),
+  });
+}
+async function checkAdmission(
+  config: ReviewConfig,
+  facts: PullFacts | undefined,
+  read: ReadAdmission | undefined,
+  signal: AbortSignal,
+) {
+  const checks = config.admission;
+  if (!checks || !(checks.ready || checks.ci || checks.conflicts)) return;
+  if (!facts || !read)
+    throw new Error(
+      "Admission checks are unavailable. Reload before submitting.",
+    );
+  const checked = await read(config.repository, facts.pr, checks, signal);
+  if (checked.head !== facts.head)
+    throw new Error("The PR changed while checking admission. Try again.");
+  const failure = admissionFailure(checks, checked);
+  if (failure) throw new Error(`Admission rejected: ${failure}`);
+}
+
+/** Submission and owner-side triage recovery share the same lock and outbox journal. */
 export async function submitReview(
   session: RelaySession,
   channel: string,
@@ -608,6 +750,11 @@ export async function submitReview(
   facts?: PullFacts | (() => Promise<PullFacts>),
   notifyExisting?: () => void,
   documentation = "",
+  admission?: {
+    read: ReadAdmission;
+    documentation: string;
+    existingOnly?: boolean;
+  },
 ) {
   const outbox = session.outbox;
   const read = session.snapshotRead;
@@ -639,10 +786,29 @@ export async function submitReview(
       );
       let record: SavedSubmission;
       const head = events[0];
-      const previous = head ? await decode(head, channel) : undefined;
+      const previous = head ? await decodeSubmission(head, channel) : undefined;
       const existing = previous && !previous.value.deleted;
+      if (admission?.existingOnly && !existing) {
+        if (
+          previous?.value.submitter === viewer &&
+          previous.value.device === device
+        )
+          forgetTriage(session.scope, artifactId);
+        throw new Error("Submission was removed. Recovery stopped.");
+      }
       if (existing) {
         record = previous;
+        if (
+          admission?.existingOnly &&
+          record.value.submitter === viewer &&
+          record.value.device === device &&
+          (record.value.triage?.state === "rejected" ||
+            (record.value.triage?.state === "admitted" &&
+              record.value.threads.every((thread) => thread.delivered)))
+        ) {
+          forgetTriage(session.scope, artifactId);
+          return record;
+        }
         notifyExisting?.();
       } else {
         if (previous && previous.value.submitter !== viewer)
@@ -663,43 +829,145 @@ export async function submitReview(
           saved.config.lanes.some((lane) => lane.routing?.rules.length)
         )
           throw new Error("Load PR details before routing this submission.");
-        const matched = saved.config.lanes.flatMap((lane, i) =>
-          !currentFacts || laneMatches(lane.routing, currentFacts)
-            ? [{ lane, i }]
-            : [],
+        await checkAdmission(
+          saved.config,
+          currentFacts,
+          admission?.read,
+          signal,
         );
-        if (!matched.length)
+        const triaging = saved.config.admission?.triage;
+        if (triaging && (!currentFacts || !admission?.documentation))
           throw new Error(
-            "No lanes match this PR. No review requests were sent.",
+            "Triage reporting is unavailable. Update Buzz before submitting.",
           );
-        const config = validateConfig({
-          ...saved.config,
-          lanes: matched.map(({ lane, i }) => {
-            const reviewer = reviewers[i];
-            if (!reviewer || !lane.reviewers.includes(reviewer))
-              throw new Error(`Choose a configured reviewer for ${lane.name}.`);
-            return { ...lane, reviewers: [reviewer] };
-          }),
-        });
+        const config = triaging
+          ? validateConfig(saved.config)
+          : routeConfig(saved.config, reviewers, currentFacts);
         const value: Submission = {
-          version: previous ? 3 : 2,
-          ...(previous ? { generation: crypto.randomUUID() } : {}),
+          version: triaging ? 4 : previous ? 3 : 2,
+          ...(previous || triaging ? { generation: crypto.randomUUID() } : {}),
+          ...(triaging && currentFacts && saved.config.admission
+            ? {
+                triage: {
+                  state: "pending" as const,
+                  agent: saved.config.admission.agent,
+                  instructions: saved.config.admission.instructions,
+                  head: currentFacts.head,
+                  base: currentFacts.base,
+                  reviewers: [...reviewers],
+                  thread: { request: crypto.randomUUID() },
+                },
+              }
+            : {}),
           pr,
           config,
           configRevision: saved.revision,
           submitter: viewer,
           device,
-          threads: Array.from({ length: config.lanes.length }, () => ({
-            request: crypto.randomUUID(),
-          })),
+          threads: Array.from(
+            { length: triaging ? 0 : config.lanes.length },
+            () => ({
+              request: crypto.randomUUID(),
+            }),
+          ),
         };
         await eligible(session, value, signal);
         record = await write(session, channel, value, previous, signal);
       }
+      if (
+        record.value.triage?.state === "pending" &&
+        record.value.triage.thread.delivered
+      ) {
+        const triage = record.value.triage;
+        if (!triage.thread.request || !triage.thread.id)
+          throw new Error("Missing triage thread identity.");
+        const reports = await read(
+          [
+            {
+              kinds: [9],
+              authors: [triage.agent],
+              "#h": [channel],
+              "#t": [TRIAGE_REPORT],
+              "#r": [triage.thread.request],
+              limit: 100,
+              consistency: "strong",
+            },
+          ],
+          { signal },
+        );
+        if (reports.length >= 100)
+          throw new Error("Triage history is incomplete. Routing stopped.");
+        const decision = latestTriageDecision(reports, {
+          channel,
+          artifact: record.artifactId,
+          request: triage.thread.request,
+          root: triage.thread.id,
+          reviewer: triage.agent,
+        });
+        if (decision) {
+          if (
+            record.value.submitter !== viewer ||
+            record.value.device !== device
+          )
+            throw new Error(
+              "Resume triage from the original submitting browser profile.",
+            );
+          let message = decision.message;
+          let config = record.value.config;
+          let admitted = decision.decision === "admit";
+          if (admitted) {
+            const currentFacts =
+              typeof facts === "function" ? await facts() : facts;
+            if (
+              !currentFacts ||
+              currentFacts.repository !== config.repository ||
+              currentFacts.pr !== pr
+            )
+              throw new Error("Reload PR details before continuing triage.");
+            if (
+              currentFacts.head !== triage.head ||
+              currentFacts.base !== triage.base
+            ) {
+              admitted = false;
+              message =
+                "The PR changed during triage. Delete and resubmit for a fresh decision.";
+            } else {
+              await checkAdmission(
+                config,
+                currentFacts,
+                admission?.read,
+                signal,
+              );
+              config = routeConfig(config, triage.reviewers, currentFacts);
+            }
+          }
+          const value: Submission = {
+            ...record.value,
+            config,
+            triage: {
+              ...triage,
+              state: admitted ? "admitted" : "rejected",
+              decision: decision.id,
+              message,
+            },
+            threads: admitted
+              ? config.lanes.map(() => ({ request: crypto.randomUUID() }))
+              : [],
+          };
+          if (admitted) await eligible(session, value, signal);
+          record = await write(session, channel, value, record, signal);
+        }
+      }
       onProgress(record);
+      if (record.value.triage?.state === "rejected") return record;
+      if (
+        record.value.triage?.state === "pending" &&
+        record.value.triage.thread.delivered
+      )
+        return record;
       // The dedicated Submit action may notify; passive readers never dispatch.
       if (existing && !resume && !notifyExisting) return record;
-      if (record.value.threads.every((thread) => thread.delivered)) {
+      if (deliveryThreads(record.value).every((thread) => thread.delivered)) {
         if (existing && notifyExisting)
           record = await notifyReviewers(
             session,
@@ -709,7 +977,7 @@ export async function submitReview(
             false,
             documentation,
           );
-        for (const thread of record.value.threads)
+        for (const thread of deliveryThreads(record.value))
           if (thread.id) await outbox.acknowledge(thread.id);
         return record;
       }
@@ -721,12 +989,12 @@ export async function submitReview(
           "This PR is already submitted. Resume incomplete delivery from the original browser profile; existing threads remain available here.",
         );
       if (existing) await eligible(session, record.value, signal);
-      for (const [index, thread] of record.value.threads.entries()) {
+      for (const [index, thread] of deliveryThreads(record.value).entries()) {
         signal.throwIfAborted();
         // Keep legacy recovery keys readable, but isolate each post-delete review.
         const key =
-          record.value.version === 3
-            ? `${artifactId}:${record.value.generation}:${index}`
+          record.value.version === 3 || record.value.version === 4
+            ? `${artifactId}:${record.value.generation}:${record.value.triage?.state === "pending" ? "triage" : index}`
             : `${artifactId}:${index}`;
         if (thread.delivered) {
           if (thread.id) await outbox.acknowledge(thread.id);
@@ -780,18 +1048,11 @@ export async function submitReview(
             record = await write(
               session,
               channel,
-              {
-                ...record.value,
-                threads: record.value.threads.map((item, i) =>
-                  i === index
-                    ? {
-                        ...item,
-                        request: item.request ?? crypto.randomUUID(),
-                        started: true,
-                      }
-                    : item,
-                ),
-              },
+              replaceDeliveryThread(record.value, index, {
+                ...thread,
+                request: thread.request ?? crypto.randomUUID(),
+                started: true,
+              }),
               record,
               signal,
             );
@@ -808,9 +1069,13 @@ export async function submitReview(
                     .selectable.find(
                       (choice) =>
                         choice.pubkey ===
-                        submissionLane(record.value, index)?.reviewers[0],
+                        (record.value.triage?.state === "pending"
+                          ? record.value.triage.agent
+                          : submissionLane(record.value, index)?.reviewers[0]),
                     )?.name,
-                  documentation,
+                  record.value.triage?.state === "pending"
+                    ? admission?.documentation
+                    : documentation,
                 ),
                 { key, value: artifactId },
                 active,
@@ -822,16 +1087,11 @@ export async function submitReview(
                 record = await write(
                   session,
                   channel,
-                  {
-                    ...record.value,
-                    threads: record.value.threads.map((item, i) =>
-                      i === index
-                        ? item.request
-                          ? { request: item.request }
-                          : {}
-                        : item,
-                    ),
-                  },
+                  replaceDeliveryThread(
+                    record.value,
+                    index,
+                    thread.request ? { request: thread.request } : {},
+                  ),
                   record,
                   signal,
                 );
@@ -847,12 +1107,10 @@ export async function submitReview(
             record = await write(
               session,
               channel,
-              {
-                ...record.value,
-                threads: record.value.threads.map((item, i) =>
-                  i === index ? { ...item, id: sentId } : item,
-                ),
-              },
+              replaceDeliveryThread(record.value, index, {
+                ...deliveryThreads(record.value)[index],
+                id: sentId,
+              }),
               record,
               signal,
             );
@@ -866,14 +1124,11 @@ export async function submitReview(
         record = await write(
           session,
           channel,
-          {
-            ...record.value,
-            threads: record.value.threads.map((item, i) =>
-              i === index
-                ? { ...item, id: deliveredId, delivered: true }
-                : item,
-            ),
-          },
+          replaceDeliveryThread(record.value, index, {
+            ...deliveryThreads(record.value)[index],
+            id: deliveredId,
+            delivered: true,
+          }),
           record,
           signal,
         );

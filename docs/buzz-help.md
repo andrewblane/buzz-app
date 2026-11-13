@@ -1292,6 +1292,21 @@ tab, asks **Discard changes?** first; **Keep editing** keeps them.
   Every new or edited lane requires at least one all/any routing rule matching
   title text, labels, changed-file counts, or paths such as `src/**/*.tsx`.
   Earlier rule-free lanes still match every PR until edited.
+  Each repository also has **Admission checks**, all off by default: require a
+  non-draft PR, green CI, no merge conflicts, and/or agent triage. Save selected
+  checkboxes before leaving. CI requires all reported statuses/checks to pass
+  (neutral/skipped count as passing); missing/pending results and unknown merge
+  conflicts block submission with a reason. Agent triage requires an assigned
+  owned agent and instructions; **Refresh agents** updates choices. Basic checks
+  run first. Triage gets its own thread and **Awaiting triage** status. Its agent
+  calls `pr_triage_decision` with `admit` or `reject` and a message; Buzz supplies
+  the target. Admit rechecks the PR and starts lane routing automatically;
+  reject shows the reason without closing the GitHub PR. Head/base changes during
+  triage require deleting and resubmitting. Keep the submitting device connected
+  with this plugin enabled; continuation works with the page closed and resumes
+  after reconnect. Submit again on that device to retry a failed continuation.
+  Decisions are final; delete and resubmit to request fresh triage. Saved admission
+  settings apply to new submissions. Pending/rejected triage cannot use Remind.
   The **Submit PR** page has a full GitHub PR URL field and a
   Submit button. It finds the repository in the selected review channel, reads
   current PR details, and assigns the first configured reviewer in each matching

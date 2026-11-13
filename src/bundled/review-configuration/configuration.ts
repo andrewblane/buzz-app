@@ -14,11 +14,54 @@ export type ReviewLane = Readonly<{
   reviewers: readonly string[];
   routing?: LaneRouting;
 }>;
+export type AdmissionChecks = Readonly<{
+  ready: boolean;
+  ci: boolean;
+  conflicts: boolean;
+  triage: boolean;
+  agent: string;
+  instructions: string;
+}>;
+export const DEFAULT_ADMISSION: AdmissionChecks = {
+  ready: false,
+  ci: false,
+  conflicts: false,
+  triage: false,
+  agent: "",
+  instructions: "",
+};
+export function validateAdmission(value: unknown): AdmissionChecks {
+  if (!value || typeof value !== "object")
+    throw new Error("Invalid admission checks.");
+  const item = value as AdmissionChecks;
+  if (
+    [item.ready, item.ci, item.conflicts, item.triage].some(
+      (flag) => typeof flag !== "boolean",
+    ) ||
+    typeof item.agent !== "string" ||
+    (item.agent !== "" && !/^[0-9a-f]{64}$/.test(item.agent)) ||
+    typeof item.instructions !== "string" ||
+    item.instructions.length > 8000 ||
+    (item.triage && (!item.agent || !item.instructions.trim()))
+  )
+    throw new Error(
+      "Agent triage needs an agent and instructions (up to 8,000 characters).",
+    );
+  return {
+    ready: item.ready,
+    ci: item.ci,
+    conflicts: item.conflicts,
+    triage: item.triage,
+    agent: item.agent,
+    instructions: item.instructions.trim(),
+  };
+}
 export type ReviewConfig = Readonly<{
   version: 1;
   repository: string;
   lanes: readonly ReviewLane[];
   reminderMinutes: 15;
+  admission?: AdmissionChecks;
 }>;
 export type SavedReviewConfig = Readonly<{
   config: ReviewConfig;
@@ -107,6 +150,9 @@ export function validateConfig(value: unknown): ReviewConfig {
     repository: repositoryName(item.repository),
     lanes,
     reminderMinutes: 15,
+    ...(item.admission === undefined
+      ? {}
+      : { admission: validateAdmission(item.admission) }),
   };
   if (new TextEncoder().encode(JSON.stringify(config)).length > 32_000)
     throw new Error(

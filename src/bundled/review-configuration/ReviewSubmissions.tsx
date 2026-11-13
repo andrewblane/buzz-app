@@ -1,3 +1,6 @@
+import { createAdmissionReader, type ReadAdmission } from "./admission";
+import { triageError, subscribeTriageErrors } from "./triage-recovery";
+import { REVIEW_SUBMISSION } from "../../features/agents/pr-review";
 import type { EventData } from "../../features/relay/events";
 import type { ToolDescription } from "../../buzz-mcp/session-tools";
 import {
@@ -10,7 +13,7 @@ const reviewLabels: Record<ReviewState, string> = {
   done: "Done",
   wait_author: "Waiting on author",
 };
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAgentChoices } from "../../features/agents/use-choices";
 import type { RelaySession } from "../../features/relay/session";
 import { AlertDialog } from "../../shared/design-system/ui/AlertDialog";
@@ -32,6 +35,7 @@ import {
 } from "./pull-facts";
 import {
   loadSubmissions,
+  deliveryThreads,
   applyReviewReports,
   deleteSubmission,
   remindSubmission,
@@ -45,6 +49,13 @@ import {
 
 const publicPullReader = createPullReader();
 const publicStatusReader = createPullStatusReader();
+const publicAdmissionReader = createAdmissionReader();
+function TriageError({ scope, artifact }: { scope: string; artifact: string }) {
+  const message = useSyncExternalStore(subscribeTriageErrors, () =>
+    triageError(scope, artifact),
+  );
+  return message ? <p role="alert">{message}</p> : null;
+}
 
 export function ReviewSubmissions({
   session,
@@ -55,6 +66,7 @@ export function ReviewSubmissions({
   onOpenThread,
   readPull = publicPullReader,
   readStatus = publicStatusReader,
+  readAdmission = publicAdmissionReader,
   describeTool,
 }: {
   session: RelaySession;
@@ -65,6 +77,7 @@ export function ReviewSubmissions({
   onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
   readPull?: ReadPull;
   readStatus?: ReadPullStatus;
+  readAdmission?: ReadAdmission;
   describeTool?: ((name: string) => ToolDescription | undefined) | undefined;
 }) {
   const choices = useAgentChoices(session, true, true);
@@ -92,16 +105,31 @@ export function ReviewSubmissions({
     onEditingChange(busy || !!removing || (!result && !!pr.trim()));
     return () => onEditingChange(false);
   }, [busy, pr, result, removing, onEditingChange]);
+  const resultId = result?.artifactId;
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reload is an explicit fresh read.
   useEffect(() => {
-    if (mode !== "all") return;
+    if (mode !== "all" && !resultId) return;
     const controller = new AbortController();
     setListError("");
     setListLoading(true);
     // Subscribe before reading so reports arriving during the snapshot are kept.
     const pending: EventData[] = [];
+    let refresh: ReturnType<typeof setTimeout> | undefined;
     let loaded = false;
     const stop = session.subscribeLive?.(({ events }) => {
+      if (
+        events.some(
+          (event) =>
+            event.kind === 45010 &&
+            event.tags.some((tag) => tag[0] === "h" && tag[1] === channel) &&
+            event.tags.some(
+              (tag) => tag[0] === "type" && tag[1] === REVIEW_SUBMISSION,
+            ),
+        )
+      ) {
+        clearTimeout(refresh);
+        refresh = setTimeout(() => setReload((value) => value + 1), 100);
+      }
       const reports = events.filter(
         (event) =>
           event.kind === 9 &&
@@ -110,10 +138,12 @@ export function ReviewSubmissions({
       );
       if (!reports.length) return;
       if (!loaded) pending.push(...reports);
-      else
+      else {
         setRows((rows) =>
           rows.map((row) => applyReviewReports(row, channel, reports)),
         );
+        setResult((row) => row && applyReviewReports(row, channel, reports));
+      }
     });
     loadSubmissions(
       session,
@@ -123,10 +153,18 @@ export function ReviewSubmissions({
       .then((next) => {
         if (controller.signal.aborted) return;
         loaded = true;
-        setRows(
-          next.rows.map((row) => applyReviewReports(row, channel, pending)),
+        const reconciled = next.rows.map((row) =>
+          applyReviewReports(row, channel, pending),
         );
+        setRows(reconciled);
         pending.length = 0;
+        if (resultId)
+          setResult(
+            (current) =>
+              reconciled.find(
+                (row) => row.artifactId === current?.artifactId,
+              ) ?? current,
+          );
         setWarning(next.warning);
       })
       .catch((reason: unknown) => {
@@ -145,8 +183,9 @@ export function ReviewSubmissions({
     return () => {
       controller.abort();
       stop?.();
+      clearTimeout(refresh);
     };
-  }, [session, channel, reload, mode]);
+  }, [session, channel, reload, mode, resultId]);
 
   const statusRowsKey = rows.map((row) => row.revision).join(":");
   // biome-ignore lint/correctness/useExhaustiveDependencies: Report updates preserve PR/revision; only saved-row changes and explicit Reload require GitHub reads.
@@ -231,7 +270,7 @@ export function ReviewSubmissions({
         (next) => {
           if (controller.signal.aborted) return;
           recorded = true;
-          alreadyComplete ??= next.value.threads.every(
+          alreadyComplete ??= deliveryThreads(next.value).every(
             (thread) => thread.delivered,
           );
           setResult(next);
@@ -242,13 +281,23 @@ export function ReviewSubmissions({
           existing = true;
         },
         toolDocumentation(),
+        {
+          read: readAdmission,
+          documentation: saved.config.admission?.triage
+            ? toolDocumentation("pr_triage_decision")
+            : "",
+        },
       );
       if (controller.signal.aborted) return;
       setResult(record);
       setStatus(
-        existing && alreadyComplete
-          ? "Already exists — reviewers notified in their existing threads."
-          : "Submitted — reviewers assigned and requests delivered.",
+        record.value.triage?.state === "pending"
+          ? "Submitted — awaiting agent triage. Keep Buzz connected on this device to continue automatically."
+          : record.value.triage?.state === "rejected"
+            ? `Rejected: ${record.value.triage.message}`
+            : existing && alreadyComplete
+              ? "Already exists — reviewers notified in their existing threads."
+              : "Submitted — reviewers assigned and requests delivered.",
       );
     } catch (reason) {
       if (!controller.signal.aborted) {
@@ -263,8 +312,8 @@ export function ReviewSubmissions({
     }
   }
 
-  function toolDocumentation() {
-    const tool = describeTool?.("pr_review_status_update");
+  function toolDocumentation(name = "pr_review_status_update") {
+    const tool = describeTool?.(name);
     if (!tool)
       throw new Error(
         "Review reporting is unavailable. Update Buzz before sending review requests.",
@@ -370,6 +419,44 @@ export function ReviewSubmissions({
   function threads(row: SavedSubmission) {
     return (
       <div className="review-config-reviewers">
+        {row.value.triage && (
+          <div className="review-config-thread-cell">
+            <span className="text-caption text-subtle">Triage</span>
+            <ReviewerIdentity
+              pubkey={row.value.triage.agent}
+              choices={choices}
+            />
+            {row.value.triage.message && <p>{row.value.triage.message}</p>}
+            {row.value.triage.thread.id ? (
+              <Button
+                size="sm"
+                disabled={busy || !onOpenThread}
+                onClick={() => {
+                  const id = row.value.triage?.thread.id;
+                  if (id)
+                    void onOpenThread?.(channel, id).catch((reason) =>
+                      setError(
+                        reason instanceof Error
+                          ? reason.message
+                          : "Could not open triage thread.",
+                      ),
+                    );
+                }}
+              >
+                Open triage thread
+              </Button>
+            ) : (
+              <span>Triage delivery pending</span>
+            )}
+            {row.value.triage.state === "pending" && (
+              <p className="text-caption text-subtle">
+                Continues on the submitting device. Submit this PR again to
+                retry.
+              </p>
+            )}
+            <TriageError scope={session.scope} artifact={row.artifactId} />
+          </div>
+        )}
         {row.value.threads.map((thread, index) => {
           const lane = submissionLane(row.value, index);
           return (
@@ -455,22 +542,28 @@ export function ReviewSubmissions({
                   </td>
                 )}
                 <td>
-                  {
-                    reviewLabels[
-                      overallReviewStatus(
-                        row.value.threads.flatMap((_thread, index) =>
-                          submissionLane(row.value, index)
-                            ? [row.reviewStates?.[index] ?? "need_review"]
-                            : [],
-                        ),
-                      )
-                    ]
-                  }
+                  {row.value.triage?.state === "pending"
+                    ? "Awaiting triage"
+                    : row.value.triage?.state === "rejected"
+                      ? "Rejected"
+                      : reviewLabels[
+                          overallReviewStatus(
+                            row.value.threads.flatMap((_thread, index) =>
+                              submissionLane(row.value, index)
+                                ? [row.reviewStates?.[index] ?? "need_review"]
+                                : [],
+                            ),
+                          )
+                        ]}
                 </td>
                 <td>
-                  {row.value.threads.every((thread) => thread.delivered)
-                    ? "Requests delivered"
-                    : "Delivery incomplete"}
+                  {row.value.triage?.state === "rejected"
+                    ? "Triage complete"
+                    : deliveryThreads(row.value).every(
+                          (thread) => thread.delivered,
+                        )
+                      ? "Requests delivered"
+                      : "Delivery incomplete"}
                 </td>
                 <td>{threads(row)}</td>
                 {deletable && (
@@ -482,6 +575,8 @@ export function ReviewSubmissions({
                           busy ||
                           listLoading ||
                           !writable ||
+                          (!!row.value.triage &&
+                            row.value.triage.state !== "admitted") ||
                           row.value.submitter !== session.viewer ||
                           !["Open", "Draft"].includes(
                             statuses[row.revision]?.value ?? "",
@@ -585,13 +680,27 @@ export function ReviewSubmissions({
         </form>
       )}
       {error && <p role="alert">{error}</p>}
-      {status && <p role="status">{status}</p>}
+      {status && (
+        <p role="status">
+          {result?.value.triage?.state === "rejected"
+            ? `Rejected: ${result.value.triage.message}`
+            : result?.value.triage?.state === "admitted" &&
+                status.startsWith("Submitted — awaiting")
+              ? "Admitted — review routing has started."
+              : status}
+        </p>
+      )}
       {result && (
         <section className="review-config-form" aria-label="Submission result">
           <InlineHeader
             title={`${result.value.config.repository}#${result.value.pr}`}
           />
           {table([result], false)}
+          {listError && (
+            <p role="alert">
+              {listError} Open Pull requests and Reload to refresh.
+            </p>
+          )}
         </section>
       )}
       {mode === "all" && (

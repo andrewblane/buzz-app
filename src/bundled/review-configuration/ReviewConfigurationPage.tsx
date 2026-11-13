@@ -1,3 +1,5 @@
+import { createAdmissionReader, type ReadAdmission } from "./admission";
+import { AdmissionEditor } from "./AdmissionEditor";
 import type { ToolDescription } from "../../buzz-mcp/session-tools";
 import {
   createPullReader,
@@ -7,6 +9,7 @@ import {
 } from "./pull-facts";
 const publicPullReader = createPullReader();
 const publicStatusReader = createPullStatusReader();
+const publicAdmissionReader = createAdmissionReader();
 import { LaneRules, ruleDescription } from "./LaneRules";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAgentChoices } from "../../features/agents/use-choices";
@@ -81,6 +84,7 @@ export function ReviewConfigurationPage({
   navigator,
   readPull = publicPullReader,
   readStatus = publicStatusReader,
+  readAdmission = publicAdmissionReader,
   describeTool,
   page = "configuration",
 }: {
@@ -89,6 +93,7 @@ export function ReviewConfigurationPage({
   navigator?: Navigation;
   readPull?: ReadPull;
   readStatus?: ReadPullStatus;
+  readAdmission?: ReadAdmission;
   describeTool?: ((name: string) => ToolDescription | undefined) | undefined;
 }) {
   const connection = useRelayConnection(relay);
@@ -100,6 +105,7 @@ export function ReviewConfigurationPage({
         page={page}
         readPull={readPull}
         readStatus={readStatus}
+        readAdmission={readAdmission}
         describeTool={describeTool}
         onNavigate={
           navigator
@@ -157,6 +163,7 @@ export function ReviewConfigurationCommunity({
   onNavigate,
   readPull = publicPullReader,
   readStatus = publicStatusReader,
+  readAdmission = publicAdmissionReader,
   describeTool,
   page = "configuration",
 }: {
@@ -164,6 +171,7 @@ export function ReviewConfigurationCommunity({
   page?: ReviewPage;
   readPull?: ReadPull;
   readStatus?: ReadPullStatus;
+  readAdmission?: ReadAdmission;
   describeTool?: ((name: string) => ToolDescription | undefined) | undefined;
   onNavigate?: ((page: ReviewPage) => Promise<void>) | undefined;
   onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
@@ -284,6 +292,7 @@ export function ReviewConfigurationCommunity({
             onOpenThread={onOpenThread}
             readPull={readPull}
             readStatus={readStatus}
+            readAdmission={readAdmission}
             describeTool={describeTool}
           />
         ) : (
@@ -320,6 +329,7 @@ function ChannelConfiguration({
   onEditingChange: (editing: boolean) => void;
 }) {
   const choices = useAgentChoices(session, true, true);
+  const [admissionEditing, setAdmissionEditing] = useState(false);
   const [laneId, setLaneId] = useState<string>();
   const [rows, setRows] = useState<SavedReviewConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -334,9 +344,9 @@ function ChannelConfiguration({
   const editorTrigger = useRef<HTMLElement | null>(null);
   const lanesRegion = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    onEditingChange(editor !== undefined);
+    onEditingChange(editor !== undefined || admissionEditing);
     return () => onEditingChange(false);
-  }, [editor, onEditingChange]);
+  }, [editor, admissionEditing, onEditingChange]);
   useEffect(() => {
     if (editor === undefined) {
       const trigger = editorTrigger.current;
@@ -428,7 +438,7 @@ function ChannelConfiguration({
             title="Repositories"
             actions={
               <Button
-                disabled={loading}
+                disabled={loading || admissionEditing}
                 onClick={() => setReload((value) => value + 1)}
               >
                 Reload
@@ -477,6 +487,7 @@ function ChannelConfiguration({
           {!editor && (
             <div>
               <Button
+                disabled={admissionEditing}
                 onClick={() => {
                   setRepository("");
                   setNotice("");
@@ -509,12 +520,20 @@ function ChannelConfiguration({
                   />
                 ) : (
                   <>
+                    <AdmissionEditor
+                      session={session}
+                      channel={channel}
+                      previous={selected}
+                      writable={writable && !loading && !error}
+                      onSaved={saved}
+                      onEditingChange={setAdmissionEditing}
+                    />
                     <InlineHeader
                       title="Lanes"
                       subtitle="Each lane has its own agents, instructions, and routing rules."
                       actions={
                         <Button
-                          disabled={loading}
+                          disabled={loading || admissionEditing}
                           onClick={() => {
                             setNotice("");
                             setReload((value) => value + 1);
@@ -540,7 +559,12 @@ function ChannelConfiguration({
                                   if (laneId === lane.id)
                                     editorTrigger.current = node;
                                 }}
-                                disabled={!writable || loading || !!error}
+                                disabled={
+                                  !writable ||
+                                  loading ||
+                                  !!error ||
+                                  admissionEditing
+                                }
                                 aria-label={`Edit ${lane.name} lane`}
                                 onClick={() => {
                                   setLaneId(lane.id);
@@ -609,6 +633,7 @@ function ChannelConfiguration({
                           !writable ||
                           loading ||
                           !!error ||
+                          admissionEditing ||
                           selected.config.lanes.length >= 12
                         }
                         onClick={() => {
@@ -723,6 +748,9 @@ function ConfigurationEditor({
       const draft: ReviewConfig = {
         version: 1,
         reminderMinutes: 15,
+        ...(previous?.config.admission
+          ? { admission: previous.config.admission }
+          : {}),
         repository,
         lanes: remove
           ? lanes.filter((item) => item.id !== lane.id)
