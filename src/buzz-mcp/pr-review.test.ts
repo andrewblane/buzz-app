@@ -101,6 +101,9 @@ it.each([undefined, false, true])(
 
 it.each<[ReviewState[], ReviewState]>([
   [[], "need_review"],
+  [["reviewing", "need_review"], "reviewing"],
+  [["approved", "reviewing"], "reviewing"],
+  [["request_changes", "reviewing"], "request_changes"],
   [["approved", "need_review"], "need_review"],
   [["approved", "request_changes"], "request_changes"],
   [["approved", "lgtm_not_approved"], "lgtm_not_approved"],

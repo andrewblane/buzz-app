@@ -368,6 +368,7 @@ export function ReviewSubmissions({
       throw new Error(
         "Review reporting is unavailable. Update Buzz before sending review requests.",
       );
+    if (tool.name === "pr_review_status_update") return tool.description;
     return `Tool: ${tool.name}\n${tool.description}\nArguments: ${JSON.stringify(tool.inputSchema)}`;
   }
 

@@ -35,6 +35,7 @@ export const apply: PluginModule["apply"] = (ctx) => {
             throw new Error(
               "Review tools are unavailable. Update Buzz before continuing.",
             );
+          if (tool.name === "pr_review_status_update") return tool.description;
           return `Tool: ${tool.name}\n${tool.description}\nArguments: ${JSON.stringify(tool.inputSchema)}`;
         });
     };

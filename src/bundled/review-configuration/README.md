@@ -245,3 +245,5 @@ may approve a PR that looks good, then report approved only after GitHub succeed
 The tool records the reviewer’s report; it does not submit or independently verify
 GitHub approvals. Configuration changes apply to new submissions; existing requests
 keep their saved lane policy. No approval setting authorizes merging.
+
+Reviewers must first report `reviewing` to acknowledge acceptance, including acknowledgment-only requests. Requests and reminders emphasize this step and the approval policy before lane instructions; tool-owned guidance lists the final outcomes. A chat acknowledgment alone does not change status.

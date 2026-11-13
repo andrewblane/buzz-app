@@ -4,6 +4,7 @@ import { uuidv5 } from "./agent-config-artifacts";
 export const REVIEW_SUBMISSION = "buzz.review.submission";
 export const REVIEW_REPORT = "buzz.review.status";
 export const REVIEW_STATUSES = [
+  "reviewing",
   "request_changes",
   "lgtm_not_approved",
   "approved",
@@ -14,6 +15,7 @@ export type ReviewStatus =
   | "wait_author";
 export const reviewLabels: Record<ReviewState, string> = {
   need_review: "Needs review",
+  reviewing: "Reviewing",
   request_changes: "Changes requested",
   lgtm_not_approved: "Looks good · not approved",
   approved: "Approved",
@@ -144,6 +146,7 @@ export function overallReviewStatus(
 ): ReviewState {
   if (states.includes("request_changes")) return "request_changes";
   if (states.includes("wait_author")) return "wait_author";
+  if (states.includes("reviewing")) return "reviewing";
   if (!states.length || states.includes("need_review")) return "need_review";
   if (states.includes("done")) return "done";
   return states.every((state) => state === "approved")

@@ -1027,7 +1027,9 @@ it("completes the status-only review loop, resets on Remind, and ignores other r
     additionalProperties: false,
     required: ["status"],
     properties: {
-      status: { enum: ["request_changes", "lgtm_not_approved", "approved"] },
+      status: {
+        enum: ["reviewing", "request_changes", "lgtm_not_approved", "approved"],
+      },
     },
   });
   expect(Object.keys(schema?.properties ?? {})).toEqual(["status"]);
@@ -1107,6 +1109,13 @@ it("completes the status-only review loop, resets on Remind, and ignores other r
     "Automatic approval is disabled",
   );
   expect(publish).not.toHaveBeenCalled();
+  await report(0, "reviewing");
+  await report(0, "reviewing");
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(
+    (await loadSubmissions(test.session, channel, new AbortController().signal))
+      .rows[0]?.reviewStates,
+  ).toEqual(["reviewing", "need_review"]);
   await report(0, "request_changes");
   await report(1, "lgtm_not_approved");
   const read = () =>
@@ -1116,7 +1125,7 @@ it("completes the status-only review loop, resets on Remind, and ignores other r
     "lgtm_not_approved",
   ]);
   await report(0, "request_changes");
-  expect(publish).toHaveBeenCalledTimes(2);
+  expect(publish).toHaveBeenCalledTimes(3);
   await report(0, "lgtm_not_approved");
   expect((await read()).rows[0]?.reviewStates).toEqual([
     "lgtm_not_approved",
@@ -1159,7 +1168,7 @@ it("completes the status-only review loop, resets on Remind, and ignores other r
     "Please have another look at keyboard access.",
   );
   expect(reminder?.content).toContain(
-    "Do not approve this PR on GitHub at all",
+    "**AUTOMATIC APPROVAL: OFF — DO NOT APPROVE THIS PR ON GITHUB.**",
   );
   await deleteSubmission(
     test.session,

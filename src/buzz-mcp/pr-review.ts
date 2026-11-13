@@ -21,7 +21,7 @@ export async function updateReviewStatus(
     !REVIEW_STATUSES.includes(args.status as (typeof REVIEW_STATUSES)[number])
   )
     throw new Error(
-      "Only status: request_changes, lgtm_not_approved or approved is accepted. Buzz supplies the review target.",
+      "Only status: reviewing, request_changes, lgtm_not_approved or approved is accepted. Buzz supplies the review target.",
     );
   const binding = context.review;
   if (!binding)

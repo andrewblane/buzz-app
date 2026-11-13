@@ -502,7 +502,10 @@ it("only admits review updates from a host-bound thread conversation", async () 
     jsonrpc: "2.0",
     id: 1,
     method: "tools/call",
-    params: { name: "pr_review_status_update", arguments: { status: "done" } },
+    params: {
+      name: "pr_review_status_update",
+      arguments: { status: "reviewing" },
+    },
   };
   const missing = await kit.tools(agent, channelConversation)(call);
   expect(JSON.stringify(missing)).toContain("host has not supplied");

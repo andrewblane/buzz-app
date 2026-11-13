@@ -458,7 +458,32 @@ export function threadMessage(
       ...(lane ? [["p", lane.reviewers[0] ?? ""]] : []),
     ],
     content: lane
-      ? `Review request: ${prUrl(value)}\n\nReviewer: ${profileMentionLink(`@${reviewerName}`, `nostr:${npubEncode(lane.reviewers[0] ?? "")}`)}\nLane: ${lane.name}\n\n${lane.instructions}\n\n${lane.autoApprove ? "Automatic approval is allowed for this lane. If the current PR looks good, you may submit a GitHub approval, then report approved only after it succeeds. If you have not approved, report lgtm_not_approved. Never merge the PR." : "Automatic approval is OFF. Do not approve this PR on GitHub at all. If it looks good, report lgtm_not_approved. If changes are needed, report request_changes. Never merge the PR."}${documentation ? `\n\n${documentation}` : ""}\n\nReply in this thread with the commit you reviewed, findings, and any blockers. Verify the current PR and repository before reviewing. This submission does not pin a commit or post a GitHub review.${value.version === 1 ? `\n\nOverview: ${threadUrl(channel, value.threads[0]?.id ?? "")}` : ""}`
+      ? `**Review request:** ${prUrl(value)}
+
+Reviewer: ${profileMentionLink(`@${reviewerName}`, `nostr:${npubEncode(lane.reviewers[0] ?? "")}`)}
+Lane: ${lane.name}
+
+**1. Accept the review**
+
+**Required first action—even for acknowledgment-only requests:** call \`pr_review_status_update({"status":"reviewing"})\`. Wait for success before your acknowledgment. A chat reply alone does not count; the tool changes the table from Needs review to Reviewing.
+
+Then add your configured GitHub account to this PR’s requested reviewers if it is not already listed. Use your authenticated GitHub identity, never a guessed username from your Buzz name. Preserve existing reviewers. If your account is the PR author, access is unavailable, or your runtime forbids the action, explain the limitation in this thread and continue the review.
+
+**2. Approval policy**
+
+${lane.autoApprove ? "**AUTOMATIC APPROVAL: ALLOWED FOR THIS LANE.** If your review finds no issues, you may approve the current commit on GitHub." : "**AUTOMATIC APPROVAL: OFF — DO NOT APPROVE THIS PR ON GITHUB.**"}
+
+**Never merge the PR.**
+
+**3. What to review**
+
+${lane.instructions}
+
+Verify the current PR and repository. Post the reviewed commit, findings, and any blockers in this thread.
+
+**4. Report the outcome**
+
+${documentation || "Use pr_review_status_update after posting your findings. Report request_changes if author changes are needed, lgtm_not_approved if reviewed and good without GitHub approval, or approved only after a permitted GitHub approval succeeds."}${value.version === 1 ? `\n\nOverview: ${threadUrl(channel, value.threads[0]?.id ?? "")}` : ""}`
       : `Review request: ${prUrl(value)}\n\nLanes: ${value.config.lanes.map((item) => item.name).join(", ")}\n\nLane threads and delivery status are listed in Review Configuration. A delivered request does not mean the reviewer has started. Automatic reminders are off.`,
   };
 }

@@ -154,11 +154,11 @@ export const TOOLS: readonly Tool[] = [
   ),
   tool(
     "pr_review_status_update",
-    "Record the result of the current PR review assigned to you in this thread. After posting findings, report request_changes when changes are needed; lgtm_not_approved when the review looks good but you have not approved on GitHub; approved only after you successfully submit a GitHub approval for the reviewed current commit and the lane explicitly permits automatic approval. If approval is disabled, do not approve on GitHub. This tool records your report; it does not submit or independently verify a GitHub review. Buzz supplies the exact review request; never supply a PR, thread or request ID. Only consider status saved after success. Missing or stale review context is refused; explain the blocker in the thread if unavailable.",
+    'Use `pr_review_status_update` for the review assigned to this thread.\n\n**Required when you accept, including acknowledgment-only requests:** call with `{"status":"reviewing"}` before your acknowledgment or review. A chat acknowledgment alone does not update the table.\n\n**After posting findings, call once with the outcome:**\n- `request_changes` — you found changes the author must make.\n- `lgtm_not_approved` — you reviewed the PR and it looks good, but you did not approve it on GitHub.\n- `approved` — the lane permits approval AND you successfully approved the reviewed current commit on GitHub.\n\n**Approval OFF means do not approve on GitHub.** An acknowledgment or skipped review is not a positive outcome; explain that blocker in the thread.\n\nOnly consider a status saved after tool success. Buzz supplies the target: pass only `status`, never a PR, thread, or request ID. If context is missing or stale, explain the error in the thread. This tool records your report; it does not submit or independently verify GitHub approval.',
     {
       status: {
         type: "string",
-        enum: ["request_changes", "lgtm_not_approved", "approved"],
+        enum: ["reviewing", "request_changes", "lgtm_not_approved", "approved"],
       },
     },
     ["status"],
