@@ -733,3 +733,18 @@ it("saves independent admission checkboxes and preserves them through lane edits
     JSON.parse(test.publish.mock.calls[2]?.[0].content ?? "{}").admission,
   ).toEqual(admission);
 });
+
+it("starts approval unchecked and persists an explicit opt-in", async () => {
+  const test = fixture();
+  render(<ReviewConfigurationCommunity session={test.session} />);
+  const user = await openDraft();
+  const checkbox = screen.getByRole("checkbox", {
+    name: "Allow automatic approval",
+  });
+  expect(checkbox.getAttribute("aria-checked")).toBe("false");
+  await user.click(checkbox);
+  await user.click(screen.getByRole("button", { name: "Save lane" }));
+  await screen.findByText("Saved example-org/project.");
+  const saved = JSON.parse(test.publish.mock.calls[0]?.[0].content ?? "{}");
+  expect(saved.lanes[0].autoApprove).toBe(true);
+});

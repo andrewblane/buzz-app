@@ -1,3 +1,4 @@
+import { Checkbox } from "../../shared/design-system/ui/Checkbox";
 import { createAdmissionReader, type ReadAdmission } from "./admission";
 import { AdmissionEditor } from "./AdmissionEditor";
 import type { ToolDescription } from "../../buzz-mcp/session-tools";
@@ -13,6 +14,8 @@ const publicAdmissionReader = createAdmissionReader();
 import { LaneRules, ruleDescription } from "./LaneRules";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAgentChoices } from "../../features/agents/use-choices";
+import type { PageNavigation } from "../../features/navigation/service";
+import { messageRoute, ReviewMessageDialog } from "./ReviewMessageDialog";
 import { ReviewSubmissions } from "./ReviewSubmissions";
 import type { Navigation } from "../../features/navigation/controller";
 import { splitPartition } from "../../features/relay/partition";
@@ -82,6 +85,7 @@ function Frame({
 export function ReviewConfigurationPage({
   relay,
   navigator,
+  navigation,
   readPull = publicPullReader,
   readStatus = publicStatusReader,
   readAdmission = publicAdmissionReader,
@@ -91,52 +95,114 @@ export function ReviewConfigurationPage({
   page?: ReviewPage;
   relay: RelayData;
   navigator?: Navigation;
+  navigation?: PageNavigation | undefined;
   readPull?: ReadPull;
   readStatus?: ReadPullStatus;
   readAdmission?: ReadAdmission;
   describeTool?: ((name: string) => ToolDescription | undefined) | undefined;
 }) {
   const connection = useRelayConnection(relay);
+  const messageTrigger = useRef<HTMLElement | null>(null);
+  const target = navigation?.target;
+  const preview =
+    target?.kind === "page" ? messageRoute(target.route?.params) : undefined;
+  const scope = splitPartition(connection.scope ?? "");
+  const base = {
+    version: 1 as const,
+    kind: "page" as const,
+    pluginId: "buzz.review-configuration",
+    pageId: page,
+    ...(scope ? { scope } : {}),
+  };
+  const closeMessage = () =>
+    navigator?.dismiss((visit) => {
+      if (
+        visit.kind !== "page" ||
+        visit.pluginId !== base.pluginId ||
+        visit.pageId !== page ||
+        visit.scope?.viewer !== scope?.viewer ||
+        visit.scope?.communityOrigin !== scope?.communityOrigin
+      )
+        return false;
+      const route = messageRoute(visit.route?.params);
+      return (
+        !!route &&
+        route.channel === preview?.channel &&
+        route.message === preview?.message
+      );
+    }, base);
   if (connection.status === "ready")
     return (
-      <ReviewConfigurationCommunity
-        key={`${connection.scope}:${connection.generation}`}
-        session={connection.session}
-        page={page}
-        readPull={readPull}
-        readStatus={readStatus}
-        readAdmission={readAdmission}
-        describeTool={describeTool}
-        onNavigate={
-          navigator
-            ? async (page) => {
-                const result = await navigator.open({
-                  version: 1,
-                  kind: "page",
-                  pluginId: "buzz.review-configuration",
-                  pageId: page,
-                });
-                if (result.status === "failed")
-                  throw new Error("Could not open review page.");
-              }
-            : undefined
-        }
-        onOpenThread={async (channelId, id) => {
-          const scope = splitPartition(connection.scope ?? "");
-          if (!navigator || !scope)
-            throw new Error("Thread navigation is unavailable.");
-          const result = await navigator.open({
-            version: 1,
-            kind: "conversation",
-            scope,
-            channelId,
-            messageId: id,
-            threadRootId: id,
-          });
-          if (result.status === "failed")
-            throw new Error("Could not open the review thread.");
-        }}
-      />
+      <>
+        <ReviewConfigurationCommunity
+          key={`${connection.scope}:${connection.generation}`}
+          session={connection.session}
+          messageChannel={preview?.channel}
+          onOpenMessage={
+            navigator
+              ? async (channel, message, trigger) => {
+                  messageTrigger.current = trigger;
+                  const result = await navigator.open(
+                    {
+                      ...base,
+                      route: { version: 1, params: { channel, message } },
+                    },
+                    { focus: "preserve" },
+                  );
+                  if (result.status === "failed")
+                    throw new Error("Could not open the message.");
+                }
+              : undefined
+          }
+          page={page}
+          readPull={readPull}
+          readStatus={readStatus}
+          readAdmission={readAdmission}
+          describeTool={describeTool}
+          onNavigate={
+            navigator
+              ? async (page) => {
+                  const result = await navigator.open({
+                    version: 1,
+                    kind: "page",
+                    pluginId: "buzz.review-configuration",
+                    pageId: page,
+                  });
+                  if (result.status === "failed")
+                    throw new Error("Could not open review page.");
+                }
+              : undefined
+          }
+          onOpenThread={async (channelId, id) => {
+            const scope = splitPartition(connection.scope ?? "");
+            if (!navigator || !scope)
+              throw new Error("Thread navigation is unavailable.");
+            const result = await navigator.open({
+              version: 1,
+              kind: "conversation",
+              scope,
+              channelId,
+              messageId: id,
+              threadRootId: id,
+            });
+            if (result.status === "failed")
+              throw new Error("Could not open the review thread.");
+          }}
+        />
+        {preview && navigator && (
+          <ReviewMessageDialog
+            key={`${preview.channel}:${preview.message}`}
+            session={connection.session}
+            target={preview}
+            onClose={closeMessage}
+            finalFocus={() =>
+              messageTrigger.current?.isConnected
+                ? messageTrigger.current
+                : null
+            }
+          />
+        )}
+      </>
     );
   return (
     <Frame page={page}>
@@ -159,6 +225,8 @@ export function ReviewConfigurationPage({
 
 export function ReviewConfigurationCommunity({
   session,
+  messageChannel,
+  onOpenMessage,
   onOpenThread,
   onNavigate,
   readPull = publicPullReader,
@@ -168,6 +236,10 @@ export function ReviewConfigurationCommunity({
   page = "configuration",
 }: {
   session: RelaySession;
+  messageChannel?: string | undefined;
+  onOpenMessage?:
+    | ((channel: string, id: string, trigger: HTMLElement) => Promise<void>)
+    | undefined;
   page?: ReviewPage;
   readPull?: ReadPull;
   readStatus?: ReadPullStatus;
@@ -180,11 +252,14 @@ export function ReviewConfigurationCommunity({
   const selectionKey = `buzz.review.channel:${session.scope}`;
   const [channel, setChannel] = useState(() => {
     try {
-      return localStorage.getItem(selectionKey) ?? "";
+      return messageChannel ?? localStorage.getItem(selectionKey) ?? "";
     } catch {
       return "";
     }
   });
+  useEffect(() => {
+    if (messageChannel) setChannel(messageChannel);
+  }, [messageChannel]);
   const [editing, setEditing] = useState(false);
   const [navigationError, setNavigationError] = useState("");
   async function navigate(destination: ReviewPage) {
@@ -222,6 +297,7 @@ export function ReviewConfigurationCommunity({
     }
   }, [selectionKey, channel]);
   const selected = channels.find((item) => item.id === channel);
+  const readable = !!selected && !selected.cached && !selected.metadataCached;
   const writable =
     !!selected &&
     !selected.metadataCached &&
@@ -285,11 +361,13 @@ export function ReviewConfigurationCommunity({
           <ReviewSubmissions
             key={`${channel}:${page}`}
             mode={page}
+            readable={readable}
             session={session}
             channel={channel}
             writable={writable}
             onEditingChange={setEditing}
             onOpenThread={onOpenThread}
+            onOpenMessage={onOpenMessage}
             readPull={readPull}
             readStatus={readStatus}
             readAdmission={readAdmission}
@@ -619,6 +697,10 @@ function ChannelConfiguration({
                             <p className="review-config-instructions">
                               {lane.instructions}
                             </p>
+                            <p>
+                              Automatic approval:{" "}
+                              {lane.autoApprove ? "Allowed" : "Not allowed"}
+                            </p>
                           </div>
                         </section>
                       ))}
@@ -893,6 +975,19 @@ function ConfigurationEditor({
           />
         </Field>
         <section className="review-config-form" aria-label="Lane routing rules">
+          <Checkbox
+            label="Allow automatic approval"
+            checked={lane.autoApprove ?? false}
+            disabled={busy}
+            onCheckedChange={(checked) =>
+              setLane({ ...lane, autoApprove: checked })
+            }
+          />
+          <p className="text-caption text-subtle">
+            Off by default. When off, reviewers must not approve on GitHub. When
+            on, they may approve only after reviewing and finding no issues.
+            Applies to new submissions.
+          </p>
           <LaneRules
             lane={1}
             value={lane.routing}

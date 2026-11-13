@@ -309,3 +309,19 @@ it("keeps legacy defaults and validates optional admission configuration", async
       validateConfig({ ...config, admission: { ...admission, ...change } }),
     ).toThrow();
 });
+
+it("keeps automatic approval opt-in and rejects non-boolean stored permissions", () => {
+  expect(validateConfig(config).lanes[0]?.autoApprove ?? false).toBe(false);
+  for (const autoApprove of [false, true]) {
+    expect(
+      validateConfig({ ...config, lanes: [{ ...firstLane, autoApprove }] })
+        .lanes[0]?.autoApprove,
+    ).toBe(autoApprove);
+  }
+  expect(() =>
+    validateConfig({
+      ...config,
+      lanes: [{ ...firstLane, autoApprove: "true" }],
+    }),
+  ).toThrow();
+});

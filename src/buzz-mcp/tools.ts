@@ -154,8 +154,13 @@ export const TOOLS: readonly Tool[] = [
   ),
   tool(
     "pr_review_status_update",
-    "Record the result of the current PR review assigned to you in this thread. After posting findings, call with done when no author action remains, or wait_author when changes are needed. Buzz supplies the exact review request; never supply a PR, thread or request ID. Only consider status saved after success. Missing or stale review context is refused; explain the blocker in the thread if unavailable.",
-    { status: { type: "string", enum: ["done", "wait_author"] } },
+    "Record the result of the current PR review assigned to you in this thread. After posting findings, report request_changes when changes are needed; lgtm_not_approved when the review looks good but you have not approved on GitHub; approved only after you successfully submit a GitHub approval for the reviewed current commit and the lane explicitly permits automatic approval. If approval is disabled, do not approve on GitHub. This tool records your report; it does not submit or independently verify a GitHub review. Buzz supplies the exact review request; never supply a PR, thread or request ID. Only consider status saved after success. Missing or stale review context is refused; explain the blocker in the thread if unavailable.",
+    {
+      status: {
+        type: "string",
+        enum: ["request_changes", "lgtm_not_approved", "approved"],
+      },
+    },
     ["status"],
     { readOnlyHint: false, destructiveHint: false },
   ),

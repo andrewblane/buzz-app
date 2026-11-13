@@ -1,3 +1,5 @@
+import { Textarea } from "../../shared/design-system/ui/Textarea";
+import { useLaneMessages } from "./use-lane-messages";
 import { createAdmissionReader, type ReadAdmission } from "./admission";
 import { triageError, subscribeTriageErrors } from "./triage-recovery";
 import { REVIEW_SUBMISSION } from "../../features/agents/pr-review";
@@ -6,13 +8,8 @@ import type { ToolDescription } from "../../buzz-mcp/session-tools";
 import {
   overallReviewStatus,
   REVIEW_REPORT,
-  type ReviewState,
+  reviewLabels,
 } from "../../features/agents/pr-review";
-const reviewLabels: Record<ReviewState, string> = {
-  need_review: "Needs review",
-  done: "Done",
-  wait_author: "Waiting on author",
-};
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAgentChoices } from "../../features/agents/use-choices";
 import type { RelaySession } from "../../features/relay/session";
@@ -40,6 +37,7 @@ import {
   deleteSubmission,
   remindSubmission,
   prUrl,
+  threadUrl,
   pullRepository,
   pullRequest,
   submitReview,
@@ -62,8 +60,10 @@ export function ReviewSubmissions({
   mode = "submit",
   channel,
   writable,
+  readable = true,
   onEditingChange,
   onOpenThread,
+  onOpenMessage,
   readPull = publicPullReader,
   readStatus = publicStatusReader,
   readAdmission = publicAdmissionReader,
@@ -73,8 +73,12 @@ export function ReviewSubmissions({
   mode?: "submit" | "all";
   channel: string;
   writable: boolean;
+  readable?: boolean;
   onEditingChange: (editing: boolean) => void;
   onOpenThread?: ((channel: string, id: string) => Promise<void>) | undefined;
+  onOpenMessage?:
+    | ((channel: string, id: string, trigger: HTMLElement) => Promise<void>)
+    | undefined;
   readPull?: ReadPull;
   readStatus?: ReadPullStatus;
   readAdmission?: ReadAdmission;
@@ -94,6 +98,21 @@ export function ReviewSubmissions({
   const listHeading = useRef<HTMLDivElement>(null);
   const deleteTrigger = useRef<HTMLButtonElement | null>(null);
   const [removing, setRemoving] = useState<SavedSubmission>();
+  const [reminding, setReminding] = useState<{
+    row: SavedSubmission;
+    laneId?: string;
+  }>();
+  const [reminderMessage, setReminderMessage] = useState("");
+  const reminderTrigger = useRef<HTMLElement | null>(null);
+  function openReminder(
+    row: SavedSubmission,
+    laneId: string | undefined,
+    trigger: HTMLElement,
+  ) {
+    reminderTrigger.current = trigger;
+    setReminderMessage(row.value.reminderMessage ?? "");
+    setReminding({ row, ...(laneId ? { laneId } : {}) });
+  }
   const [deleteError, setDeleteError] = useState("");
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState("");
@@ -102,13 +121,44 @@ export function ReviewSubmissions({
   const operation = useRef<AbortController | undefined>(undefined);
   useEffect(() => () => operation.current?.abort(), []);
   useEffect(() => {
-    onEditingChange(busy || !!removing || (!result && !!pr.trim()));
+    onEditingChange(
+      busy || !!removing || !!reminding || (!result && !!pr.trim()),
+    );
     return () => onEditingChange(false);
-  }, [busy, pr, result, removing, onEditingChange]);
+  }, [busy, pr, result, removing, reminding, onEditingChange]);
+  useEffect(() => {
+    if (!reminding || busy || listLoading) return;
+    const current = rows.find(
+      (row) => row.artifactId === reminding.row.artifactId,
+    );
+    if (current && current.revision !== reminding.row.revision) {
+      setReminding({ ...reminding, row: current });
+      if (current.value.notifying)
+        setReminderMessage(current.value.reminderMessage ?? "");
+    }
+  }, [rows, reminding, busy, listLoading]);
   const resultId = result?.artifactId;
+  const rootsKey = [
+    ...new Set(
+      (mode === "all" ? rows : result ? [result] : [])
+        .flatMap((row) => [
+          row.value.triage?.thread.id,
+          ...row.value.threads.map((thread) => thread.id),
+        ])
+        .filter((id): id is string => !!id),
+    ),
+  ]
+    .sort()
+    .join(":");
+  const laneMessages = useLaneMessages(
+    session,
+    channel,
+    readable ? rootsKey : "",
+    reload,
+  );
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reload is an explicit fresh read.
   useEffect(() => {
-    if (mode !== "all" && !resultId) return;
+    if (!readable || (mode !== "all" && !resultId)) return;
     const controller = new AbortController();
     setListError("");
     setListLoading(true);
@@ -185,7 +235,7 @@ export function ReviewSubmissions({
       stop?.();
       clearTimeout(refresh);
     };
-  }, [session, channel, reload, mode, resultId]);
+  }, [session, channel, reload, mode, resultId, readable]);
 
   const statusRowsKey = rows.map((row) => row.revision).join(":");
   // biome-ignore lint/correctness/useExhaustiveDependencies: Report updates preserve PR/revision; only saved-row changes and explicit Reload require GitHub reads.
@@ -321,14 +371,16 @@ export function ReviewSubmissions({
     return `Tool: ${tool.name}\n${tool.description}\nArguments: ${JSON.stringify(tool.inputSchema)}`;
   }
 
-  async function remind(row: SavedSubmission) {
+  async function remind(row: SavedSubmission, laneId?: string, message = "") {
     if (operation.current || !writable) return;
     const controller = new AbortController();
     operation.current = controller;
     setBusy(true);
     setError("");
     const name = `${row.value.config.repository}#${row.value.pr}`;
-    setStatus(`Reminding reviewers for ${name}…`);
+    setStatus(
+      `Reminding reviewers for ${name}${laneId ? ` · ${row.value.config.lanes.find((lane) => lane.id === laneId)?.name}` : ""}…`,
+    );
     try {
       const updated = await remindSubmission(
         session,
@@ -354,8 +406,11 @@ export function ReviewSubmissions({
           }
         },
         toolDocumentation(),
+        laneId,
+        message,
       );
       if (!controller.signal.aborted) {
+        setReminding(undefined);
         // A reviewer may have reported while later lane notifications were pending.
         // Reload captures those reports; the read effect buffers concurrent arrivals.
         setReload((value) => value + 1);
@@ -366,7 +421,7 @@ export function ReviewSubmissions({
             ),
           );
         setStatus(
-          `Reviewers reminded for ${name} in their existing threads. Status reset to needs review.`,
+          `Reviewers reminded for ${name}${laneId ? ` · ${row.value.config.lanes.find((lane) => lane.id === laneId)?.name}` : ""}. Status reset to needs review for the reminded lanes.`,
         );
       }
     } catch (reason) {
@@ -375,6 +430,7 @@ export function ReviewSubmissions({
         setError(
           `${reason instanceof Error ? reason.message : "Could not remind reviewers."} Reload to refresh PR status; use Remind to retry unconfirmed delivery when available.`,
         );
+        setReload((value) => value + 1);
       }
     } finally {
       operation.current = undefined;
@@ -416,96 +472,45 @@ export function ReviewSubmissions({
     }
   }
 
-  function threads(row: SavedSubmission) {
-    return (
-      <div className="review-config-reviewers">
-        {row.value.triage && (
-          <div className="review-config-thread-cell">
-            <span className="text-caption text-subtle">Triage</span>
-            <ReviewerIdentity
-              pubkey={row.value.triage.agent}
-              choices={choices}
-            />
-            {row.value.triage.message && <p>{row.value.triage.message}</p>}
-            {row.value.triage.thread.id ? (
-              <Button
-                size="sm"
-                disabled={busy || !onOpenThread}
-                onClick={() => {
-                  const id = row.value.triage?.thread.id;
-                  if (id)
-                    void onOpenThread?.(channel, id).catch((reason) =>
-                      setError(
-                        reason instanceof Error
-                          ? reason.message
-                          : "Could not open triage thread.",
-                      ),
-                    );
-                }}
-              >
-                Open triage thread
-              </Button>
-            ) : (
-              <span>Triage delivery pending</span>
-            )}
-            {row.value.triage.state === "pending" && (
-              <p className="text-caption text-subtle">
-                Continues on the submitting device. Submit this PR again to
-                retry.
-              </p>
-            )}
-            <TriageError scope={session.scope} artifact={row.artifactId} />
-          </div>
-        )}
-        {row.value.threads.map((thread, index) => {
-          const lane = submissionLane(row.value, index);
-          return (
-            <div
-              key={lane?.id ?? "overview"}
-              className="review-config-thread-cell"
-            >
-              <span className="text-caption text-subtle">
-                {lane?.name ?? "Overview"}
-              </span>
-              <div>
-                {lane?.reviewers.map((pubkey) => (
-                  <ReviewerIdentity
-                    key={pubkey}
-                    pubkey={pubkey}
-                    choices={choices}
-                  />
-                ))}
-              </div>
-              {lane && (
-                <span>
-                  {reviewLabels[row.reviewStates?.[index] ?? "need_review"]}
-                </span>
-              )}
-              {thread.id ? (
-                <Button
-                  size="sm"
-                  disabled={busy || !onOpenThread}
-                  onClick={async () => {
-                    try {
-                      if (thread.id) await onOpenThread?.(channel, thread.id);
-                    } catch (reason) {
-                      setError(
-                        reason instanceof Error
-                          ? reason.message
-                          : "Could not open thread.",
-                      );
-                    }
-                  }}
-                >
-                  Open {lane?.name ?? "overview"} thread
-                </Button>
-              ) : (
-                <span>Thread delivery pending</span>
-              )}
-            </div>
+  function fullMessage(id: string | undefined, label: string) {
+    return id ? (
+      <a
+        className="review-config-message-link"
+        href={threadUrl(channel, id)}
+        aria-label={`Full message: ${label}`}
+        onClick={(event) => {
+          if (
+            !onOpenMessage ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.altKey
+          )
+            return;
+          event.preventDefault();
+          void onOpenMessage(channel, id, event.currentTarget).catch((reason) =>
+            setError(
+              reason instanceof Error
+                ? reason.message
+                : "Could not open the message.",
+            ),
           );
-        })}
-      </div>
+        }}
+      >
+        Full message
+      </a>
+    ) : null;
+  }
+
+  function canRemind(row: SavedSubmission) {
+    return (
+      !busy &&
+      !listLoading &&
+      writable &&
+      (!row.value.triage || row.value.triage.state === "admitted") &&
+      row.value.submitter === session.viewer &&
+      ["Open", "Draft"].includes(statuses[row.revision]?.value ?? "") &&
+      row.value.threads.every((thread) => thread.delivered)
     );
   }
 
@@ -521,101 +526,277 @@ export function ReviewSubmissions({
           <thead>
             <tr>
               <th scope="col">Pull request</th>
-              {deletable && <th scope="col">Status</th>}
+              {deletable && <th scope="col">GitHub status</th>}
               <th scope="col">Review status</th>
-              <th scope="col">Delivery</th>
-              <th scope="col">Reviewers &amp; threads</th>
+              <th scope="col">Lane threads</th>
+              <th scope="col">Lane status</th>
+              <th scope="col">Lane last message</th>
               {deletable && <th scope="col">Actions</th>}
             </tr>
           </thead>
-          <tbody>
-            {records.map((row) => (
-              <tr key={row.artifactId}>
-                <th scope="row">
-                  <a href={prUrl(row.value)} target="_blank" rel="noreferrer">
-                    {row.value.config.repository}#{row.value.pr}
-                  </a>
-                </th>
-                {deletable && (
-                  <td title={statuses[row.revision]?.error}>
-                    {statuses[row.revision]?.value ?? "Loading…"}
-                  </td>
-                )}
-                <td>
-                  {row.value.triage?.state === "pending"
-                    ? "Awaiting triage"
-                    : row.value.triage?.state === "rejected"
-                      ? "Rejected"
-                      : reviewLabels[
-                          overallReviewStatus(
-                            row.value.threads.flatMap((_thread, index) =>
-                              submissionLane(row.value, index)
-                                ? [row.reviewStates?.[index] ?? "need_review"]
-                                : [],
-                            ),
-                          )
-                        ]}
-                </td>
-                <td>
-                  {row.value.triage?.state === "rejected"
-                    ? "Triage complete"
-                    : deliveryThreads(row.value).every(
-                          (thread) => thread.delivered,
-                        )
-                      ? "Requests delivered"
-                      : "Delivery incomplete"}
-                </td>
-                <td>{threads(row)}</td>
-                {deletable && (
-                  <td>
-                    <div className="review-config-actions">
-                      <Button
-                        size="sm"
-                        disabled={
-                          busy ||
-                          listLoading ||
-                          !writable ||
-                          (!!row.value.triage &&
-                            row.value.triage.state !== "admitted") ||
-                          row.value.submitter !== session.viewer ||
-                          !["Open", "Draft"].includes(
-                            statuses[row.revision]?.value ?? "",
-                          ) ||
-                          !row.value.threads.every((thread) => thread.delivered)
-                        }
-                        aria-label={`Remind reviewers for ${row.value.config.repository}#${row.value.pr}`}
-                        onClick={() => void remind(row)}
-                      >
-                        Remind
-                      </Button>
-                      <IconButton
-                        icon={<TrashIcon />}
-                        title="Delete submission"
-                        size="sm"
-                        disabled={
-                          busy ||
-                          listLoading ||
-                          !writable ||
-                          row.value.submitter !== session.viewer
-                        }
-                        onClick={(event) => {
-                          deleteTrigger.current = event.currentTarget;
-                          setDeleteError("");
-                          setRemoving(row);
-                        }}
-                        aria-label={`Delete ${row.value.config.repository}#${row.value.pr}`}
-                      />
-                    </div>
-                    {row.value.submitter !== session.viewer && (
-                      <p className="text-caption text-subtle">
-                        Only the submitter can remind or delete.
-                      </p>
-                    )}
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
+          {records.map((row) => {
+            const name = `${row.value.config.repository}#${row.value.pr}`;
+            const triage = row.value.triage;
+            const lanes = [
+              ...(triage
+                ? [
+                    {
+                      name: "Admission Triage",
+                      reviewers: [triage.agent],
+                      thread: triage.thread,
+                      status:
+                        triage.state === "pending"
+                          ? "Awaiting triage"
+                          : triage.state === "admitted"
+                            ? "Admitted"
+                            : "Rejected",
+                      messageId: triage.decision ?? triage.thread.id,
+                      laneId: undefined,
+                    },
+                  ]
+                : []),
+              ...row.value.threads.map((thread, index) => {
+                const lane = submissionLane(row.value, index);
+                const report = row.reviewReports?.find((event) =>
+                  event.tags.some(
+                    (tag) => tag[0] === "review" && tag[2] === String(index),
+                  ),
+                );
+                return {
+                  name: lane?.name ?? "Overview",
+                  reviewers: lane?.reviewers ?? [],
+                  thread,
+                  status: lane
+                    ? reviewLabels[row.reviewStates?.[index] ?? "need_review"]
+                    : "—",
+                  messageId: report?.id ?? thread.id,
+                  laneId: lane?.id,
+                };
+              }),
+            ];
+            const overall =
+              triage?.state === "pending"
+                ? "Awaiting triage"
+                : triage?.state === "rejected"
+                  ? "Rejected"
+                  : reviewLabels[
+                      overallReviewStatus(
+                        row.value.threads.flatMap((_thread, index) =>
+                          submissionLane(row.value, index)
+                            ? [row.reviewStates?.[index] ?? "need_review"]
+                            : [],
+                        ),
+                      )
+                    ];
+            return (
+              <tbody key={row.artifactId} aria-label={name}>
+                {lanes.map((lane, index) => {
+                  const latest = lane.thread.id
+                    ? laneMessages[lane.thread.id]
+                    : undefined;
+                  return (
+                    <tr
+                      key={
+                        lane.laneId ??
+                        (lane.name === "Admission Triage"
+                          ? "triage"
+                          : "overview")
+                      }
+                    >
+                      {index === 0 && (
+                        <>
+                          <th scope="rowgroup" rowSpan={lanes.length}>
+                            <a
+                              href={prUrl(row.value)}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {name}
+                            </a>
+                          </th>
+                          {deletable && (
+                            <td
+                              rowSpan={lanes.length}
+                              title={statuses[row.revision]?.error}
+                            >
+                              {statuses[row.revision]?.value ?? "Loading…"}
+                            </td>
+                          )}
+                          <td rowSpan={lanes.length}>
+                            <div className="review-config-cell">
+                              <span>{overall}</span>
+                            </div>
+                          </td>
+                        </>
+                      )}
+                      <td>
+                        <div className="review-config-cell">
+                          <strong>{lane.name}</strong>
+                          {lane.reviewers.map((pubkey) => (
+                            <ReviewerIdentity
+                              key={pubkey}
+                              pubkey={pubkey}
+                              choices={choices}
+                            />
+                          ))}
+                          {lane.thread.id ? (
+                            <Button
+                              size="sm"
+                              disabled={busy || !onOpenThread}
+                              onClick={() =>
+                                lane.thread.id &&
+                                void onOpenThread?.(
+                                  channel,
+                                  lane.thread.id,
+                                ).catch((reason) =>
+                                  setError(
+                                    reason instanceof Error
+                                      ? reason.message
+                                      : "Could not open thread.",
+                                  ),
+                                )
+                              }
+                            >
+                              Open{" "}
+                              {lane.name === "Admission Triage"
+                                ? "triage"
+                                : lane.name === "Overview"
+                                  ? "overview"
+                                  : lane.name}{" "}
+                              thread
+                            </Button>
+                          ) : (
+                            <span>Thread delivery pending</span>
+                          )}
+                          {lane.name === "Admission Triage" && (
+                            <>
+                              {triage?.state === "pending" && (
+                                <p className="text-caption text-subtle">
+                                  Continues on the submitting device. Submit
+                                  this PR again to retry.
+                                </p>
+                              )}
+                              <TriageError
+                                scope={session.scope}
+                                artifact={row.artifactId}
+                              />
+                            </>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="review-config-cell">
+                          <span>
+                            {lane.thread.delivered
+                              ? lane.status
+                              : "Sending review request"}
+                          </span>
+                          {deletable && lane.laneId && (
+                            <Button
+                              size="sm"
+                              disabled={
+                                !canRemind(row) ||
+                                (!!row.value.notifying &&
+                                  row.value.notifyingLane !== lane.laneId)
+                              }
+                              aria-label={`Remind ${lane.name} reviewers for ${name}`}
+                              onClick={(event) =>
+                                openReminder(
+                                  row,
+                                  lane.laneId,
+                                  event.currentTarget,
+                                )
+                              }
+                            >
+                              Remind
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="review-config-last-message">
+                        <div className="review-config-cell">
+                          {!lane.thread.id ? (
+                            "No message yet"
+                          ) : !latest ? (
+                            "Loading message…"
+                          ) : latest.error ? (
+                            <span>{latest.error}</span>
+                          ) : latest.message ? (
+                            <>
+                              <time
+                                className="text-caption text-subtle"
+                                dateTime={new Date(
+                                  latest.message.createdAt * 1000,
+                                ).toISOString()}
+                              >
+                                {new Date(
+                                  latest.message.createdAt * 1000,
+                                ).toLocaleString()}
+                              </time>
+                              <p>
+                                {latest.message.content.slice(0, 160)}
+                                {latest.message.content.length > 160 ? "…" : ""}
+                              </p>
+                            </>
+                          ) : (
+                            "No message available"
+                          )}
+                          {fullMessage(
+                            latest?.message?.id ?? lane.messageId,
+                            `${name} ${lane.name} last message`,
+                          )}
+                        </div>
+                      </td>
+                      {index === 0 && deletable && (
+                        <td rowSpan={lanes.length}>
+                          <div className="review-config-actions">
+                            {row.value.notifying &&
+                              !row.value.notifyingLane && (
+                                <Button
+                                  size="sm"
+                                  disabled={!canRemind(row)}
+                                  onClick={(event) =>
+                                    openReminder(
+                                      row,
+                                      undefined,
+                                      event.currentTarget,
+                                    )
+                                  }
+                                >
+                                  Retry pending reminders
+                                </Button>
+                              )}
+                            <IconButton
+                              icon={<TrashIcon />}
+                              title="Delete submission"
+                              size="sm"
+                              disabled={
+                                busy ||
+                                listLoading ||
+                                !writable ||
+                                row.value.submitter !== session.viewer
+                              }
+                              onClick={(event) => {
+                                deleteTrigger.current = event.currentTarget;
+                                setDeleteError("");
+                                setRemoving(row);
+                              }}
+                              aria-label={`Delete ${name}`}
+                            />
+                          </div>
+                          {row.value.submitter !== session.viewer && (
+                            <p className="text-caption text-subtle">
+                              Only the submitter can remind or delete.
+                            </p>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            );
+          })}
         </table>
       </section>
     );
@@ -679,7 +860,7 @@ export function ReviewSubmissions({
           )}
         </form>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && !reminding && <p role="alert">{error}</p>}
       {status && (
         <p role="status">
           {result?.value.triage?.state === "rejected"
@@ -749,6 +930,53 @@ export function ReviewSubmissions({
           )}
           {warning && <p role="alert">{warning}</p>}
         </section>
+      )}
+      {reminding && (
+        <AlertDialog
+          title={`Remind ${reminding.row.value.config.repository}#${reminding.row.value.pr}${reminding.laneId ? ` · ${reminding.row.value.config.lanes.find((lane) => lane.id === reminding.laneId)?.name}` : ""}`}
+          description="Ask the reviewer to look again. Sending resets the selected lane to Needs review."
+          pending={busy}
+          finalFocus={() =>
+            reminderTrigger.current?.isConnected
+              ? reminderTrigger.current
+              : listHeading.current
+          }
+          onClose={() => setReminding(undefined)}
+          actions={
+            <>
+              <Button disabled={busy} onClick={() => setReminding(undefined)}>
+                Cancel
+              </Button>
+              <Button
+                variant="prominent"
+                loading={busy}
+                disabled={!writable || listLoading || !!listError}
+                onClick={() =>
+                  void remind(reminding.row, reminding.laneId, reminderMessage)
+                }
+              >
+                Send reminder
+              </Button>
+            </>
+          }
+        >
+          <Field
+            label="Message (optional)"
+            description="Included in the reminder posted to the reviewer’s thread."
+          >
+            <Textarea
+              rows={3}
+              maxLength={4000}
+              value={reminderMessage}
+              disabled={busy || !!reminding.row.value.notifying}
+              onChange={(event) => setReminderMessage(event.target.value)}
+            />
+          </Field>
+          {reminding.row.value.notifying && (
+            <p>Retrying the saved reminder with its original message.</p>
+          )}
+          {error && <p role="alert">{error}</p>}
+        </AlertDialog>
       )}
       {removing && (
         <AlertDialog

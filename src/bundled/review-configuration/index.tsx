@@ -1,3 +1,4 @@
+import { messageRoute } from "./ReviewMessageDialog";
 import { createAdmissionReader } from "./admission";
 import { watchTriage } from "./triage-coordinator";
 import { gitHubCli } from "../github/gh";
@@ -51,11 +52,13 @@ export const apply: PluginModule["apply"] = (ctx) => {
       layout: "workspace",
       primary: page === "configuration",
       placement: "sidebar",
-      component: () => (
+      route: { version: 1, validate: (params) => !!messageRoute(params) },
+      component: ({ navigation }) => (
         <ReviewConfigurationPage
           page={page}
           relay={relay}
           navigator={navigator}
+          navigation={navigation}
           readPull={readPull}
           readStatus={readStatus}
           readAdmission={readAdmission}

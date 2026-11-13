@@ -136,18 +136,33 @@
 .review-config-table tbody tr {
   border-top: 1px solid var(--border-standard);
 }
-.review-config-thread-cell {
-  display: grid;
-  grid-template-columns: minmax(3rem, auto) minmax(7rem, 1fr) auto;
-  align-items: center;
+.review-config-cell,
+.review-config-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-2);
+  min-width: 0;
 }
-.review-config-thread-cell + .review-config-thread-cell {
+.review-config-last-message {
+  min-width: 16rem;
+  max-width: 24rem;
+  overflow-wrap: anywhere;
+}
+.review-config-last-message p {
+  overflow-wrap: anywhere;
+}
+.review-config-table tbody + tbody {
   border-top: 1px solid var(--border-standard);
-  padding-top: var(--space-3);
 }
 
 .review-config-content[data-review-page="all"],
 .review-config-content[data-review-page="configuration"] {
   max-width: 72rem;
+}
+
+.review-config-message-link {
+  color: var(--text-link);
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
 }

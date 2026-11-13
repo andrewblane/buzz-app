@@ -1,6 +1,9 @@
 import type { BuzzClient, Context } from "./client";
 import {
   REVIEW_REPORT,
+  REVIEW_STATUSES,
+  reviewLabels,
+  type ReviewStatus,
   REVIEW_SUBMISSION,
   latestReport,
   reportStatus,
@@ -15,10 +18,10 @@ export async function updateReviewStatus(
 ) {
   if (
     Object.keys(args).some((key) => key !== "status") ||
-    (args.status !== "done" && args.status !== "wait_author")
+    !REVIEW_STATUSES.includes(args.status as (typeof REVIEW_STATUSES)[number])
   )
     throw new Error(
-      "Only status: done or wait_author is accepted. Buzz supplies the review target.",
+      "Only status: request_changes, lgtm_not_approved or approved is accepted. Buzz supplies the review target.",
     );
   const binding = context.review;
   if (!binding)
@@ -47,6 +50,10 @@ export async function updateReviewStatus(
   const target = targets[0];
   if (targets.length !== 1 || !target)
     throw new Error("This thread has no unique active review assigned to you.");
+  if (args.status === "approved" && !target.autoApprove)
+    throw new Error(
+      "Automatic approval is disabled for this lane. Do not approve on GitHub; report lgtm_not_approved if the review looks good.",
+    );
   const current = async () => {
     const head = (
       await client.query([
@@ -66,7 +73,10 @@ export async function updateReviewStatus(
       binding.root,
       client.pubkey,
     );
-    if (latest.request !== target.request)
+    if (
+      latest.request !== target.request ||
+      latest.autoApprove !== target.autoApprove
+    )
       throw new Error(
         "The review changed during this update. No result applies to the new request.",
       );
@@ -99,10 +109,10 @@ export async function updateReviewStatus(
       ["t", REVIEW_REPORT],
       ["r", target.request],
       ["review", target.artifact, String(target.index)],
-      ["status", args.status],
+      ["status", args.status as string],
       ["review-sequence", String(previous ? reportSequence(previous) + 1 : 1)],
     ],
-    content: `Review status: ${args.status === "done" ? "Done" : "Waiting on author"}.`,
+    content: `Review status: ${reviewLabels[args.status as ReviewStatus]}.`,
   });
   // A reset can race publication. Its old request token is never projected into
   // the new round; tell the caller when that happened rather than claiming success.

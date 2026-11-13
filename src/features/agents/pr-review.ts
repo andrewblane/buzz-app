@@ -3,7 +3,23 @@ import { uuidv5 } from "./agent-config-artifacts";
 
 export const REVIEW_SUBMISSION = "buzz.review.submission";
 export const REVIEW_REPORT = "buzz.review.status";
-export type ReviewStatus = "done" | "wait_author";
+export const REVIEW_STATUSES = [
+  "request_changes",
+  "lgtm_not_approved",
+  "approved",
+] as const;
+export type ReviewStatus =
+  | (typeof REVIEW_STATUSES)[number]
+  | "done"
+  | "wait_author";
+export const reviewLabels: Record<ReviewState, string> = {
+  need_review: "Needs review",
+  request_changes: "Changes requested",
+  lgtm_not_approved: "Looks good · not approved",
+  approved: "Approved",
+  done: "Completed · outcome unspecified",
+  wait_author: "Waiting on author",
+};
 export type ReviewState = ReviewStatus | "need_review";
 type Event = Pick<
   BuzzEvent,
@@ -21,6 +37,7 @@ export type ReviewTarget = Readonly<{
   root: string;
   reviewer: string;
   index: number;
+  autoApprove?: boolean;
 }>;
 
 /** One active review per lane thread. Resolve its current request from the
@@ -68,7 +85,15 @@ export async function reviewTarget(
     throw new Error(
       "Review thread is unavailable or assigned to another reviewer.",
     );
-  return { channel, artifact, request: thread.request, root, reviewer, index };
+  return {
+    channel,
+    artifact,
+    request: thread.request,
+    root,
+    reviewer,
+    index,
+    autoApprove: lane.autoApprove === true,
+  };
 }
 
 export function reportStatus(
@@ -91,10 +116,13 @@ export function reportStatus(
     !event.tags.some(
       (tag) => tag[0] === "e" && tag[1] === target.root && tag[3] === "reply",
     ) ||
-    (status !== "done" && status !== "wait_author")
+    (!REVIEW_STATUSES.includes(status as (typeof REVIEW_STATUSES)[number]) &&
+      status !== "done" &&
+      status !== "wait_author") ||
+    (status === "approved" && !target.autoApprove)
   )
     return undefined;
-  return status;
+  return status as ReviewStatus;
 }
 
 export const reportSequence = (event: Event) =>
@@ -114,9 +142,11 @@ export function latestReport(events: readonly Event[], target: ReviewTarget) {
 export function overallReviewStatus(
   states: readonly ReviewState[],
 ): ReviewState {
-  return states.includes("wait_author")
-    ? "wait_author"
-    : states.length && states.every((status) => status === "done")
-      ? "done"
-      : "need_review";
+  if (states.includes("request_changes")) return "request_changes";
+  if (states.includes("wait_author")) return "wait_author";
+  if (!states.length || states.includes("need_review")) return "need_review";
+  if (states.includes("done")) return "done";
+  return states.every((state) => state === "approved")
+    ? "approved"
+    : "lgtm_not_approved";
 }

@@ -62,6 +62,8 @@ export type Submission = {
   threads: Thread[];
   deleted?: true;
   notifying?: true;
+  notifyingLane?: string;
+  reminderMessage?: string;
 };
 export type SavedSubmission = {
   value: Submission;
@@ -133,6 +135,13 @@ export async function decodeSubmission(
     !UUID.test(value.device) ||
     (value.deleted !== undefined && value.deleted !== true) ||
     (value.notifying !== undefined && value.notifying !== true) ||
+    (value.reminderMessage !== undefined &&
+      (!value.notifying ||
+        typeof value.reminderMessage !== "string" ||
+        value.reminderMessage.length > 4000)) ||
+    (value.notifyingLane !== undefined &&
+      (!value.notifying ||
+        !config.lanes.some((lane) => lane.id === value.notifyingLane))) ||
     (!(value.version === 4 && value.triage?.state !== "admitted") &&
       config.lanes.some((lane) => lane.reviewers.length !== 1)) ||
     !Array.isArray(value.threads) ||
@@ -277,6 +286,7 @@ export function applyReviewReports(
       request: thread.request,
       root: thread.id,
       reviewer: lane.reviewers[0] ?? "",
+      autoApprove: lane.autoApprove === true,
       index,
     };
     const report = latestReport(reports, target);
@@ -448,7 +458,7 @@ export function threadMessage(
       ...(lane ? [["p", lane.reviewers[0] ?? ""]] : []),
     ],
     content: lane
-      ? `Review request: ${prUrl(value)}\n\nReviewer: ${profileMentionLink(`@${reviewerName}`, `nostr:${npubEncode(lane.reviewers[0] ?? "")}`)}\nLane: ${lane.name}\n\n${lane.instructions}${documentation ? `\n\n${documentation}` : ""}\n\nReply in this thread with the commit you reviewed, findings, and any blockers. Verify the current PR and repository before reviewing. This submission does not pin a commit or post a GitHub review.${value.version === 1 ? `\n\nOverview: ${threadUrl(channel, value.threads[0]?.id ?? "")}` : ""}`
+      ? `Review request: ${prUrl(value)}\n\nReviewer: ${profileMentionLink(`@${reviewerName}`, `nostr:${npubEncode(lane.reviewers[0] ?? "")}`)}\nLane: ${lane.name}\n\n${lane.instructions}\n\n${lane.autoApprove ? "Automatic approval is allowed for this lane. If the current PR looks good, you may submit a GitHub approval, then report approved only after it succeeds. If you have not approved, report lgtm_not_approved. Never merge the PR." : "Automatic approval is OFF. Do not approve this PR on GitHub at all. If it looks good, report lgtm_not_approved. If changes are needed, report request_changes. Never merge the PR."}${documentation ? `\n\n${documentation}` : ""}\n\nReply in this thread with the commit you reviewed, findings, and any blockers. Verify the current PR and repository before reviewing. This submission does not pin a commit or post a GitHub review.${value.version === 1 ? `\n\nOverview: ${threadUrl(channel, value.threads[0]?.id ?? "")}` : ""}`
       : `Review request: ${prUrl(value)}\n\nLanes: ${value.config.lanes.map((item) => item.name).join(", ")}\n\nLane threads and delivery status are listed in Review Configuration. A delivered request does not mean the reviewer has started. Automatic reminders are off.`,
   };
 }
@@ -550,10 +560,32 @@ async function notifyReviewers(
   signal: AbortSignal,
   reminder = false,
   documentation = "",
+  laneId?: string,
+  message = "",
 ) {
   const outbox = session.outbox;
   if (!outbox) throw new Error("Message delivery is unavailable.");
-  await eligible(session, record.value, signal);
+  if (laneId && !record.value.config.lanes.some((lane) => lane.id === laneId))
+    throw new Error("Review lane is unavailable. Reload the list.");
+  if (record.value.notifying && record.value.notifyingLane !== laneId)
+    throw new Error(
+      "Finish the pending reminder before reminding another lane.",
+    );
+  await eligible(
+    session,
+    laneId
+      ? {
+          ...record.value,
+          config: {
+            ...record.value.config,
+            lanes: record.value.config.lanes.filter(
+              (lane) => lane.id === laneId,
+            ),
+          },
+        }
+      : record.value,
+    signal,
+  );
   if (record.value.submitter !== session.viewer)
     throw new Error("Only the original submitter can request another review.");
   const device = deviceId(session.scope);
@@ -568,9 +600,12 @@ async function notifyReviewers(
       {
         ...record.value,
         notifying: true,
+        reminderMessage: message.trim(),
+        ...(laneId ? { notifyingLane: laneId } : {}),
         device,
         threads: record.value.threads.map((thread, index) =>
-          submissionLane(record.value, index)
+          submissionLane(record.value, index) &&
+          (!laneId || submissionLane(record.value, index)?.id === laneId)
             ? { ...thread, request: crypto.randomUUID() }
             : thread,
         ),
@@ -582,6 +617,7 @@ async function notifyReviewers(
   for (const [index, thread] of record.value.threads.entries()) {
     const lane = submissionLane(record.value, index);
     if (!lane || !thread.id) continue; // Older submissions also have an overview.
+    if (laneId && lane.id !== laneId) continue;
     signal.throwIfAborted();
     const key = `review-notify:${record.artifactId}:${thread.id}:${thread.request}`;
     const recovery = await outbox.recovery(key);
@@ -612,7 +648,7 @@ async function notifyReviewers(
             ["e", thread.id, "", "reply"],
             ["p", lane.reviewers[0] ?? ""],
           ],
-          content: `${reminder ? "Review reminder. Status changed to needs review. Please review this PR and report your findings in this thread." : "This PR was submitted again. Please revisit the review in this thread."}\n\n${request.content}`,
+          content: `${reminder ? "Review reminder. Status changed to needs review. Please review this PR and report your findings in this thread." : "This PR was submitted again. Please revisit the review in this thread."}\n\n${record.value.reminderMessage ? `Message from submitter:\n${record.value.reminderMessage}\n\n` : ""}${request.content}`,
         },
         { key, value: record.artifactId },
         active,
@@ -621,7 +657,12 @@ async function notifyReviewers(
     await delivered(outbox, id, signal);
     receipts.push(id);
   }
-  const { notifying: _notifying, ...value } = record.value;
+  const {
+    notifying: _notifying,
+    notifyingLane: _notifyingLane,
+    reminderMessage: _reminderMessage,
+    ...value
+  } = record.value;
   const completed = await write(session, channel, value, record, signal);
   for (const id of receipts) await outbox.acknowledge(id);
   return completed;
@@ -635,7 +676,11 @@ export async function remindSubmission(
   signal: AbortSignal,
   readStatus: ReadPullStatus,
   documentation = "",
+  laneId?: string,
+  message = "",
 ) {
+  if (typeof message !== "string" || message.length > 4000)
+    throw new Error("Reminder message must be at most 4,000 characters.");
   const read = session.snapshotRead;
   const outbox = session.outbox;
   if (!read || !outbox?.supports(9) || !navigator.locks)
@@ -693,6 +738,8 @@ export async function remindSubmission(
         signal,
         true,
         documentation,
+        laneId,
+        message,
       );
     },
   );

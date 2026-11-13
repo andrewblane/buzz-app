@@ -13,7 +13,7 @@ Submit button. It finds the saved repository in the selected channel, loads curr
 PR metadata, and assigns the first configured reviewer per matching lane. Missing
 configuration, unavailable reviewers, and zero matching lanes produce an error
 without starting threads. Results show assigned reviewers and thread buttons.
-The separate **Pull requests** page shows previous submissions in a bordered table with delivery status, reviewer identities, and thread links. The table shows GitHub status (Open, Draft, Closed, or Merged); Reload refreshes it. Remind is disabled for closed, merged, loading, or unavailable PRs and rechecks GitHub before sending. The submitter can click **Remind** to notify saved reviewers in their current threads, with delivery feedback and retry on failure. Incomplete submissions must finish delivery through Submit PR first. The submitter can confirm **Delete** to remove a submission from the shared list. This does not stop active reviews, delete conversations, or close the GitHub PR. Submitting that URL again applies current routing and creates new reviewer threads.
+The separate **Pull requests** page shows previous submissions in a bordered table with review outcomes, reviewer identities, and thread links. The table shows GitHub status (Open, Draft, Closed, or Merged); Reload refreshes it. Remind is disabled for closed, merged, loading, or unavailable PRs and rechecks GitHub before sending. The table uses separate **Lane threads**, **Lane status**, and **Lane last message** columns, with one aligned row per lane. **Full message** is an underlined link in **Lane last message** that opens the source message in a popup without leaving the table; Back closes it, Forward restores it, and explicit Close retires that popup visit. Latest messages include ordinary replies and update while the page is open. The submitter can click **Remind** on an individual review lane to notify its saved reviewer in the existing thread, with an optional message included in the reminder, delivery feedback, and retry on failure. Pending retries preserve the originally saved message. Admission Triage has no Remind action. A lane reminder resets only that lane; other lanes keep their status. Finish an interrupted reminder in the same lane and browser profile before starting another. Older interrupted whole-PR batches show **Retry pending reminders**. Incomplete submissions must finish delivery through Submit PR first. The submitter can confirm **Delete** to remove a submission from the shared list. This does not stop active reviews, delete conversations, or close the GitHub PR. Submitting that URL again applies current routing and creates new reviewer threads.
 
 Submitting an already-delivered PR sends a reviewer mention in each saved lane
 thread. It preserves the saved reviewers and instructions and creates no new
@@ -160,18 +160,17 @@ Metadata is fetched during new submission and before continuing an admitted tria
 ## Internal review status (POC)
 
 Each lane starts at **Needs review**. Its assigned reviewer calls the standard
-Buzz tool `pr_review_status_update` with only `status: "done"` or
-`status: "wait_author"`. The host supplies the review thread outside the model's
+Buzz tool `pr_review_status_update` with only `status: "request_changes"`, `status: "lgtm_not_approved"`, or
+`status: "approved"`. The host supplies the review thread outside the model's
 arguments; the tool resolves its current assignment and checks the reviewer.
 One review is active per PR; re-reviews happen sequentially in the saved lane
 threads. This POC does not bind a late call from an older turn to an older round.
 
-**Remind** and resubmitting a listed PR reset its lanes to **Needs review** and
+**Remind** resets its selected lane to **Needs review**; resubmitting a listed PR resets all its review lanes to **Needs review** and
 send updated requests in those same threads. Failed notification batches resume
 from the original browser profile without replacing accepted messages. Older
-submissions gain status reporting when reminded. Overall status is **Waiting on
-author** if any lane needs changes, **Needs review** if any lane is pending, and
-**Done** when all lanes are done. GitHub status remains separate.
+submissions gain status reporting when reminded. Overall status is **Changes requested** if any lane needs changes, **Needs review** if any lane is pending, and
+**Approved** only when every lane reports approved; **Looks good · not approved** when all lanes are positive but at least one has not approved. Old Done records display **Completed · outcome unspecified**. GitHub status remains separate.
 
 Signed kind-9 status messages are both the durable report and the thread
 notification. The tool and dashboard validate the assigned reviewer and current
@@ -237,3 +236,12 @@ routing: signed current state, submitter/device ownership, Web Locks, artifact
 CAS, and the existing durable outbox are checked before sending. Keep that
 browser profile; missing outbox data stops ambiguous sends. Submissions with
 triage use version 4 and require clients supporting this version.
+
+
+Each lane has **Allow automatic approval**, unchecked by default. When off,
+request and reminder instructions explicitly forbid GitHub approval, and both
+the status tool and dashboard reject an approved report. When on, the reviewer
+may approve a PR that looks good, then report approved only after GitHub succeeds.
+The tool records the reviewer’s report; it does not submit or independently verify
+GitHub approvals. Configuration changes apply to new submissions; existing requests
+keep their saved lane policy. No approval setting authorizes merging.

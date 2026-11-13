@@ -902,6 +902,9 @@ it("retries interrupted reminder batches without duplicating accepted replies", 
       first,
       new AbortController().signal,
       async () => "Open",
+      "",
+      undefined,
+      "Original note",
     ),
   ).rejects.toThrow("offline");
   const reloaded = (
@@ -914,6 +917,9 @@ it("retries interrupted reminder batches without duplicating accepted replies", 
     reloaded,
     new AbortController().signal,
     async () => "Open",
+    "",
+    undefined,
+    "Do not replace the saved note",
   );
   const replies = [...test.messages.values()].filter((event) =>
     event.tags.some((tag) => tag[0] === "e"),
@@ -921,6 +927,14 @@ it("retries interrupted reminder batches without duplicating accepted replies", 
   // The first successful publish was stubbed; compare signed event IDs instead.
   const sent = test.publish.mock.calls.slice(2).map(([event]) => event);
   expect(sent).toHaveLength(3);
+  expect(sent.every((event) => event.content.includes("Original note"))).toBe(
+    true,
+  );
+  expect(
+    sent.every(
+      (event) => !event.content.includes("Do not replace the saved note"),
+    ),
+  ).toBe(true);
   expect(sent[1]?.id).toBe(sent[2]?.id);
   expect(sent[0]?.id).not.toBe(sent[1]?.id);
   expect(replies).toHaveLength(1);
@@ -1012,7 +1026,9 @@ it("completes the status-only review loop, resets on Remind, and ignores other r
   expect(schema).toMatchObject({
     additionalProperties: false,
     required: ["status"],
-    properties: { status: { enum: ["done", "wait_author"] } },
+    properties: {
+      status: { enum: ["request_changes", "lgtm_not_approved", "approved"] },
+    },
   });
   expect(Object.keys(schema?.properties ?? {})).toEqual(["status"]);
   const query = vi.fn(
@@ -1071,28 +1087,41 @@ it("completes the status-only review loop, resets on Remind, and ignores other r
       >,
   );
   await expect(report(0, "waiting")).rejects.toThrow("Only status");
-  await expect(report(0, "done", { pr: 999 })).rejects.toThrow("Only status");
+  await expect(report(0, "lgtm_not_approved", { pr: 999 })).rejects.toThrow(
+    "Only status",
+  );
   await expect(
-    callTool(client, {}, "pr_review_status_update", { status: "done" }),
+    callTool(client, {}, "pr_review_status_update", {
+      status: "lgtm_not_approved",
+    }),
   ).rejects.toThrow("host has not supplied");
   await expect(
     callTool(
       { ...client, pubkey: "f".repeat(64) },
       { review: { channel, root: roots[0] ?? "" } },
       "pr_review_status_update",
-      { status: "done" },
+      { status: "lgtm_not_approved" },
     ),
   ).rejects.toThrow("no unique active review");
+  await expect(report(0, "approved")).rejects.toThrow(
+    "Automatic approval is disabled",
+  );
   expect(publish).not.toHaveBeenCalled();
-  await report(0, "wait_author");
-  await report(1, "done");
+  await report(0, "request_changes");
+  await report(1, "lgtm_not_approved");
   const read = () =>
     loadSubmissions(test.session, channel, new AbortController().signal);
-  expect((await read()).rows[0]?.reviewStates).toEqual(["wait_author", "done"]);
-  await report(0, "wait_author");
+  expect((await read()).rows[0]?.reviewStates).toEqual([
+    "request_changes",
+    "lgtm_not_approved",
+  ]);
+  await report(0, "request_changes");
   expect(publish).toHaveBeenCalledTimes(2);
-  await report(0, "done");
-  expect((await read()).rows[0]?.reviewStates).toEqual(["done", "done"]);
+  await report(0, "lgtm_not_approved");
+  expect((await read()).rows[0]?.reviewStates).toEqual([
+    "lgtm_not_approved",
+    "lgtm_not_approved",
+  ]);
   vi.mocked(snapshotRead).mockImplementation(async (filters) =>
     filters[0]?.kinds?.includes(0)
       ? [test.profile]
@@ -1107,6 +1136,8 @@ it("completes the status-only review loop, resets on Remind, and ignores other r
     new AbortController().signal,
     async () => "Open",
     "Tool-owned instructions",
+    undefined,
+    "Please have another look at keyboard access.",
   );
   expect(reset.value.threads.map((thread) => thread.id)).toEqual(
     first.value.threads.map((thread) => thread.id),
@@ -1115,19 +1146,30 @@ it("completes the status-only review loop, resets on Remind, and ignores other r
     "need_review",
     "need_review",
   ]);
-  await report(0, "done");
-  expect((await read()).rows[0]?.reviewStates).toEqual(["done", "need_review"]);
+  await report(0, "lgtm_not_approved");
+  expect((await read()).rows[0]?.reviewStates).toEqual([
+    "lgtm_not_approved",
+    "need_review",
+  ]);
   const reminder = [...test.messages.values()].find((event) =>
     event.content.includes("Review reminder."),
   );
   expect(reminder?.content).toContain("Tool-owned instructions");
+  expect(reminder?.content).toContain(
+    "Please have another look at keyboard access.",
+  );
+  expect(reminder?.content).toContain(
+    "Do not approve this PR on GitHub at all",
+  );
   await deleteSubmission(
     test.session,
     channel,
     reset,
     new AbortController().signal,
   );
-  await expect(report(0, "done")).rejects.toThrow("no unique active review");
+  await expect(report(0, "lgtm_not_approved")).rejects.toThrow(
+    "no unique active review",
+  );
 });
 
 it("refuses a capped report snapshot instead of showing missing reports as needs review", async () => {
@@ -1409,4 +1451,121 @@ it("serializes opposing triage tool calls and never confirms both decisions", as
   await refused;
   expect(publish).toHaveBeenCalledTimes(1);
   expect((await f.run()).value.triage?.state).toBe("admitted");
+});
+
+it("reminds only the selected lane and preserves another lane's completed review", async () => {
+  const test = await fixture();
+  const first = await test.run();
+  for (const [index, thread] of first.value.threads.entries()) {
+    const event = signed(test.agent, {
+      kind: 9,
+      content: "Review complete",
+      tags: [
+        ["h", channel],
+        ["e", thread.id ?? "", "", "reply"],
+        ["t", "buzz.review.status"],
+        ["r", thread.request ?? ""],
+        ["review", first.artifactId, String(index)],
+        ["review-sequence", "1"],
+        ["status", "done"],
+      ],
+    });
+    test.messages.set(event.id, event);
+  }
+  const signal = new AbortController().signal;
+  expect(
+    (await loadSubmissions(test.session, channel, signal)).rows[0]
+      ?.reviewStates,
+  ).toEqual(["done", "done"]);
+  const updated = await remindSubmission(
+    test.session,
+    channel,
+    first,
+    signal,
+    async () => "Open",
+    "tool instructions",
+    "backend",
+  );
+  expect(updated.value.threads[0]?.request).not.toBe(
+    first.value.threads[0]?.request,
+  );
+  expect(updated.value.threads[1]).toEqual(first.value.threads[1]);
+  expect(
+    (await loadSubmissions(test.session, channel, signal)).rows[0]
+      ?.reviewStates,
+  ).toEqual(["need_review", "done"]);
+  const reminders = [...test.messages.values()].filter((event) =>
+    event.content.startsWith("Review reminder."),
+  );
+  expect(reminders).toHaveLength(1);
+  expect(reminders[0]?.tags).toContainEqual([
+    "e",
+    first.value.threads[0]?.id,
+    "",
+    "reply",
+  ]);
+  expect(updated.value.notifyingLane).toBeUndefined();
+  await expect(
+    remindSubmission(
+      test.session,
+      channel,
+      updated,
+      signal,
+      async () => "Open",
+      "",
+      "absent",
+    ),
+  ).rejects.toThrow("lane is unavailable");
+  expect(test.publish).toHaveBeenCalledTimes(3);
+});
+
+it("resumes a failed lane reminder without duplicating it or switching lanes", async () => {
+  const test = await fixture();
+  const first = await test.run();
+  const signal = new AbortController().signal;
+  test.publish.mockRejectedValueOnce(new Error("offline"));
+  await expect(
+    remindSubmission(
+      test.session,
+      channel,
+      first,
+      signal,
+      async () => "Open",
+      "",
+      "backend",
+    ),
+  ).rejects.toThrow("offline");
+  const pending = (await loadSubmissions(test.session, channel, signal))
+    .rows[0];
+  if (!pending) throw new Error("Missing submission");
+  expect(pending.value.notifyingLane).toBe("backend");
+  expect(pending.value.threads[1]).toEqual(first.value.threads[1]);
+  await expect(
+    remindSubmission(
+      test.session,
+      channel,
+      pending,
+      signal,
+      async () => "Open",
+      "",
+      "ui",
+    ),
+  ).rejects.toThrow("Finish the pending reminder");
+  await remindSubmission(
+    test.session,
+    channel,
+    pending,
+    signal,
+    async () => "Open",
+    "",
+    "backend",
+  );
+  expect(test.publish).toHaveBeenCalledTimes(4);
+  expect(test.publish.mock.calls[2]?.[0].id).toBe(
+    test.publish.mock.calls[3]?.[0].id,
+  );
+  const completed = (await loadSubmissions(test.session, channel, signal))
+    .rows[0];
+  expect(completed?.value.notifying).toBeUndefined();
+  expect(completed?.value.notifyingLane).toBeUndefined();
 });

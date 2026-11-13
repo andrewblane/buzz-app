@@ -86,6 +86,7 @@ function fixture(
   mode: "submit" | "all" = "submit",
   viewer = record.value.submitter,
   readStatus: ReadPullStatus = vi.fn(async () => "Open" as const),
+  readable = true,
 ) {
   const agents = [{ pubkey: "a".repeat(64), name: "UI Reviewer" }];
   const choices = {
@@ -94,15 +95,31 @@ function fixture(
     pending: false,
     archives: { status: "ready" },
   };
-  let live: LiveListener | undefined;
+  const listeners = new Set<LiveListener>();
   const session = {
     subscribeLive: (listener: LiveListener) => {
-      live = listener;
+      listeners.add(listener);
       return () => {
-        live = undefined;
+        listeners.delete(listener);
       };
     },
     viewer,
+    thread: vi.fn(() => ({
+      refresh: async () => {},
+      dispose: vi.fn(),
+      snapshot: () => ({
+        status: "ready",
+        replies: [],
+        root: {
+          id: "e".repeat(64),
+          channelId: "channel",
+          content: "The complete latest message",
+          createdAt: 100,
+          authorId: "a".repeat(64),
+          mentions: [],
+        },
+      }),
+    })),
     agentChoices: {
       subscribe: () => () => {},
       snapshot: () => choices,
@@ -121,28 +138,36 @@ function fixture(
     base: "b".repeat(40),
   }));
   const onOpenThread = vi.fn(async () => {});
+  const onOpenMessage = vi.fn(async () => {});
   const editing = vi.fn();
-  const view = render(
+  const content = (ready: boolean) => (
     <ReviewSubmissions
+      readable={ready}
       session={session}
       mode={mode}
       channel="channel"
       writable
       onEditingChange={editing}
       onOpenThread={onOpenThread}
+      onOpenMessage={onOpenMessage}
       readPull={readPull}
       readStatus={readStatus}
       describeTool={describeTool}
-    />,
+    />
   );
+  const view = render(content(readable));
   return {
     ...view,
+    setReadable: (ready: boolean) => view.rerender(content(ready)),
     emit: (events: Parameters<LiveListener>[0]["events"]) =>
-      act(() => live?.({ events })),
+      act(() => {
+        for (const listener of listeners) listener({ events });
+      }),
     session,
     readPull,
     readStatus,
     onOpenThread,
+    onOpenMessage,
     editing,
     user: userEvent.setup(),
   };
@@ -281,7 +306,7 @@ it("shows all PRs in a table without submission controls, and deletion requires 
   const test = fixture("all");
   const table = await screen.findByRole("table");
   expect(
-    within(table).getByRole("columnheader", { name: "Reviewers & threads" }),
+    within(table).getByRole("columnheader", { name: "Lane threads" }),
   ).toBeTruthy();
   expect(screen.queryByRole("textbox")).toBeNull();
   await test.user.click(
@@ -394,14 +419,19 @@ it("reminds from a row, guards duplicate clicks and reports success or failure",
   });
   const test = fixture("all");
   const button = await screen.findByRole("button", {
-    name: "Remind reviewers for example-org/project#42",
+    name: "Remind UI reviewers for example-org/project#42",
   });
   await test.user.click(button);
-  expect(screen.getByRole("status").textContent).toContain(
+  await test.user.type(
+    screen.getByRole("textbox", { name: "Message (optional)" }),
+    "Please have another look.",
+  );
+  await test.user.click(screen.getByRole("button", { name: "Send reminder" }));
+  expect(screen.getByRole("status", { hidden: true }).textContent).toContain(
     "Reminding reviewers",
   );
   expect((button as HTMLButtonElement).disabled).toBe(true);
-  await test.user.click(button);
+  await test.user.click(screen.getByRole("button", { name: "Send reminder" }));
   expect(remindSubmission).toHaveBeenCalledTimes(1);
   await act(async () => finish());
   expect(screen.getByRole("status").textContent).toContain(
@@ -414,12 +444,15 @@ it("reminds from a row, guards duplicate clicks and reports success or failure",
     expect.any(AbortSignal),
     expect.any(Function),
     expect.stringContaining("pr_review_status_update"),
+    "ui",
+    "Please have another look.",
   );
   expect(submitReview).not.toHaveBeenCalled();
   vi.mocked(remindSubmission).mockRejectedValueOnce(
     new Error("Delivery failed"),
   );
   await test.user.click(button);
+  await test.user.click(screen.getByRole("button", { name: "Send reminder" }));
   expect((await screen.findByRole("alert")).textContent).toContain(
     "Delivery failed",
   );
@@ -442,9 +475,10 @@ it("aborts pending reminders when leaving the page", async () => {
   const test = fixture("all");
   await test.user.click(
     await screen.findByRole("button", {
-      name: "Remind reviewers for example-org/project#42",
+      name: "Remind UI reviewers for example-org/project#42",
     }),
   );
+  await test.user.click(screen.getByRole("button", { name: "Send reminder" }));
   test.unmount();
   expect(pending?.aborted).toBe(true);
   await act(async () => finish());
@@ -460,7 +494,7 @@ it.each(["Closed", "Merged", "Draft", "Open"] as const)(
     fixture("all", record.value.submitter, async () => status);
     await screen.findByRole("cell", { name: status });
     const button = screen.getByRole("button", {
-      name: "Remind reviewers for example-org/project#42",
+      name: "Remind UI reviewers for example-org/project#42",
     }) as HTMLButtonElement;
     expect(button.disabled).toBe(status === "Closed" || status === "Merged");
   },
@@ -483,7 +517,7 @@ it("keeps Remind disabled while loading or unavailable and refreshes status on R
     .mockResolvedValue("Open");
   const test = fixture("all", record.value.submitter, readStatus);
   const button = (await screen.findByRole("button", {
-    name: "Remind reviewers for example-org/project#42",
+    name: "Remind UI reviewers for example-org/project#42",
   })) as HTMLButtonElement;
   expect(button.disabled).toBe(true);
   await act(async () => reject(new Error("GitHub unavailable")));
@@ -568,14 +602,16 @@ it("recovers a report received while a reminder is still sending", async () => {
   await waitFor(() => expect(test.readStatus).toHaveBeenCalledOnce());
   await test.user.click(
     within(row).getByRole("button", {
-      name: "Remind reviewers for example-org/project#42",
+      name: "Remind UI reviewers for example-org/project#42",
     }),
   );
+  await test.user.click(screen.getByRole("button", { name: "Send reminder" }));
   test.emit([report]);
   await act(async () => finish?.(next));
   await waitFor(() =>
     expect(
-      within(row).getAllByText("Done", { exact: true }).length,
+      screen.getAllByText("Completed · outcome unspecified", { exact: true })
+        .length,
     ).toBeGreaterThan(0),
   );
   expect(loadSubmissions).toHaveBeenCalledTimes(2);
@@ -629,7 +665,11 @@ it("updates review reports in the live submission result, including snapshot buf
   test.emit([report]);
   await act(async () => finish({ rows: [current], warning: "" }));
   const result = screen.getByRole("region", { name: "Submission result" });
-  expect(within(result).getAllByText("Done", { exact: true })).toHaveLength(2);
+  expect(
+    within(result).getAllByText("Completed · outcome unspecified", {
+      exact: true,
+    }),
+  ).toHaveLength(2);
   test.emit([
     {
       ...report,
@@ -646,4 +686,134 @@ it("updates review reports in the live submission result, including snapshot buf
   expect(
     within(result).getAllByText("Waiting on author", { exact: true }),
   ).toHaveLength(2);
+});
+
+it("separates lane columns, omits triage reminders, and links status and latest messages", async () => {
+  const row: SavedSubmission = {
+    ...record,
+    value: {
+      ...record.value,
+      version: 4,
+      triage: {
+        state: "admitted",
+        agent: "a".repeat(64),
+        instructions: "Check admission",
+        head: "1".repeat(40),
+        base: "2".repeat(40),
+        reviewers: ["a".repeat(64)],
+        thread: { id: "f".repeat(64), delivered: true },
+        decision: "9".repeat(64),
+        message: "Admitted",
+      },
+    },
+  };
+  vi.mocked(loadSubmissions).mockResolvedValue({ rows: [row], warning: "" });
+  const test = fixture("all");
+  expect(screen.queryByRole("columnheader", { name: "Delivery" })).toBeNull();
+  for (const name of ["Lane threads", "Lane status", "Lane last message"])
+    expect(await screen.findByRole("columnheader", { name })).toBeTruthy();
+  const triage = screen.getByText("Admission Triage").closest("tr");
+  if (!triage) throw new Error("Missing triage row");
+  expect(within(triage).queryByRole("button", { name: /Remind/ })).toBeNull();
+  expect(
+    screen.getAllByRole("button", { name: /Remind .* reviewers/ }),
+  ).toHaveLength(1);
+  await test.user.click(
+    screen.getByRole("link", {
+      name: "Full message: example-org/project#42 Admission Triage last message",
+    }),
+  );
+  expect(test.onOpenMessage).toHaveBeenLastCalledWith(
+    "channel",
+    "e".repeat(64),
+    expect.any(HTMLElement),
+  );
+  await test.user.click(
+    await screen.findByRole("link", {
+      name: "Full message: example-org/project#42 UI last message",
+    }),
+  );
+  expect(test.onOpenMessage).toHaveBeenLastCalledWith(
+    "channel",
+    "e".repeat(64),
+    expect.any(HTMLElement),
+  );
+});
+
+it("rebinds a failed reminder to its saved revision and preserves the original message on retry", async () => {
+  const pending: SavedSubmission = {
+    ...record,
+    revision: "f".repeat(64),
+    value: {
+      ...record.value,
+      notifying: true,
+      notifyingLane: "ui",
+      reminderMessage: "Please check the fix.",
+    },
+  };
+  vi.mocked(loadSubmissions)
+    .mockResolvedValueOnce({ rows: [record], warning: "" })
+    .mockResolvedValue({ rows: [pending], warning: "" });
+  vi.mocked(remindSubmission)
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValueOnce(record);
+  const test = fixture("all");
+  await test.user.click(
+    await screen.findByRole("button", {
+      name: "Remind UI reviewers for example-org/project#42",
+    }),
+  );
+  await test.user.type(
+    screen.getByRole("textbox", { name: "Message (optional)" }),
+    "Please check the fix.",
+  );
+  await test.user.click(screen.getByRole("button", { name: "Send reminder" }));
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "Message (optional)",
+        }) as HTMLTextAreaElement
+      ).disabled,
+    ).toBe(true),
+  );
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Send reminder",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  await test.user.click(screen.getByRole("button", { name: "Send reminder" }));
+  expect(vi.mocked(remindSubmission).mock.calls[1]?.[2].revision).toBe(
+    pending.revision,
+  );
+  expect(vi.mocked(remindSubmission).mock.calls[1]?.[7]).toBe(
+    "Please check the fix.",
+  );
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+});
+
+it("waits for fresh channel access before loading submissions and lane previews", async () => {
+  vi.mocked(loadSubmissions).mockResolvedValue({ rows: [record], warning: "" });
+  const test = fixture("all", record.value.submitter, undefined, false);
+  expect(loadSubmissions).not.toHaveBeenCalled();
+  expect(test.session.thread).not.toHaveBeenCalled();
+  test.setReadable(true);
+  await screen.findByRole("link", {
+    name: "Full message: example-org/project#42 UI last message",
+  });
+  expect(loadSubmissions).toHaveBeenCalledTimes(1);
+  expect(test.session.thread).toHaveBeenCalledTimes(1);
+  test.setReadable(false);
+  await waitFor(() =>
+    expect(screen.queryByText("The complete latest message")).toBeNull(),
+  );
+  test.setReadable(true);
+  await screen.findByRole("link", {
+    name: "Full message: example-org/project#42 UI last message",
+  });
+  expect(loadSubmissions).toHaveBeenCalledTimes(2);
 });

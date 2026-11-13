@@ -13,6 +13,7 @@ export type ReviewLane = Readonly<{
   instructions: string;
   reviewers: readonly string[];
   routing?: LaneRouting;
+  autoApprove?: boolean;
 }>;
 export type AdmissionChecks = Readonly<{
   ready: boolean;
@@ -114,7 +115,8 @@ export function validateConfig(value: unknown): ReviewConfig {
       lane.name.trim().length > 80 ||
       typeof lane.instructions !== "string" ||
       !lane.instructions.trim() ||
-      lane.instructions.length > 8000
+      lane.instructions.length > 8000 ||
+      (lane.autoApprove !== undefined && typeof lane.autoApprove !== "boolean")
     )
       throw new Error(
         "Each lane needs a name (up to 80 characters) and instructions (up to 8,000 characters).",
@@ -140,6 +142,9 @@ export function validateConfig(value: unknown): ReviewConfig {
       name,
       instructions: lane.instructions.trim(),
       reviewers: reviewers as string[],
+      ...(lane.autoApprove === undefined
+        ? {}
+        : { autoApprove: lane.autoApprove }),
       ...(lane.routing === undefined
         ? {}
         : { routing: validateRouting(lane.routing) }),
