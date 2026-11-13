@@ -41,4 +41,6 @@ it("prefers Today when another preset ends at the same midnight", () => {
   expect(statusDeadline("week", monday - 28800)).toBe(monday);
   expect(statusDuration(monday, monday - 28800)).toBe("today");
   expect(statusDuration(monday, monday - 43200)).toBe("today");
+  // Only presets tie: Today at the edge of the tolerance is still custom.
+  expect(statusDuration(midnight + 121, midnight - 6 * 3600)).toBe("custom");
 });

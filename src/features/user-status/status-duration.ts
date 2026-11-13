@@ -33,7 +33,7 @@ export function statusDuration(
     const distance = Math.abs(statusDeadline(value, updatedAt) - expiresAt);
     if (
       distance < bestDistance ||
-      (distance === bestDistance && value === "today")
+      (distance === bestDistance && value === "today" && best !== "custom")
     ) {
       best = value;
       bestDistance = distance;
