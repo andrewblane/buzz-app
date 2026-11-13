@@ -52,6 +52,11 @@
 .soloConversation {
   container: solo-conversation / inline-size;
 }
+.workspaceReader {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
 .sidebar {
   /* Figma specifies true Semibold for unread rows, rather than the legacy 500 alias. */
   --type-weight-semibold: 600;
@@ -587,6 +592,7 @@ details:not([open]) > summary .sectionChevron {
   .panelStack > [data-panel-resize] {
     display: none;
   }
+  /* useCoveredByDock treats position: absolute on the dock as covering. */
   .panelStack {
     --panel-motion-duration: var(--duration-panel-enter);
     --panel-motion-distance: 100%;
@@ -609,6 +615,7 @@ details:not([open]) > summary .sectionChevron {
   .panelStack > [data-panel-resize] {
     display: none;
   }
+  /* useCoveredByDock treats position: absolute on the dock as covering. */
   .panelStack {
     --panel-motion-duration: var(--duration-panel-enter);
     --panel-motion-distance: 100%;
