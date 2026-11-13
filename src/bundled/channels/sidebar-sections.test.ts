@@ -54,7 +54,7 @@ it("hides empty Starred and shows it only for an authorized starred row", () => 
     rows: [row("alpha")],
   });
 });
-it("intersects groups/stars with active authorized streams and movable DMs", () => {
+it("intersects groups/stars with active authorized streams, forums and movable DMs", () => {
   const roster = [
     row("star"),
     row("work"),
@@ -66,6 +66,8 @@ it("intersects groups/stars with active authorized streams and movable DMs", () 
     row("starred-dm", { channelType: "dm" }),
     row("hidden-dm", { channelType: "dm" }),
     row("forum", { channelType: "forum" }),
+    row("grouped-forum", { channelType: "forum" }),
+    row("home-forum", { channelType: "forum" }),
     row("solo", { channelType: "solo" }),
   ];
   const preferences = {
@@ -75,6 +77,7 @@ it("intersects groups/stars with active authorized streams and movable DMs", () 
       work: "channels",
       revoked: "channels",
       "grouped-dm": "channels",
+      "grouped-forum": "channels",
       "starred-dm": "channels",
       "hidden-dm": "channels",
       other: "missing",
@@ -112,10 +115,10 @@ it("intersects groups/stars with active authorized streams and movable DMs", () 
       ).toHaveLength(1);
   };
   const expectedProjection = [
-    { key: "starred", ids: ["solo", "star", "starred-dm"] },
-    { key: "group:channels", ids: ["grouped-dm", "work"] },
+    { key: "starred", ids: ["forum", "solo", "star", "starred-dm"] },
+    { key: "group:channels", ids: ["grouped-dm", "grouped-forum", "work"] },
     { key: "channels", ids: ["other"] },
-    { key: "forums", ids: ["forum"] },
+    { key: "forums", ids: ["home-forum"] },
     { key: "dms", ids: ["home-dm"] },
   ];
   expect(project(roster, new Set(["hidden-dm"]))).toEqual(expectedProjection);
@@ -123,6 +126,9 @@ it("intersects groups/stars with active authorized streams and movable DMs", () 
     "home-dm",
     "grouped-dm",
     "starred-dm",
+    "forum",
+    "grouped-forum",
+    "home-forum",
   ]);
   expect(sidebarSections(roster, preferences)[1]?.icon).toBe(":party:");
   // Hidden conversations remain absent even when their saved placement is stale.
@@ -138,7 +144,7 @@ it("intersects groups/stars with active authorized streams and movable DMs", () 
       roster.filter((channel) => channel.id !== "starred-dm"),
       new Set(["hidden-dm"]),
     ).find(({ key }) => key === "starred")?.ids,
-  ).toEqual(["solo", "star"]);
+  ).toEqual(["forum", "solo", "star"]);
   expect(sidebarSections([])).toEqual([
     { key: "channels", title: "Channels", icon: undefined, rows: [] },
     { key: "dms", title: "Direct messages", icon: undefined, rows: [] },
@@ -153,6 +159,8 @@ it("intersects groups/stars with active authorized streams and movable DMs", () 
     "star",
     "work",
     "forum",
+    "grouped-forum",
+    "home-forum",
     "grouped-dm",
     "home-dm",
     "starred-dm",

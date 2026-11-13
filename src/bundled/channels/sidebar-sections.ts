@@ -70,11 +70,14 @@ export function sidebarSections<T extends ChannelSummary>(
   const dms = active.filter(
     (channel) => channel.channelType === "dm" && !hiddenDms.has(channel.id),
   );
-  const movable = [...streams, ...dms];
+  const forums = active.filter((channel) => channel.channelType === "forum");
+  const movable = [...streams, ...forums, ...dms];
   const stars = new Set(preferences?.starred);
   const groups = preferences?.sections ?? [];
   const ids = new Set(groups.map((group) => group.id));
   const assignment = (id: string) => preferences?.assignments[id];
+  const unplaced = (channel: ChannelSummary) =>
+    !stars.has(channel.id) && !ids.has(assignment(channel.id) ?? "");
   const sort = (rows: readonly ChannelSummary[], key: string) =>
     [...rows].sort(
       preferences?.sort?.[key] === "recent" ? compareRecent : compareName,
@@ -105,34 +108,19 @@ export function sidebarSections<T extends ChannelSummary>(
       key: "channels",
       title: "Channels",
       icon: undefined,
-      rows: sort(
-        streams.filter(
-          (channel) =>
-            !stars.has(channel.id) && !ids.has(assignment(channel.id) ?? ""),
-        ),
-        "channels",
-      ),
+      rows: sort(streams.filter(unplaced), "channels"),
     },
     {
       key: "forums",
       title: "Forums",
       icon: undefined,
-      rows: sort(
-        active.filter((channel) => channel.channelType === "forum"),
-        "forums",
-      ),
+      rows: sort(forums.filter(unplaced), "forums"),
     },
     {
       key: "dms",
       title: "Direct messages",
       icon: undefined,
-      rows: sort(
-        dms.filter(
-          (channel) =>
-            !stars.has(channel.id) && !ids.has(assignment(channel.id) ?? ""),
-        ),
-        "dms",
-      ),
+      rows: sort(dms.filter(unplaced), "dms"),
     },
   ].filter(
     (section) =>

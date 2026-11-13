@@ -911,6 +911,10 @@ and are asked to sign in again in Buzz.
   for that community and identity. Collapsed section headings highlight when
   their channels have unread messages or thread replies. Muted channels do not
   highlight the heading.
+- **Star or group a forum**: open a forum row's menu and choose **Move
+  channel** to put it in **Starred** or one of your saved groups, so it can sit
+  above other sections. Choose **Forums** in the same menu to move it back.
+  Forums move through the menu only, not by dragging.
 - Saved sidebar groups, stars, mutes, sorting and filters from another device or
   a paired CLI update the open sidebar automatically while connected, in hosts
   that support saved sidebar preferences. A CLI section-only move keeps a

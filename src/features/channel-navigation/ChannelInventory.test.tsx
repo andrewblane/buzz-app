@@ -1023,102 +1023,105 @@ it("copies a channel link that opens the same channel", async () => {
   ).toBeInTheDocument();
 });
 
-it("offers DMs a Move conversation menu and relocates them into a saved group", async () => {
-  const saved: SidebarPreferences = {
-    sections: [{ id: "work", name: "Work", order: 0 }],
-    assignments: {},
-    starred: [],
-    muted: [],
-  };
-  let assignments: Record<string, string> = {};
-  const read = vi.fn(async () => ({ ...saved, assignments }));
-  const write = vi.fn(
-    async (intent: { channelId?: string; sectionId?: string }) => {
-      if (intent.channelId === undefined)
-        throw new Error("Expected channel move");
-      const changedAssignments = intent.sectionId
-        ? { ...assignments, [intent.channelId]: intent.sectionId }
-        : Object.fromEntries(
-            Object.entries(assignments).filter(
-              ([id]) => id !== intent.channelId,
-            ),
-          );
-      assignments = changedAssignments;
-      return { sections: saved.sections, assignments };
-    },
-  );
-  const star = vi.fn(async () => []);
-  const preferences = createSidebarPreferencesStore({
-    read,
-    available: true,
-    write,
-    writeStar: star,
-  });
-  await preferences.queries.ensure();
-  const h = fixture(preferences.queries, "ready", [
-    { id: "alpha", name: "alpha", channelType: "stream" },
-    { id: "dm", name: "Alice", channelType: "dm" },
-  ]);
-  const user = userEvent.setup();
-  try {
-    render(h.view("alpha"));
-    await screen.findByRole("button", { name: "Alice" });
-    const row = screen.getByRole("button", { name: "Alice" });
-    fireEvent.keyDown(row, { key: "ContextMenu" });
-    await user.hover(
-      await screen.findByRole("menuitem", { name: "Move conversation" }),
+it.each([
+  {
+    kind: "dm",
+    name: "Alice",
+    move: "Move conversation",
+    home: "Direct messages",
+    homeKey: "dms",
+  },
+  {
+    kind: "forum",
+    name: "ideas",
+    move: "Move channel",
+    home: "Forums",
+    homeKey: "forums",
+  },
+] as const)(
+  "offers a $kind row a $move menu and relocates it into a saved group",
+  async ({ kind, name, move, home, homeKey }) => {
+    const placement = () =>
+      screen
+        .getByRole("button", { name })
+        .closest("[data-sidebar-section]")
+        ?.getAttribute("data-sidebar-section");
+    const saved: SidebarPreferences = {
+      sections: [{ id: "work", name: "Work", order: 0 }],
+      assignments: {},
+      starred: [],
+      muted: [],
+    };
+    let assignments: Record<string, string> = {};
+    const read = vi.fn(async () => ({ ...saved, assignments }));
+    const write = vi.fn(
+      async (intent: { channelId?: string; sectionId?: string }) => {
+        if (intent.channelId === undefined)
+          throw new Error("Expected channel move");
+        const changedAssignments = intent.sectionId
+          ? { ...assignments, [intent.channelId]: intent.sectionId }
+          : Object.fromEntries(
+              Object.entries(assignments).filter(
+                ([id]) => id !== intent.channelId,
+              ),
+            );
+        assignments = changedAssignments;
+        return { sections: saved.sections, assignments };
+      },
     );
-    expect(
-      await screen.findByRole("menuitemradio", { name: "Direct messages" }),
-    ).toBeChecked();
-    await screen.findByRole("menuitemradio", { name: "Work" });
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Work" }));
-    await waitFor(() =>
-      expect(write).toHaveBeenCalledWith(
-        { channelId: "dm", sectionId: "work" },
+    const star = vi.fn(async () => []);
+    const preferences = createSidebarPreferencesStore({
+      read,
+      available: true,
+      write,
+      writeStar: star,
+    });
+    await preferences.queries.ensure();
+    const h = fixture(preferences.queries, "ready", [
+      { id: "alpha", name: "alpha", channelType: "stream" },
+      { id: kind, name, channelType: kind },
+    ]);
+    const user = userEvent.setup();
+    try {
+      render(h.view("alpha"));
+      await screen.findByRole("button", { name });
+      const row = screen.getByRole("button", { name });
+      fireEvent.keyDown(row, { key: "ContextMenu" });
+      await user.hover(await screen.findByRole("menuitem", { name: move }));
+      expect(
+        await screen.findByRole("menuitemradio", { name: home }),
+      ).toBeChecked();
+      await screen.findByRole("menuitemradio", { name: "Work" });
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "Work" }));
+      await waitFor(() =>
+        expect(write).toHaveBeenCalledWith(
+          { channelId: kind, sectionId: "work" },
+          expect.any(AbortSignal),
+        ),
+      );
+      await waitFor(() => expect(placement()).toBe("group:work"));
+      fireEvent.keyDown(screen.getByRole("button", { name }), {
+        key: "ContextMenu",
+      });
+      await user.hover(await screen.findByRole("menuitem", { name: move }));
+      expect(
+        await screen.findByRole("menuitemradio", { name: "Work" }),
+      ).toBeChecked();
+      fireEvent.click(screen.getByRole("menuitemradio", { name: home }));
+      await waitFor(() => expect(placement()).toBe(homeKey));
+      expect(write).toHaveBeenLastCalledWith(
+        { channelId: kind },
         expect.any(AbortSignal),
-      ),
-    );
-    await waitFor(() => {
-      expect(
-        document.querySelector('[data-sidebar-section="group:work"]'),
-      ).toContainElement(screen.getByRole("button", { name: "Alice" }));
-      expect(
-        document.querySelector('[data-sidebar-section="dms"]'),
-      ).not.toContainElement(screen.queryByRole("button", { name: "Alice" }));
-    });
-    fireEvent.keyDown(screen.getByRole("button", { name: "Alice" }), {
-      key: "ContextMenu",
-    });
-    await user.hover(
-      await screen.findByRole("menuitem", { name: "Move conversation" }),
-    );
-    expect(
-      await screen.findByRole("menuitemradio", { name: "Work" }),
-    ).toBeChecked();
-    fireEvent.click(
-      screen.getByRole("menuitemradio", { name: "Direct messages" }),
-    );
-    await waitFor(() => {
-      expect(
-        document.querySelector('[data-sidebar-section="dms"]'),
-      ).toContainElement(screen.getByRole("button", { name: "Alice" }));
-      expect(
-        document.querySelector('[data-sidebar-section="group:work"]'),
-      ).not.toContainElement(screen.queryByRole("button", { name: "Alice" }));
-    });
-    expect(write).toHaveBeenLastCalledWith(
-      { channelId: "dm" },
-      expect.any(AbortSignal),
-    );
-    expect(star).toHaveBeenLastCalledWith(
-      { channelId: "dm", starred: false },
-      expect.any(AbortSignal),
-    );
-  } finally {
-    preferences.dispose();
-  }
-});
+      );
+      expect(star).toHaveBeenLastCalledWith(
+        { channelId: kind, starred: false },
+        expect.any(AbortSignal),
+      );
+    } finally {
+      preferences.dispose();
+    }
+  },
+);
 
 async function failedMoveFixture() {
   const data: SidebarPreferences = {

@@ -57,6 +57,7 @@ import {
   BellIcon,
   BellSlashIcon,
   ChatCircleIcon,
+  ChatsCircleIcon,
   FolderSimpleIcon,
   MinusIcon,
   PlusIcon,
@@ -669,7 +670,9 @@ export function ChannelInventory({
           ? `group:${sectionId}`
           : channel?.channelType === "dm"
             ? "dms"
-            : "channels";
+            : channel?.channelType === "forum"
+              ? "forums"
+              : "channels";
     },
     [queries],
   );
@@ -794,12 +797,13 @@ export function ChannelInventory({
     surface?: ChannelMenuSurface,
   ) => {
     const actions: ReactNode[] = [];
-    if (placementWritable && channel.channelType !== "forum") {
+    if (placementWritable) {
       const currentSectionId = sectionKey.startsWith("group:")
         ? sectionKey.slice("group:".length)
         : undefined;
       const starred = sectionKey === "starred";
       const movingDm = channel.channelType === "dm";
+      const movingForum = channel.channelType === "forum";
       actions.push(
         <MenuSubmenu key="move-channel">
           <MenuSubmenuTrigger>
@@ -825,7 +829,9 @@ export function ChannelInventory({
                     ? `group:${currentSectionId}`
                     : movingDm
                       ? "dms"
-                      : "channels"
+                      : movingForum
+                        ? "forums"
+                        : "channels"
               }
               onValueChange={(destination) => {
                 if (destination === "starred")
@@ -868,6 +874,14 @@ export function ChannelInventory({
                     <ChatCircleIcon size={14} />
                   </MenuIcon>
                   Direct messages
+                </MenuRadioItem>
+              )}
+              {movingForum && (
+                <MenuRadioItem value="forums" closeOnClick={false}>
+                  <MenuIcon>
+                    <ChatsCircleIcon size={14} />
+                  </MenuIcon>
+                  Forums
                 </MenuRadioItem>
               )}
             </MenuRadioGroup>
@@ -1572,6 +1586,7 @@ export function ChannelInventory({
                       sectionKey={section.key}
                       selectFrame={
                         channel.channelType !== "dm" &&
+                        channel.channelType !== "forum" &&
                         isChannelDropSectionKey(section.key)
                           ? DraggableChannel
                           : undefined

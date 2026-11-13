@@ -179,6 +179,9 @@ not reveal an empty section. Use the row menu to star the first channel.
 Dropping into Starred stars the channel; dropping out assigns the destination
 and clears its star, just like the row menu. Forums and Direct
 messages take no part in dragging, and the row menu remains the keyboard path.
+Their row menus still offer **Move channel** or **Move conversation**, so a forum
+or DM can be starred or placed in a saved group; its unplaced home stays **Forums**
+or **Direct messages**.
 A saved group also drags by its header, expanded or collapsed, onto another saved
 group; an accent line shows where it lands, and Escape cancels. Its section menu's
 **Move up** and **Move down** are the keyboard and single-pointer path. Each move
