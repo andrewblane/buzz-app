@@ -657,6 +657,27 @@ function ThreadMessages({
     [session.unread, channelId, snapshot.root?.id, messageId],
   );
   useSyncExternalStore(subscribeUnread, unreadSnapshot, unreadSnapshot);
+  // Histories the reader opened, by their first row.
+  const [expandedActivity, setExpandedActivity] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  // Exact targets whose activity history a visit opened. The disclosure
+  // follows the target, not the group that held it when the visit began:
+  // later evidence regroups a level while the reader collapses nothing. A cold
+  // visit's window forms the group that absorbs a failure, and a late request
+  // splits it. The reader's collapse drops the target until the next request.
+  const [disclosedTargets, setDisclosedTargets] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each request discloses its target once, so a reader's collapse holds.
+  useLayoutEffect(() => {
+    setDisclosedTargets((current) =>
+      current.has(messageId) ? current : new Set([...current, messageId]),
+    );
+  }, [messageId, navigation?.signal, revealRequest]);
+  const activityExpanded = (ids: readonly string[]) =>
+    expandedActivity.has(ids[0] ?? "") ||
+    ids.some((id) => disclosedTargets.has(id));
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [replyParent, setReplyParent] = useState<string>();
   const resolveName = useChannelIdentityNames(session, channelId);
@@ -698,60 +719,6 @@ function ThreadMessages({
   }, [session.profiles, authors, profileGeneration]);
   const profiles = useRowProfiles(session.profiles, rows);
   const agentPubkeys = useKnownAgentPubkeys(session, profiles);
-  // Each displayed level is projected alone, but a signed claim may name a
-  // request loaded at another level.
-  const loadedRows = useMemo(
-    () =>
-      snapshot.root ? [snapshot.root, ...snapshot.replies] : snapshot.replies,
-    [snapshot.root, snapshot.replies],
-  );
-  // One displayed level's activity grouping, shared by rendering and by the
-  // visit that must expand the group hiding its target: a public failure an
-  // activity run absorbs is hidden with that run.
-  const presentLevel = useCallback(
-    (parent: string | undefined) =>
-      activityPresentation(
-        tree.children.get(parent) ?? [],
-        activitySnapshot,
-        agentPubkeys,
-        parent ?? snapshot.root?.id,
-        // A failure with replies needs its own visible branch controls.
-        (failure) => !tree.children.get(failure.id)?.length,
-        loadedRows,
-      ),
-    [tree, activitySnapshot, agentPubkeys, snapshot.root?.id, loadedRows],
-  );
-  const [expandedActivity, setExpandedActivity] = useState<ReadonlySet<string>>(
-    new Set(),
-  );
-  // The request whose target's group this visit expanded. A cold exact visit
-  // verifies its target before the window arrives, so the group that absorbs
-  // it may form only on a later snapshot: the request stays pending until a
-  // group is found, and once expanded, the reader's collapse of it is final.
-  const activityVisit = useRef<unknown[]>([]);
-  useLayoutEffect(() => {
-    const request = [messageId, navigation?.signal, revealRequest];
-    if (
-      !messageId ||
-      request.every((part, index) => part === activityVisit.current[index]) ||
-      !snapshot.replies.some((row) => row.id === messageId)
-    )
-      return;
-    const group = [...tree.children.keys()]
-      .flatMap((parent) => presentLevel(parent).groups)
-      .find((group) => group.ids.includes(messageId));
-    const first = group?.ids[0];
-    if (!first) return;
-    activityVisit.current = request;
-    setExpandedActivity((current) => new Set([...current, first]));
-  }, [
-    messageId,
-    navigation?.signal,
-    revealRequest,
-    snapshot.replies,
-    tree,
-    presentLevel,
-  ]);
   const scroller = useRef<HTMLElement>(null);
   const positioned = useRef(false);
   const shown = useRef(active);
@@ -1095,6 +1062,13 @@ function ThreadMessages({
   const rootActivity = rootId ? rootPresentation.byRow.get(rootId) : undefined;
   // A stopped note may follow only a reply that is always shown: collapsed
   // branches do not mount their rows.
+  // Each displayed level is projected alone, but a signed claim may name a
+  // request loaded at another level.
+  const loadedRows = useMemo(
+    () =>
+      snapshot.root ? [snapshot.root, ...snapshot.replies] : snapshot.replies,
+    [snapshot.root, snapshot.replies],
+  );
   const rootReplies = useMemo(
     () =>
       activityPresentation(
@@ -1516,7 +1490,15 @@ function ThreadMessages({
     );
     if (parent === undefined && snapshot.root)
       requestRows.set(snapshot.root.id, snapshot.root);
-    const presentation = presentLevel(parent);
+    const presentation = activityPresentation(
+      chronologicalSiblings,
+      activitySnapshot,
+      agentPubkeys,
+      parent ?? rootId,
+      // A failure with replies needs its own visible branch controls.
+      (failure) => !tree.children.get(failure.id)?.length,
+      loadedRows,
+    );
     const groups = presentation.groups.filter((group) =>
       group.ids.every((id) => !tree.children.get(id)?.length),
     );
@@ -1524,9 +1506,7 @@ function ThreadMessages({
     const groupsByFirst = new Map(groups.map((group) => [group.ids[0], group]));
     const groupedIds = new Set(groups.flatMap((group) => group.ids));
     const hidden = new Set(
-      groups.flatMap((group) =>
-        expandedActivity.has(group.ids[0] ?? "") ? [] : group.ids,
-      ),
+      groups.flatMap((group) => (activityExpanded(group.ids) ? [] : group.ids)),
     );
     return siblings.map((row, index) => {
       const group = groupsByFirst.get(row.id);
@@ -1662,17 +1642,25 @@ function ThreadMessages({
                 profiles={profiles}
                 media={session.media}
                 layout="thread"
-                expanded={expandedActivity.has(group.ids[0] ?? "")}
+                expanded={activityExpanded(group.ids)}
                 onToggle={() => {
                   follow.current = false;
                   targetAnchor.current = undefined;
+                  const open = activityExpanded(group.ids);
                   setExpandedActivity((current) => {
                     const next = new Set(current);
                     const first = group.ids[0] ?? row.id;
-                    if (next.has(first)) next.delete(first);
+                    if (open) next.delete(first);
                     else next.add(first);
                     return next;
                   });
+                  if (open)
+                    setDisclosedTargets(
+                      (current) =>
+                        new Set(
+                          [...current].filter((id) => !group.ids.includes(id)),
+                        ),
+                    );
                 }}
               />
             </>
