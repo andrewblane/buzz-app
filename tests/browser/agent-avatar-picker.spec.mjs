@@ -41,7 +41,7 @@ test("saves an emoji over a transparent background in a squircle", async ({
     .click();
   await expect(artwork).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   // The card stays opaque and the tick contrasts with the checkerboard.
-  const { surface, tick, primary } = await artwork.evaluate((art) => {
+  const { surface, fill, tick, primary } = await artwork.evaluate((art) => {
     const alpha = (color) => {
       const context = document.createElement("canvas").getContext("2d");
       context.fillStyle = color;
@@ -57,11 +57,14 @@ test("saves an emoji over a transparent background in a squircle", async ({
     const swatch = document.querySelector('[data-color-swatch="transparent"]');
     return {
       surface: alpha(getComputedStyle(card).backgroundColor),
+      fill: getComputedStyle(swatch).backgroundImage,
       tick: getComputedStyle(swatch.querySelector("svg")).color,
       primary,
     };
   });
   expect(surface).toBe(255);
+  // The pointer still rests on the swatch, so this is its hover state.
+  expect(fill).toContain("conic-gradient");
   expect(tick).toBe(primary);
   await page.screenshot({
     path: test.info().outputPath("agent-avatar-transparent.png"),
