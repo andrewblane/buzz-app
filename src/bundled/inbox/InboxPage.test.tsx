@@ -119,16 +119,10 @@ it("Activity shows an unselected state until new message is requested", async ()
   const h = fixture({ sheet: true, withWriter: true });
   render(h.view);
   expect(await screen.findByText("No conversation selected")).toBeVisible();
-  expect(
-    screen.queryByRole("textbox", { name: "New message", exact: true }),
-  ).toBeNull();
-  fireEvent.click(
-    screen.getByRole("button", { name: "New message", exact: true }),
-  );
+  expect(screen.queryByRole("textbox", { name: "New message" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "New message" }));
   await waitFor(() =>
-    expect(
-      screen.getByRole("textbox", { name: "New message", exact: true }),
-    ).toBeVisible(),
+    expect(screen.getByRole("textbox", { name: "New message" })).toBeVisible(),
   );
   expect(screen.queryByText("No conversation selected")).toBeNull();
 });
@@ -5178,9 +5172,7 @@ it.each([
     );
     if (!mention) throw new Error("Missing fixture rows");
     // Explicitly open the Activity composer before moving focus into it.
-    fireEvent.click(
-      screen.getByRole("button", { name: "New message", exact: true }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "New message" }));
     const editor = await waitFor(() => {
       const input = screen.getByRole("textbox");
       expect(input).not.toHaveAttribute("aria-disabled", "true");
