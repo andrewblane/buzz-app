@@ -264,6 +264,8 @@ export function Welcome({
   const known = useRef<readonly string[] | undefined>(undefined);
   // Backup status belongs to this signed-in account and is cleared on the landing.
   const [backups, setBackups] = useState<readonly string[]>();
+  // The backup lookup failed, so a backup may hold the linked key.
+  const [backupUnknown, setBackupUnknown] = useState(false);
   // The community list that lets Join a community offer Create a community
   // (`checkCreation`), and whether its page is shown; both cleared on the landing.
   const [creatable, setCreatable] = useState<CommunityList>();
@@ -486,11 +488,14 @@ export function Welcome({
               ? `paused:${progress.at}`
               : progress.status;
   // A failed setup that nothing on its page continues: the link was refused
-  // for good, or the restart's sign-in reached another account. Only leaving
-  // is offered, which drops a held community.
+  // for good, the restart's sign-in reached another account, or the failure
+  // can't be tried again and offers no other way on. Only leaving is offered,
+  // which drops a held community.
   const stuck =
     progress.status === "failed" &&
-    (progress.bound || progress.error === WRONG_ACCOUNT);
+    (progress.bound ||
+      progress.error === WRONG_ACCOUNT ||
+      (!progress.retryable && !progress.unsupportedBackup));
   // The community held to join, named as the step after the page showing,
   // with the lookup's answer when a link kept it, else the host alone. The one
   // rule for where: the browser step in either state, then every setup page
@@ -604,6 +609,7 @@ export function Welcome({
   // The linked key is backed up: Welcome back offers a restore, and an
   // import of it skips another backup.
   const backedUp = !!linked && !!backups?.includes(linked);
+  const restorable = backedUp || (!!linked && backupUnknown);
   /**
    * Sign-in leads to the account check, which picks the lane: a linked key
    * pauses on Welcome back, otherwise setup goes on by itself. The backed-up-key
@@ -652,9 +658,10 @@ export function Welcome({
             },
           ]
         : []),
-      checkBackup(current, (keys) => {
+      checkBackup(current, (keys, failed) => {
         checkedBackups = keys;
         setBackups(keys);
+        setBackupUnknown(!!failed);
       }),
       {
         label: "Preparing your identity…",
@@ -900,8 +907,11 @@ export function Welcome({
         try {
           await currentAccount.backUp(pubkey);
         } catch (error) {
-          if (error instanceof BackupError && error.kind === "signed_out")
+          if (error instanceof BackupError && error.kind === "signed_out") {
             expired = true;
+            // Try again signs in first, so it can help here.
+            throw new BackupError("signed_out", true);
+          }
           throw error;
         }
       },
@@ -926,6 +936,7 @@ export function Welcome({
     setLinked(undefined);
     setOwned(undefined);
     setBackups(undefined);
+    setBackupUnknown(false);
     setCreatable(undefined);
     setCreating(false);
     reads.current = undefined;
@@ -1219,10 +1230,11 @@ export function Welcome({
             <WelcomeBack
               email={auth.account?.email}
               npub={npubEncode(linked)}
+              onDevice={viewer === linked}
               onRestore={
                 viewer === linked
                   ? () => void setup.start(finish())
-                  : backedUp
+                  : restorable
                     ? () => {
                         void current.recovery.beginRecovery();
                         pause("key-restore");
@@ -1277,7 +1289,9 @@ export function Welcome({
           <KeyLost
             owned={owned}
             next={nextCommunity}
-            onBack={() => back("welcome-back", backedUp ? "restore" : "import")}
+            onBack={() =>
+              back("welcome-back", restorable ? "restore" : "import")
+            }
             onStartOver={() => {
               setLinked(undefined);
               setOwned(undefined);
@@ -1755,8 +1769,8 @@ function npubOf(state: ReturnType<Identity["snapshot"]>) {
 /**
  * What a failed link or unlink leaves undone: the key is not the account's
  * (and, after an unlink, the old key stays bound), and with it the backup,
- * which needs a linked key. The page has no way past it but Try again, or
- * leaving through Use a different account.
+ * which needs a linked key. The page has no way past it but Try again, where
+ * another attempt can help, or leaving through Use a different account.
  */
 const UNLINKED_NOTE =
   "Your key is saved on this device, but it isn’t linked to your account or backed up yet.";
