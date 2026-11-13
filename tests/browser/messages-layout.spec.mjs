@@ -208,7 +208,7 @@ test("the combined rail pins destinations and opens centered Messages", async ({
   await sortMessages.click();
   await page.getByRole("menuitemradio", { name: "All", exact: true }).click();
 
-  await rail.getByRole("button", { name: "Open Team", exact: true }).click();
+  await rail.getByRole("button", { name: "Team", exact: true }).click();
   const index = page.getByRole("region", { name: "Team", exact: true });
   await expect(
     index.getByRole("heading", { name: "Team", level: 2 }),
@@ -386,7 +386,7 @@ test("the combined rail pins destinations and opens centered Messages", async ({
     recentAlpha.getByRole("img", { name: "Unread", exact: true }),
   ).toHaveCount(0);
 
-  await rail.getByRole("button", { name: "Open Team", exact: true }).click();
+  await rail.getByRole("button", { name: "Team", exact: true }).click();
   await index.getByRole("tab", { name: "Direct", exact: true }).click();
   await expect(
     index.getByRole("heading", { name: "Direct", level: 2 }),
@@ -829,7 +829,7 @@ test("rail sections and rows can be arranged and a drop creates a named section"
     .getByRole("button", { name: "Beta", exact: true })
     .click({ button: "right" });
   await page.getByRole("menuitem", { name: "Team", exact: true }).click();
-  await messages.getByRole("button", { name: /^Open Team$/i }).click();
+  await messages.getByRole("button", { name: /^Team$/i }).click();
   const messagesPage = page.getByRole("region", {
     name: "Team",
     exact: true,
@@ -857,7 +857,7 @@ test("rail sections and rows can be arranged and a drop creates a named section"
   await expect
     .poll(order)
     .toEqual(["pins", "navigation", "messages", "agents", "solo"]);
-  await messages.getByRole("button", { name: /^Open Team$/i }).click();
+  await messages.getByRole("button", { name: /^Team$/i }).click();
   const fullBeta = messagesPage.locator(
     '[data-activity-row="beta"] [data-conversation-row]',
   );
@@ -873,7 +873,7 @@ test("rail sections and rows can be arranged and a drop creates a named section"
       .getByRole("article", { name: "Conversation", exact: true })
       .getByRole("textbox"),
   ).toBeVisible();
-  await messages.getByRole("button", { name: /^Open Team$/i }).click();
+  await messages.getByRole("button", { name: /^Team$/i }).click();
   await expect(fullBeta.getByRole("img", { name: "Unread" })).toHaveCount(0);
   await fullBeta.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
@@ -997,7 +997,7 @@ test.describe("Solo rail", () => {
       messages.getByRole("button", { name: "Alpha", exact: true }),
     ).toHaveCount(0);
     await messages
-      .getByRole("button", { name: "Open Team", exact: true })
+      .getByRole("button", { name: "Team", exact: true })
       .click();
     const messagePage = page.getByRole("region", {
       name: "Team",
@@ -1295,7 +1295,7 @@ test("Team's list aligns its view filters with its rows", async ({
     });
     expect(insets.right).toBeCloseTo(insets.left, 0);
   };
-  await rail.getByRole("button", { name: "Open Team", exact: true }).click();
+  await rail.getByRole("button", { name: "Team", exact: true }).click();
   const messages = page.getByRole("region", { name: "Team", exact: true });
   const previewText =
     "Messages preview stays on one line even when this message is long. "
@@ -1459,7 +1459,7 @@ test.describe("group DM pins", () => {
     await page.reload();
     await expect(avatars.locator('[title="Alice Fixture"]')).toHaveCount(1);
     await expect(avatars.locator('[title="Bob Fixture"]')).toHaveCount(1);
-    await rail.getByRole("button", { name: "Open Team", exact: true }).click();
+    await rail.getByRole("button", { name: "Team", exact: true }).click();
     await pin.click();
     await expect(
       page.locator('[data-channel-timeline="dm-group"]'),

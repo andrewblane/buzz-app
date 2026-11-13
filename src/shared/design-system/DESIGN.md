@@ -1849,7 +1849,7 @@ Values scale with the host interface-size preference.
   and heading roles use unitless 1.1 leading so wrapped headings have breathing room.
 - Regular (400) is for reading and form labels; Medium (500) is for actions and
   structure. Existing `font-semibold` consumers resolve to Medium.
-  Unread sidebar conversation labels, including Open Team/Solo, use the dedicated
+  Unread sidebar conversation labels, including Open Solo, use the dedicated
   `--type-weight-navigation-unread` (600) to distinguish unread rows at a glance.
   Message sender names use `--type-weight-message-sender` (600).
 - Mono uses `detail/body-xsmall` at 12/16 with 0.03em tracking.

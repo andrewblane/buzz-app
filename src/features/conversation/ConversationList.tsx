@@ -40,6 +40,7 @@ import { AvatarStack } from "../../shared/design-system/ui/AvatarStack";
 import { ConversationRow } from "../../features/messages/ConversationRow";
 import {
   Filter2Icon,
+  HashIcon,
   LockIcon,
   MessageReplyIcon,
   UsersIcon,
@@ -81,7 +82,14 @@ import { ReactionRow } from "./ReactionRow";
 import { useToastNotification } from "../../shared/design-system/ui/Toast";
 
 export type ActivityView = {
-  filter: "all" | "threads" | "direct" | "working" | "waiting" | "reactions";
+  filter:
+    | "all"
+    | "threads"
+    | "direct"
+    | "channels"
+    | "working"
+    | "waiting"
+    | "reactions";
   unread: boolean;
   sort?: "recent" | "alpha";
 };
@@ -104,6 +112,11 @@ export const conversationViews = [
     icon: <UsersIcon size={20} aria-hidden="true" />,
   },
   {
+    value: "channels",
+    label: "Channels",
+    icon: <HashIcon size={20} aria-hidden="true" />,
+  },
+  {
     value: "working",
     label: "Working",
     icon: <CircleNotchIcon size={20} aria-hidden="true" />,
@@ -123,8 +136,9 @@ export const conversationViews = [
 const agentView = (filter: View["filter"]) =>
   filter === "working" || filter === "waiting";
 const viewsFor = (agentViews: boolean) =>
+  // Solo lists no channels.
   agentViews
-    ? conversationViews
+    ? conversationViews.filter((item) => item.value !== "channels")
     : conversationViews.filter((item) => !agentView(item.value));
 /** The view a list without the agent views shows for a saved one. */
 export const withoutAgentViews = (view: ActivityView): ActivityView =>
@@ -138,6 +152,7 @@ function readSavedView(scope: string): View {
     filter:
       saved?.filter === "threads" ||
       saved?.filter === "direct" ||
+      saved?.filter === "channels" ||
       saved?.filter === "working" ||
       saved?.filter === "waiting" ||
       saved?.filter === "reactions"
@@ -199,7 +214,8 @@ export function activityViewFor(
     !kind ||
     view.filter === "all" ||
     (view.filter === "direct" && kind !== "team") ||
-    (view.filter === "threads" && kind === "team") ||
+    ((view.filter === "threads" || view.filter === "channels") &&
+      kind === "team") ||
     ((view.filter === "working" || view.filter === "waiting") &&
       kind === "solo")
   )
@@ -558,6 +574,7 @@ export function ConversationList({
           (!includeChannel || includeChannel(channel)) &&
           kindOf(channel) !== undefined &&
           (!direct || kindOf(channel) !== "team") &&
+          (filter !== "channels" || kindOf(channel) === "team") &&
           (!agentView || channel.channelType === "solo"),
       );
   const { latest: fetched, observe: previewRef } = useVisibleChannelPreviews(

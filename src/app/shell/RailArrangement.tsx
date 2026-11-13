@@ -83,8 +83,10 @@ type Arrangement = {
   onTogglePin(entry: RailEntry, pinned: boolean): void;
 };
 const ArrangementContext = createContext<Arrangement | null>(null);
-/** Whether rows sit in a section's full list, where they do not drag. */
+/** Whether rows sit in a section's full list, beside the cards. */
 const ListedContext = createContext(false);
+/** Whether the cards' arrangement already carries this list's drags. */
+const HostedContext = createContext(false);
 const touchOptions = { activationConstraint: { delay: 250, tolerance: 5 } };
 const pointerOptions = { activationConstraint: { distance: 6 } };
 const collisions: CollisionDetection = (args) =>
@@ -109,6 +111,7 @@ export function RailArrangement({
   selectedSection,
   openSection,
   compact = false,
+  list,
 }: {
   partition: string;
   sections: Group[];
@@ -130,7 +133,10 @@ export function RailArrangement({
   selectedSection?: string | undefined;
   openSection(id: string): void;
   compact?: boolean;
+  /** The open section's list: its rows drag onto these cards. */
+  list?: ReactNode;
 }) {
+  const hosted = useContext(HostedContext);
   const { layout, move, reorder, create, remove } = useRailLayout(partition);
   const reducedMotion = useReducedMotion();
   const animateDrop = useRef(false);
@@ -190,6 +196,26 @@ export function RailArrangement({
     isPinned,
     onTogglePin,
   };
+  // A hosted list is one section's page inside the cards' drag context.
+  if (hosted)
+    return (
+      <ArrangementContext value={value}>
+        <ListedContext value>
+          {groups.find((group) => group.id === pageSection)?.content ?? (
+            <EmptyState
+              icon={<ChatCircleIcon />}
+              title="Section unavailable"
+              description="This sidebar section may have been removed."
+            />
+          )}
+          {error && (
+            <p role="alert" className="text-caption text-secondary">
+              {error}
+            </p>
+          )}
+        </ListedContext>
+      </ArrangementContext>
+    );
   return (
     <ArrangementContext value={value}>
       <ListedContext value={!!pageSection}>
@@ -312,6 +338,11 @@ export function RailArrangement({
               </div>
             </>
           )}
+          {list && (
+            <HostedContext value>
+              <ArrangementContext value={null}>{list}</ArrangementContext>
+            </HostedContext>
+          )}
           {createPortal(
             <DragOverlay dropAnimation={null}>
               {dragging && (
@@ -370,6 +401,7 @@ export function RailGroup({
   unlimited = false,
   avatarGrid = id === "pins",
   leadingEntryIds = [],
+  views,
   trailingEntryId,
   sortEntries,
   pageContent,
@@ -385,19 +417,26 @@ export function RailGroup({
   unlimited?: boolean;
   avatarGrid?: boolean;
   leadingEntryIds?: readonly string[];
+  /** Rows that open this section's views, under its leading entries. */
+  views?: ReactNode;
   trailingEntryId?: string;
   sortEntries?: (a: RailEntry, b: RailEntry) => number;
   pageContent?: ReactNode;
   renderOpen?: (hidden: readonly RailEntry[], open: () => void) => ReactNode;
 }) {
   const arrangement = useContext(ArrangementContext);
+  // A section's page shares the cards' drag context: only the card is a
+  // target or moves.
+  const listed = useContext(ListedContext);
   const { active } = useDndContext();
   const drop = useDroppable({
-    id,
+    id: listed ? `listed:${id}` : id,
+    disabled: listed,
     resizeObserverConfig: { updateMeasurementsFor: [] },
   });
   const drag = useDraggable({
-    id: `section:${id}`,
+    id: listed ? `listed:section:${id}` : `section:${id}`,
+    disabled: listed,
     data: { section: id, label: title },
   });
   const grabber = useRef<HTMLSpanElement>(null);
@@ -549,6 +588,7 @@ export function RailGroup({
         action={action && <span data-rail-card-actions="">{action}</span>}
       >
         {leading}
+        {views}
         {rowsLabel ? (
           <ul aria-label={rowsLabel} className={styles.rows}>
             {shown.map((row) => (
@@ -651,8 +691,8 @@ export function RailDestinationRow({
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement>();
   const drag = useDraggable({
-    id: `row:${section}:${entry.id}`,
-    disabled: listed,
+    // A conversation can sit in a card and in the open list at once.
+    id: `row:${listed ? "list:" : ""}${section}:${entry.id}`,
     data: { entry, source: section, label: entry.label },
   });
   return (

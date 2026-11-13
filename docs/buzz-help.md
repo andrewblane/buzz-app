@@ -874,6 +874,7 @@ and are asked to sign in again in Buzz.
   closing the window. These tab shortcuts do nothing while a modal is open.
 - **Conversation list filters**: All combines chats, DMs and channels by recent
   activity. Threads shows channel threads; Direct combines chats, DMs and mentions.
+  In Team, Channels shows channels only.
   Reactions lists reactions to your messages. The Solo list adds two views:
   Working shows Solo chats with an active agent; Waiting shows Solo chats where
   the other side spoke last and no agent is working. Scroll the filter buttons
@@ -896,12 +897,11 @@ and are asked to sign in again in Buzz.
   The **→ Open Plugins** row at the bottom of the Plugins card opens the plugin catalog.
   Each object card shows up to four rows, then **→ Open [section name]**;
   **Open [section name]** opens a dedicated list in the main content area without expanding
-  the card. Back and Forward return between the list and its items. Pins remains uncapped. The Team card shows the first four
-  conversations in the full Team list, using the same filtering, unread choice,
-  and ordering. Use the filter/sort button beside **+** (shown on hover or keyboard
-  focus) for **All**, **Threads**, **Direct**, and **Reactions**, or
-  **Recent activity** and **A–Z**. Changes in either Team view update both;
-  choices are saved locally for this account and community. Bestie conversations
+  the card. Back and Forward return between the list and its items. Pins remains uncapped. The Team card lists
+  **Activity**, **Threads**, **DMs**, and **Channels**. Activity opens the Activity
+  page; the other three open the Team list on that view. Each row shows how many
+  of its conversations are unread, and no number when all are read. The view
+  you choose is saved locally for this account and community. Bestie conversations
   follow normal ordering; the Bestie plugin also appears under Plugins.
   **All** keeps Solo chats in the Solo collection; the Direct view can
   include them.
@@ -930,6 +930,8 @@ and are asked to sign in again in Buzz.
   Hover a card to reveal its six-dot grabber at the top center. Drag the grabber
   or section title to reorder the entire rail, including above Plugins,
   or drag a row into another section. Activity and plugin destinations can move too.
+  Rows in the open Team or Solo list drag the same way: drop one on a sidebar
+  card, or on **New section**, to move that conversation there.
   The accent marker previews the section’s destination; sections settle into place
   after a drop. Reduced motion skips the movement.
   Choose **New section** below the sidebar cards to name and create an empty section.
@@ -1010,11 +1012,12 @@ and are asked to sign in again in Buzz.
   grabbers brighten only when the pointer is close and appear immediately under it.
   Hovering elsewhere on the card keeps them hidden. Keyboard focus reveals controls
   immediately, and touch devices show them without waiting.
-- **Team card**: Activity and Drafts & sent appear above up to four recent
-  conversations. **Open Team** opens the full conversation list.
+- **Team card**: Activity, Threads, DMs, and Channels each show an unread count.
+  Drafts & sent and anything you move into Team appear below them. The **Team**
+  heading opens the full conversation list.
   People and one-to-one DM avatars in sidebar cards show online, away, or offline
   presence when known; channels and group chats do not show a single presence dot.
-  **Open Team** and **Open Solo** show an unread dot and unread text styling when
+  **Open Solo** shows an unread dot and unread text styling when
   conversations hidden beyond the card’s four visible rows have unread messages.
 - **Sidebar sections**: in **All**, use the arrow beside **Solo** or **Team** to
   collapse either section independently. Buzz remembers the collapsed sections

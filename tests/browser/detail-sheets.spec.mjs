@@ -175,7 +175,7 @@ test("Team's list opens linked conversations and threads beside the source", asy
   await page.setViewportSize({ width: 1920, height: 1000 });
   await page.goto(app.origin);
   const rail = page.getByRole("navigation", { name: "Apps", exact: true });
-  await rail.getByRole("button", { name: "Open Team", exact: true }).click();
+  await rail.getByRole("button", { name: "Team", exact: true }).click();
   const team = page.getByRole("region", { name: "Team", exact: true });
   await team
     .locator('[data-activity-row="alpha"] [data-conversation-row]')

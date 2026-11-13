@@ -528,7 +528,7 @@ test("Activity sheets use a light window-wide scrim above the rail and header", 
 }, testInfo) => {
   await page.goto(app.origin);
   const rail = page.getByRole("navigation", { name: "Apps", exact: true });
-  await rail.getByRole("button", { name: "Open Team", exact: true }).click();
+  await rail.getByRole("button", { name: "Team", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "Team", exact: true }),
   ).toBeVisible();

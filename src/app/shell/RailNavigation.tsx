@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ReactElement,
   type ReactNode,
 } from "react";
 import { createPortal, flushSync } from "react-dom";
@@ -39,10 +40,13 @@ import { Tooltip } from "../../shared/design-system/ui/Tooltip";
 import {
   ArrowRightIcon,
   ChatCircleIcon,
+  HashIcon,
+  MessageReplyIcon,
   PinIcon,
   PlusIcon,
   StorefrontIcon,
   UserIcon,
+  UsersIcon,
 } from "../../shared/design-system/icons";
 import { useRailLayout } from "./rail-layout";
 import { RailArrangement, RailGroup } from "./RailArrangement";
@@ -58,10 +62,10 @@ import {
   ConversationList,
   CollectionCreationAction,
   CollectionFilters,
-  ConversationFiltersMenu,
   includeMessagesChannel,
   useActivityView,
   withoutAgentViews,
+  type ActivityView,
 } from "../../features/conversation/ConversationList";
 
 export function RailNavigation({
@@ -454,7 +458,7 @@ export function RailNavigation({
     .slice(0, 60);
 
   /** The cards, or one section's full list for the shell's list column. */
-  const view = (pageSection: string | undefined) => {
+  const view = (pageSection: string | undefined, list?: ReactNode) => {
     const navigator = pageSection ? listNavigator : directNavigator;
     const row = (entry: RailEntry, avatarOnly = false, feed = false) => {
       const target = entry.target;
@@ -578,69 +582,6 @@ export function RailNavigation({
     const teamPages = teamPageIds.flatMap((key) =>
       pages.filter((page) => page.key === key),
     );
-    const sortMessages = (
-      a: RailEntry,
-      b: RailEntry,
-      order: ReadonlyMap<string, number>,
-    ) =>
-      (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
-        (order.get(b.id) ?? Number.MAX_SAFE_INTEGER) ||
-      a.label.localeCompare(b.label) ||
-      a.id.localeCompare(b.id);
-    const messageCard = (
-      items: readonly RailEntry[],
-      order: ReadonlyMap<string, number>,
-    ) => (
-      <RailGroup
-        id="messages"
-        title="Team"
-        renderOpen={(hidden, open) => (
-          <RailOpenConversations
-            session={session}
-            channels={channels}
-            hidden={hidden}
-            label="Open Team"
-            onClick={open}
-          />
-        )}
-        rowsLabel="Recent conversations"
-        rows={[
-          ...teamPages.flatMap(pageRow),
-          ...items.map((entry) => sourceRow(entry, "messages")),
-        ]}
-        leadingEntryIds={teamPageIds}
-        pageContent={sectionPage}
-        sortEntries={(a, b) => sortMessages(a, b, order)}
-        action={
-          <>
-            <ConversationFiltersMenu
-              label="Filter and sort Team card"
-              variant={pageSection ? "glass" : "ghost"}
-              view={messageView}
-              onChange={setMessageView}
-              sort
-              views
-            />
-            {creationAction}
-          </>
-        }
-        footer={
-          <NavigationItem
-            label="Open Team"
-            data-rail-view-more=""
-            aria-label="Open Team"
-            icon={<ArrowRightIcon size={18} />}
-            // Team's own address only: a draft on this page is not Team.
-            selected={routedSection(navigation.entry.target) === "messages"}
-            onClick={() => onSelect("buzz.channels/channels")}
-          />
-        }
-      >
-        {!items.length && (
-          <p className={styles.note}>No matching conversations.</p>
-        )}
-      </RailGroup>
-    );
     let sectionPage: ReactNode;
     if (pageSection === "messages" || pageSection === "solo") {
       const membership = railSections(
@@ -669,6 +610,95 @@ export function RailNavigation({
         />
       );
     }
+    /** Unread conversations in one Team view; nothing when all are read. */
+    const teamCount = (filter: ActivityView["filter"]) => {
+      const counted = { ...messageView, filter, unread: true };
+      return (
+        <ConversationList
+          session={session}
+          navigator={navigator}
+          scope={scope}
+          target={navigation.entry.target}
+          view={counted}
+          includeChannel={(channel) => includeMessagesChannel(channel, counted)}
+          renderEntries={(items) =>
+            items.length ? (
+              <>
+                {items.length > 99 ? "99+" : items.length}
+                <span className="sr-only"> unread</span>
+              </>
+            ) : null
+          }
+        />
+      );
+    };
+    const activityPage = teamPages.find(
+      (page) => page.key === "buzz.inbox/inbox",
+    );
+    const activityEntry = activityPage && byId.get(activityPage.key);
+    const teamViews: {
+      filter: ActivityView["filter"];
+      label: string;
+      icon: ReactElement;
+    }[] = [
+      {
+        filter: "threads",
+        label: "Threads",
+        icon: <MessageReplyIcon size={18} />,
+      },
+      { filter: "direct", label: "DMs", icon: <UsersIcon size={18} /> },
+      { filter: "channels", label: "Channels", icon: <HashIcon size={18} /> },
+    ];
+    const teamOpen = routedSection(navigation.entry.target) === "messages";
+    const messageCard = (
+      <RailGroup
+        id="messages"
+        title="Team"
+        rows={[
+          ...(activityEntry
+            ? [
+                {
+                  entry: activityEntry,
+                  content: (
+                    <NavigationItem
+                      label="Activity"
+                      icon={<ChatCircleIcon size={18} />}
+                      trailing={teamCount("all")}
+                      selected={selected === "buzz.inbox/inbox"}
+                      onClick={() => onSelect("buzz.inbox/inbox")}
+                    />
+                  ),
+                },
+              ]
+            : []),
+          ...teamPages.filter((page) => page !== activityPage).flatMap(pageRow),
+        ]}
+        leadingEntryIds={["buzz.inbox/inbox"]}
+        views={teamViews.map((item) => (
+          <NavigationItem
+            key={item.filter}
+            label={item.label}
+            icon={item.icon}
+            trailing={teamCount(item.filter)}
+            data-rail-team-view={item.filter}
+            selected={teamOpen && messageView.filter === item.filter}
+            onClick={() => {
+              setMessageView({ ...messageView, filter: item.filter });
+              void directNavigator.open(
+                sidebarSectionTarget(scope, "messages"),
+              );
+            }}
+          />
+        ))}
+        pageContent={sectionPage}
+        // Drafts and sent stays under the views, ahead of what a person adds.
+        sortEntries={(a, b) =>
+          Number(b.id === "buzz.drafts-and-sent/drafts-sent") -
+          Number(a.id === "buzz.drafts-and-sent/drafts-sent")
+        }
+        action={creationAction}
+      />
+    );
     return (
       <RailArrangement
         key={partition}
@@ -691,6 +721,7 @@ export function RailNavigation({
           />
         )}
         pageSection={pageSection}
+        list={list}
         compact={!pageSection && compact}
         selectedSection={activeDockSection}
         openSection={(id) => {
@@ -862,40 +893,7 @@ export function RailNavigation({
             id: "messages",
             title: "Team",
             icon: <ChatCircleIcon size={22} />,
-            content: (
-              <ConversationList
-                session={session}
-                navigator={navigator}
-                scope={scope}
-                target={navigation.entry.target}
-                view={messageView}
-                includeChannel={(channel) =>
-                  includeMessagesChannel(channel, messageView)
-                }
-                renderEntries={(items) => {
-                  const filtered = items.flatMap((item) => {
-                    const source = byId.get(`channel:${item.target.channelId}`);
-                    return source
-                      ? [
-                          {
-                            ...source,
-                            id: item.key.startsWith("e:")
-                              ? `activity:${item.key}`
-                              : source.id,
-                            label: item.label,
-                            target: item.target,
-                            at: item.at,
-                          },
-                        ]
-                      : [];
-                  });
-                  return messageCard(
-                    filtered,
-                    new Map(filtered.map((entry, index) => [entry.id, index])),
-                  );
-                }}
-              />
-            ),
+            content: messageCard,
           },
           {
             id: "solo",
@@ -975,36 +973,38 @@ export function RailNavigation({
   };
   return (
     <>
-      {view(undefined)}
-      {listColumn?.slot &&
-        createPortal(
-          <CollectionCreationAction
-            value={
-              <IconButton
-                aria-label="New message"
-                title="New message"
-                icon={<PlusIcon size={20} aria-hidden="true" />}
-                onClick={() =>
-                  void listNavigator.open(
-                    listColumn.section === "solo"
-                      ? soloDraftTarget(session.scope)
-                      : {
-                          version: 1,
-                          kind: "page",
-                          pluginId: "buzz.channels",
-                          pageId: "channels",
-                          scope,
-                          route: { version: 1, params: "compose" },
-                        },
-                  )
-                }
-              />
-            }
-          >
-            {view(listColumn.section)}
-          </CollectionCreationAction>,
-          listColumn.slot,
-        )}
+      {view(
+        undefined,
+        listColumn?.slot &&
+          createPortal(
+            <CollectionCreationAction
+              value={
+                <IconButton
+                  aria-label="New message"
+                  title="New message"
+                  icon={<PlusIcon size={20} aria-hidden="true" />}
+                  onClick={() =>
+                    void listNavigator.open(
+                      listColumn.section === "solo"
+                        ? soloDraftTarget(session.scope)
+                        : {
+                            version: 1,
+                            kind: "page",
+                            pluginId: "buzz.channels",
+                            pageId: "channels",
+                            scope,
+                            route: { version: 1, params: "compose" },
+                          },
+                    )
+                  }
+                />
+              }
+            >
+              {view(listColumn.section)}
+            </CollectionCreationAction>,
+            listColumn.slot,
+          ),
+      )}
 
       {error && !picker && (
         <p role="alert" className={styles.note}>

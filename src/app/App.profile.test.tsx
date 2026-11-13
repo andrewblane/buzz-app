@@ -472,6 +472,19 @@ it.each([
     const user = await setup(false, write);
     try {
       const rail = await screen.findByRole("navigation", { name: "Apps" });
+      // The Team card lists views, not channels: a pin keeps this one's row
+      // in the sidebar.
+      const scope = { viewer, communityOrigin: origin };
+      act(() => {
+        writeView(`${origin}:${viewer}`, "navigation-pins:v1", [
+          {
+            id: `channel:${channelId}`,
+            label: "Planning",
+            kind: "channel",
+            target: { version: 1, kind: "conversation", channelId, scope },
+          },
+        ]);
+      });
       const row = await within(rail).findByRole("button", { name: "Planning" });
       expect(row.closest("[data-rail-row]")).toHaveAttribute(
         "data-rail-row",
