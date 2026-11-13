@@ -57,6 +57,25 @@ test("details grow out of the composer, which stays usable above them", async ({
   await expect(reply).toHaveText("Thanks");
 });
 
+// Base UI's initial focus and the header's focus tooltips only meet in a real
+// engine: opening from the keyboard must leave one Escape closing the sheet.
+// Every sheet without its own composer, reader or not, focuses itself.
+test("a details sheet opened from the keyboard closes with one Escape", async ({
+  page,
+  app,
+}) => {
+  await open(page, app);
+  const more = page.getByRole("button", { name: "Show more" });
+  await more.focus();
+  await page.keyboard.press("Enter");
+  const sheet = page.locator("[data-details-sheet-surface]");
+  await expect(sheet).toBeVisible();
+  await expect(sheet).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+  await expect(more).toBeFocused();
+});
+
 // Real hit testing proves the replacement composer is above the scrim, while
 // the channel draft remains mounted and cannot receive the thread reply.
 test("thread sheet keeps its reply composer usable and restores the channel draft", async ({

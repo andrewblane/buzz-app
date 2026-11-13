@@ -479,9 +479,11 @@ export function DetailsSheet({
             data-reader-only={readerOnly || undefined}
             data-height={height}
             style={style}
-            // A reader takes focus itself: its first header action would show
-            // a focus tooltip that the first Escape closes instead of the sheet.
-            initialFocus={readerOnly ? popup : undefined}
+            // A sheet without its own composer takes focus itself: its first
+            // header action would show a focus tooltip that the first Escape
+            // closes instead of the sheet. Thread and media sheets keep their
+            // own focus placement.
+            initialFocus={containsComposer ? undefined : popup}
             finalFocus={promoted ? false : returnFocus}
           >
             <div className={styles.content}>
