@@ -75,7 +75,8 @@ type State = {
   visits?: Record<string, VisitSelection> | undefined;
   /** Content visits remain identifiable after old layout snapshots are evicted. */
   detailVisits?:
-    Record<string, { channelId: string; target: string }> | undefined;
+    | Record<string, { channelId: string; target: string }>
+    | undefined;
   /** The current visit's selection was already captured as it was left. */
   left?: boolean;
   paneOpen: boolean;
