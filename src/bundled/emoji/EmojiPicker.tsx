@@ -53,7 +53,7 @@ export function EmojiPicker({
   externalTrigger,
   gifShortcut,
 }: {
-  session: ComposerSession;
+  session: Pick<ComposerSession, "emoji" | "media">;
   gifShortcut?: GifShortcut;
   scope: string;
   disabled: boolean;

@@ -9,6 +9,8 @@ import type {
   SidebarSectionRemovalMutator,
   SidebarSectionRenameMutator,
   SidebarSectionCreationMutator,
+  SidebarSectionDraft,
+  SidebarSectionEdit,
   SidebarStarMutator,
   SidebarMuteMutator,
   SidebarPreferences,
@@ -129,7 +131,7 @@ export function createSidebarPreferencesStore({
   let readFailure: string | undefined;
   let readTransient = false;
   // Retain writer routing through failed reads and cache clears until reconciled.
-  let creationUncertain = false;
+  let creationUncertain: SidebarSectionDraft | undefined;
   const writable = () =>
     !closed &&
     !!confirmed &&
@@ -170,6 +172,7 @@ export function createSidebarPreferencesStore({
           const section = {
             id: created.id,
             name: created.name.trim(),
+            ...(created.icon === undefined ? {} : { icon: created.icon }),
             order:
               created.position === "first"
                 ? Math.min(0, ...sections.map(({ order }) => order)) - 1
@@ -385,9 +388,23 @@ export function createSidebarPreferencesStore({
               return;
             }
             if (invalidation !== refreshInvalidation) continue;
+            if (creationUncertain) {
+              const found = data.sections.find(
+                ({ id }) => id === creationUncertain?.id,
+              );
+              if (
+                found &&
+                (found.name !== creationUncertain.name.trim() ||
+                  (creationUncertain.icon !== undefined &&
+                    found.icon !== creationUncertain.icon))
+              )
+                throw new Error(
+                  "The new section changed; reload and try again",
+                );
+            }
             if (authoritative) reconciled = refreshInvalidation;
             readFailure = undefined;
-            creationUncertain = false;
+            creationUncertain = undefined;
             confirmed = data;
             project();
             return;
@@ -711,11 +728,12 @@ export function createSidebarPreferencesStore({
       get sectionRenameWritable() {
         return renameWritable();
       },
-      renameSection(sectionId: string, name: string) {
+      renameSection(sectionId: string, edit: string | SidebarSectionEdit) {
         if (!renameWritable() || !renameSection)
-          return Promise.reject(new Error("Section rename is unavailable"));
-        return writeGroups("Section rename is unavailable", (signal) =>
-          renameSection({ sectionId, name }, signal),
+          return Promise.reject(new Error("Section edit is unavailable"));
+        const changes = typeof edit === "string" ? { name: edit } : edit;
+        return writeGroups("Section edit is unavailable", (signal) =>
+          renameSection({ sectionId, ...changes }, signal),
         );
       },
       get sectionCreationWritable() {
@@ -726,17 +744,15 @@ export function createSidebarPreferencesStore({
           !!(createSection || write)
         );
       },
-      createSection(section: Readonly<{ id: string; name: string }>) {
+      createSection(section: SidebarSectionDraft) {
         const failure = groupsOnly
           ? "Workspaces are unavailable"
           : "Section creation is unavailable";
         const create =
           createSection ??
           (write
-            ? (
-                section: Readonly<{ id: string; name: string }>,
-                signal: AbortSignal,
-              ) => write({ createSection: section }, signal)
+            ? (section: SidebarSectionDraft, signal: AbortSignal) =>
+                write({ createSection: section }, signal)
             : undefined);
         if (!writable() || creationUncertain || snapshot.cached || !create)
           return Promise.reject(new Error(failure));
@@ -749,7 +765,7 @@ export function createSidebarPreferencesStore({
               // joining a read that began before publication.
               active?.controller.abort();
               active = undefined;
-              creationUncertain = true;
+              creationUncertain = section;
               await refresh();
             }
             throw error;

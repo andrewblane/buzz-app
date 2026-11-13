@@ -12,6 +12,38 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { SidebarSection } from "./SidebarSection";
+import { createRelaySession } from "../../features/relay/session";
+
+vi.mock("../emoji/EmojiPicker", () => ({
+  EmojiPicker: ({
+    insert,
+    externalTrigger,
+  }: {
+    insert: (icon: string) => unknown;
+    externalTrigger: {
+      id: string;
+      close: () => void;
+      finalFocus: () => HTMLButtonElement | null | false;
+    };
+  }) => (
+    <div id={externalTrigger.id} role="dialog" aria-label="Emoji picker">
+      {["📚", ":books:"].map((icon) => (
+        <button
+          key={icon}
+          type="button"
+          onClick={() => {
+            insert(icon);
+            externalTrigger.close();
+            const target = externalTrigger.finalFocus();
+            if (target) target.focus();
+          }}
+        >
+          {icon}
+        </button>
+      ))}
+    </div>
+  ),
+}));
 
 afterEach(cleanup);
 
@@ -481,8 +513,10 @@ it("keeps hidden-channel navigation available when filter choices are read-only"
   expect(change).not.toHaveBeenCalled();
 });
 
-it("renames a saved section from its menu and keeps the dialog open on failure", async () => {
+it("edits a saved section from its menu and keeps the dialog open on failure", async () => {
   const user = userEvent.setup();
+  const owner = createRelaySession(null);
+  const session = owner.session;
   const rename = vi
     .fn()
     .mockRejectedValueOnce(new Error("offline"))
@@ -491,6 +525,8 @@ it("renames a saved section from its menu and keeps the dialog open on failure",
     <SidebarSection
       sectionKey="group:work"
       title="Work"
+      session={session}
+      icon="🏢"
       open
       onToggle={() => {}}
       onRename={rename}
@@ -501,19 +537,82 @@ it("renames a saved section from its menu and keeps the dialog open on failure",
   const trigger = screen.getByRole("button", { name: "More actions for Work" });
   await user.click(trigger);
   await user.click(
-    await screen.findByRole("menuitem", { name: "Rename section" }),
+    await screen.findByRole("menuitem", { name: "Edit section" }),
   );
-  const dialog = await screen.findByRole("dialog", { name: "Rename section" });
+  const dialog = await screen.findByRole("dialog", { name: "Edit section" });
+  expect(
+    within(dialog).getByRole("button", { name: "Change section emoji" }),
+  ).toHaveAttribute("aria-description", "Selected section emoji: 🏢");
   const input = within(dialog).getByRole("textbox", { name: "Section name" });
   expect(input).toHaveValue("Work");
   await user.clear(input);
   await user.type(input, " Projects ");
-  await user.click(within(dialog).getByRole("button", { name: "Rename" }));
+  await user.click(within(dialog).getByRole("button", { name: "Save" }));
   expect(await within(dialog).findByRole("alert")).toHaveTextContent("offline");
-  await user.click(within(dialog).getByRole("button", { name: "Rename" }));
-  expect(rename).toHaveBeenNthCalledWith(2, "Projects");
+  await user.click(within(dialog).getByRole("button", { name: "Save" }));
+  expect(rename).toHaveBeenNthCalledWith(2, { name: "Projects" });
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await waitFor(() => expect(trigger).toHaveFocus());
+  owner.dispose();
+});
+
+it("saves icon-only edits and removes an icon without resending the name", async () => {
+  const user = userEvent.setup();
+  const owner = createRelaySession(null);
+  const snapshot = { status: "ready" as const, entries: [], mine: [] };
+  const session = {
+    ...owner.session,
+    scope: "https://relay.test:viewer",
+    emoji: {
+      snapshot: () => snapshot,
+      subscribe: () => () => {},
+      ensure: vi.fn(async () => {}),
+      refresh: vi.fn(async () => {}),
+    },
+  };
+  const rename = vi.fn().mockResolvedValue(undefined);
+  render(
+    <SidebarSection
+      sectionKey="group:work"
+      title="Work"
+      session={session}
+      icon="🏢"
+      open
+      onToggle={() => {}}
+      onRename={rename}
+    >
+      <p>Rows</p>
+    </SidebarSection>,
+  );
+  const trigger = screen.getByRole("button", { name: "More actions for Work" });
+  await user.click(trigger);
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Edit section" }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Change section emoji" }),
+  );
+  await user.click(screen.getByRole("button", { name: "📚" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(rename).toHaveBeenLastCalledWith({ icon: "📚" });
+  await waitFor(() => expect(trigger).toHaveFocus());
+  await user.click(trigger);
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Edit section" }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Change section emoji" }),
+  );
+  await user.click(screen.getByRole("button", { name: ":books:" }));
+  await user.click(screen.getByRole("button", { name: "Remove emoji" }));
+  expect(screen.getByRole("textbox", { name: "Section name" })).toHaveValue(
+    "Work",
+  );
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(rename).toHaveBeenLastCalledWith({ icon: null });
+  owner.dispose();
 });
 
 it("offers rename only for saved sections with a rename writer", async () => {
@@ -534,7 +633,7 @@ it("offers rename only for saved sections with a rename writer", async () => {
     screen.getByRole("button", { name: "More actions for Channels" }),
   );
   await screen.findByRole("menuitem", { name: "Move up" });
-  expect(screen.queryByRole("menuitem", { name: "Rename section" })).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Edit section" })).toBeNull();
 });
 
 it("keeps the actions menu closed after it is hidden and shown again", async () => {
