@@ -443,7 +443,7 @@ function ConnectedAppContent({ services }: { services: AppServices }) {
         setRetriedEntry(route.state.entry.id);
         // Reopening against a refused connection would fail again at once.
         if (services.relay.snapshot().status === "error")
-          services.relay.retry();
+          services.relay.tryAgain();
         route.retry();
         // Retry can remove this control and briefly unmount the
         // shell; hand focus to main only once it has fallen away.
@@ -599,6 +599,7 @@ function ConnectedAppContent({ services }: { services: AppServices }) {
       {isTauri() && (
         <PairingPrompt
           communities={client.memberships.map((membership) => membership.id)}
+          active={client.selected}
         />
       )}
       <ChannelNavigationProvider relay={services.relay}>
