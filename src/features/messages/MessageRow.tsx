@@ -1,4 +1,6 @@
 import { requestWork, isSettledWork } from "../agents/request-work";
+import { ActivityDisclosure } from "./ActivityDisclosure";
+import { ActivityOutcome } from "./ActivityOutcome";
 import { AgentResponsePreview } from "./AgentResponsePreview";
 import { useActivityIndicator } from "./use-activity-indicator";
 import type { ActivityRowPresentation } from "./activity-presentation";
@@ -10,6 +12,7 @@ import { ProfilePeek } from "../profiles/ProfilePeek";
 import { AgentAvatar } from "../agents/AgentAvatar";
 import {
   TypingPresentation,
+  useActivityTypingReplacement,
   useReplacedTypers,
 } from "../conversation/typing-presentation";
 import { breathing, localActivity } from "../agents/local-activity";
@@ -18,7 +21,7 @@ import {
   DotsThreeIcon,
   LightningIcon,
   RobotIcon,
-  WarningCircleIcon,
+  InfoIcon,
 } from "../../shared/design-system/icons";
 import { useProfileOwner } from "../profiles/useProfileOwner";
 import { RemoteAgentHint, RemoteWorkIcon } from "./RemoteAgentHint";
@@ -92,6 +95,8 @@ import { useReferenceDirectory } from "./ReferenceText";
 import { EditedMarker, MessageMarkdown } from "./MessageMarkdown";
 import { safeMessageUrl } from "../relay/message-content";
 import styles from "./Messages.module.css";
+import { LinkPreviews } from "./LinkPreviews";
+import { previewLinks } from "./preview-links";
 import { usesLargeEmojiPresentation } from "./emoji-size";
 import { separateChatCards } from "./chat-cards";
 import { MessageReactionControls, MessageReactions } from "./MessageReactions";
@@ -560,16 +565,19 @@ function MessageRowContent({
       .map((action) =>
         action.placement === "menu" && session && extensions?.actions ? (
           <ContributionBoundary key={contributionKey(action)} fallback={null}>
-            <WithTargetOpener
-              component={action.component}
-              props={{
-                message: row,
-                session,
-                close: () => setOpenAction(undefined),
-              }}
-              registry={extensions.actions}
-              entry={action}
-            />
+            {/* A list's shared menu renders this outside the row's provider. */}
+            <TargetOpenerProvider canOpen={canOpenLink} open={openLink}>
+              <WithTargetOpener
+                component={action.component}
+                props={{
+                  message: row,
+                  session,
+                  close: () => setOpenAction(undefined),
+                }}
+                registry={extensions.actions}
+                entry={action}
+              />
+            </TargetOpenerProvider>
           </ContributionBoundary>
         ) : (
           <MenuItem key={action.key} onClick={() => activateAction(action)}>
@@ -600,11 +608,29 @@ function MessageRowContent({
   // The host's Markdown marks an edit after the caption's last line. Plugin
   // cards are marked inside their bubble; diffs and captionless rows after the
   // payload.
-  const editedInBody =
+  const markdownBody =
     bodyShown &&
     !row.diff &&
     !!displayRow.content.trim() &&
     (!messageRenderer || messageRenderer === failedRenderer);
+  const editedInBody = markdownBody;
+  const linkPreviewRegistry = extensions?.linkPreviews;
+  const previewUrls = useMemo(
+    () =>
+      linkPreviewRegistry && markdownBody && !row.agentEnvelope
+        ? previewLinks(
+            displayRow.content,
+            row.attachments.map((attachment) => attachment.url),
+          )
+        : [],
+    [
+      linkPreviewRegistry,
+      markdownBody,
+      row.agentEnvelope,
+      displayRow.content,
+      row.attachments,
+    ],
+  );
   const claimed = (attachment: ChannelMessage["attachments"][number]) => {
     try {
       return !!claims?.call(messageRenderer, row, attachment);
@@ -683,13 +709,7 @@ function MessageRowContent({
       edited={editedInBody && displayRow.edited}
     />
   );
-  const avatarSize = flat
-    ? "default"
-    : compactAvatar
-      ? "tiny"
-      : layout === "timeline"
-        ? "default"
-        : "small";
+  const avatarSize = compactAvatar && !flat ? "small" : "default";
   const authorName = (
     <>
       {/* Inside the name, so the byline keeps the text baseline. */}
@@ -766,8 +786,9 @@ function MessageRowContent({
       />
     </span>
   );
-  const messageActions = (target?: ReactElement) => (
+  const messageActions = (target?: ReactElement, withToolbar?: boolean) => (
     <MessageActionBar
+      withToolbar={withToolbar}
       rowRef={rowRef}
       menuTriggerRef={menuTrigger}
       messageId={row.id}
@@ -1356,6 +1377,14 @@ function MessageRowContent({
                   {reactionsInBubble && reactionContent}
                 </div>
               )}
+              {previewUrls.length > 0 && (
+                <LinkPreviews
+                  urls={previewUrls}
+                  messageId={row.id}
+                  registry={linkPreviewRegistry}
+                  onOpenLink={openLink}
+                />
+              )}
               {attachmentGroups.length > 0 && (
                 <div
                   className={styles.messageAttachments}
@@ -1385,8 +1414,8 @@ function MessageRowContent({
                       const url = safeMessageUrl(attachment.url);
                       if (!url) return null;
                       const source = media(url);
-                      if (attachment.kind === "file")
-                        return (
+                      if (attachment.kind === "file") {
+                        const fallback = (
                           <FileAttachment
                             key={url}
                             attachment={{ ...attachment, url }}
@@ -1394,6 +1423,21 @@ function MessageRowContent({
                             onOpenLink={openLink}
                           />
                         );
+                        return source && extensions?.attachments ? (
+                          <AttachmentView
+                            key={url}
+                            registry={extensions.attachments}
+                            attachment={{ ...attachment, url }}
+                            source={source}
+                            placement="message"
+                            message={row}
+                            FileCard={FileAttachment}
+                            fallback={fallback}
+                          />
+                        ) : (
+                          fallback
+                        );
+                      }
                       if (attachment.kind === "audio") {
                         if (
                           source &&
@@ -1405,6 +1449,8 @@ function MessageRowContent({
                                 registry={extensions.attachments}
                                 attachment={{ ...attachment, url }}
                                 source={source}
+                                placement="message"
+                                message={row}
                                 fallback={
                                   <AudioAttachment
                                     attachment={{ ...attachment, url }}
@@ -1493,6 +1539,8 @@ function MessageRowContent({
                             registry={extensions.attachments}
                             attachment={{ ...attachment, url }}
                             source={source}
+                            placement="message"
+                            message={row}
                             fallback={image}
                           />
                         ) : (
@@ -1641,8 +1689,10 @@ function MessageRowContent({
       {messageActions(renderMessage(message, menuTrigger))}
       {overlays}
     </>
-  ) : (
+  ) : row.membership || row.huddle ? (
     message
+  ) : (
+    messageActions(message, true)
   );
 }
 /** Coordination between agents reads as one quiet line in time order: who
@@ -1663,7 +1713,16 @@ export const MessageRow = memo(function AudienceMessageRow(
       {row.notice === "execution-failure" &&
       !row.edited &&
       !row.attachments.length ? (
-        <AgentsMessageRow {...props} failure />
+        props.recordedActivity?.container === "history" ? (
+          <FullMessageRow
+            {...props}
+            {...(props.recordedActivity.showAuthor
+              ? { stackPrevious: false, stackNext: false }
+              : {})}
+          />
+        ) : (
+          <AgentsMessageRow {...props} failure />
+        )
       ) : row.audience === "agents" ? (
         <AgentsMessageRow {...props} />
       ) : (
@@ -1687,7 +1746,9 @@ function AgentsMessageRow(props: MessageRowProps & { failure?: boolean }) {
   const [open, setOpen] = useState(false);
   const activity = failure ? undefined : props.recordedActivity;
   const bubble =
-    activity?.container === "bubble" || activity?.container === "standalone";
+    failure ||
+    activity?.container === "bubble" ||
+    activity?.container === "standalone";
   const live = useActivityIndicator(
     session,
     row,
@@ -1696,7 +1757,21 @@ function AgentsMessageRow(props: MessageRowProps & { failure?: boolean }) {
     activity?.requestId,
   );
   const active = live || (activity?.active ?? false);
-  const alignmentRow = failure ? (props.stoppedRequest ?? row) : row;
+  // Its dots are then its request's working cue, so the conversation shows
+  // no second one for that request until a newer message follows its run.
+  useActivityTypingReplacement(
+    session && activity?.requestId
+      ? {
+          session,
+          channelId: row.channelId,
+          threadRootId: row.threadRootId,
+          pubkey: row.authorId,
+          requestId: activity.requestId,
+          presence: true,
+        }
+      : undefined,
+    active && !!activity?.requestId && !activity.followed,
+  );
   const keepMounted = props.keepMounted;
   useEffect(() => {
     if (open) return keepMounted?.(row.id);
@@ -1765,102 +1840,118 @@ function AgentsMessageRow(props: MessageRowProps & { failure?: boolean }) {
       layout="continuation"
       stackPrevious
       stackNext
-      renderMessage={(message, trigger) => (
-        <div
-          className={styles.audienceRow}
-          data-audience={failure ? undefined : "agents"}
-          data-message-notice={failure ? "execution-failure" : undefined}
-          data-coordination={to.length > 0 || undefined}
-          data-layout={props.layout ?? "timeline"}
-          data-stack-previous={props.stackPrevious || undefined}
-          data-stack-next={props.stackNext || undefined}
-          data-viewer-message={
-            !flat &&
-            (props.alignViewer ?? true) &&
-            !alignmentRow.workflowOwnerId &&
-            alignmentRow.authorId === (props.viewer ?? session?.viewer)
-              ? ""
-              : undefined
-          }
-          data-open={open || undefined}
-        >
-          {props.day && !bubble && <DayDivider createdAt={row.createdAt} />}
-          {/* Keep the address column stable while details open and close. */}
-          <Collapsible.Root
-            open={open}
-            onOpenChange={setOpen}
-            className={styles.audienceEntry}
-            data-highlight-surface=""
-            // One stable anchor survives both animation directions. Not the
-            // button: revealing an anchor takes it out of the Tab order.
-            data-message-id={row.id}
-            // Open, a click anywhere in the box folds it, except on its own
-            // controls and links or at the end of a text selection.
-            onClick={(event) => {
-              const target = event.target as Element;
-              if (
-                !open ||
-                !event.currentTarget.contains(target) ||
-                target.closest(
-                  "a, button, input, textarea, select, summary, [role='button'], [role='menuitem'], [contenteditable='true']",
-                ) ||
-                !target.ownerDocument.getSelection()?.isCollapsed
-              )
-                return;
-              setOpen(false);
-            }}
-          >
-            <Collapsible.Trigger
-              ref={trigger}
-              data-buzz-ui=""
-              className={styles.audienceLine}
-              aria-label={
-                failure
-                  ? `${author.name}: Couldn’t finish · ${open ? "Hide details" : "Details"}`
-                  : `${author.name}${to.length ? ` to ${to.map((who) => who.name).join(", ")}` : ""}: ${preview}${row.edited ? " (edited)" : ""}`
+      renderMessage={(message, trigger) =>
+        failure ? (
+          <div data-message-id={row.id} data-message-notice="execution-failure">
+            <ActivityDisclosure
+              expanded={open}
+              onToggle={() => setOpen((value) => !value)}
+              trigger={trigger}
+              label={`${open ? "Collapse" : "Show"} activity history: ${author.name}: Couldn’t finish`}
+              summary={<ActivityOutcome state="error" />}
+              expandedSummary={<ActivityOutcome state="error" />}
+              actions={
+                props.canOpenLink?.(
+                  profileActivityViewTarget(author.pubkey) ?? "",
+                ) && (
+                  <IconButton
+                    size="sm"
+                    variant="subtle"
+                    aria-label="View transcript"
+                    icon={<InfoIcon aria-hidden="true" />}
+                    onClick={() => {
+                      const target = profileActivityViewTarget(author.pubkey);
+                      if (target)
+                        openProfileTranscript(target, props.onOpenLink);
+                    }}
+                  />
+                )
               }
             >
-              {!bubble && avatar(author)}
-              {!open && (
-                <RemoteWorkIcon
-                  session={session}
-                  viewer={props.viewer ?? session?.viewer}
-                  pubkey={row.authorId}
-                  active={active}
-                />
-              )}
-              {failure && (
-                <span className={styles.failureNotice}>
-                  <span className="text-subtle">{author.name} ·</span>
-                  <span className={styles.failureNotice}>
-                    <WarningCircleIcon size={12} aria-hidden="true" />
-                    <span className="text-danger">Couldn’t finish</span>
-                  </span>
-                  <span className="text-subtle">
-                    {open ? "Hide details" : "Details"}
-                  </span>
-                </span>
-              )}
-              {!failure && open && bubble && "Collapse"}
-              {!failure && !open && (
-                <span className={styles.audiencePreviewText}>
-                  <ShimmerText active={active}>{visiblePreview}</ShimmerText>
-                </span>
-              )}
-              {!open && row.edited && <EditedMarker />}
-            </Collapsible.Trigger>
-            <Collapsible.Panel
-              className={`${styles.audiencePanel} ${styles.audienceBody}`}
-              inert={!open || undefined}
-              aria-hidden={!open || undefined}
+              {message}
+            </ActivityDisclosure>
+          </div>
+        ) : (
+          <div
+            className={styles.audienceRow}
+            data-audience="agents"
+            data-coordination={to.length > 0 || undefined}
+            data-layout={props.layout ?? "timeline"}
+            data-stack-previous={props.stackPrevious || undefined}
+            data-stack-next={props.stackNext || undefined}
+            data-viewer-message={
+              !flat &&
+              (props.alignViewer ?? true) &&
+              !row.workflowOwnerId &&
+              row.authorId === (props.viewer ?? session?.viewer)
+                ? ""
+                : undefined
+            }
+            data-open={open || undefined}
+          >
+            {props.day && !bubble && <DayDivider createdAt={row.createdAt} />}
+            {/* Keep the address column stable while details open and close. */}
+            <Collapsible.Root
+              open={open}
+              onOpenChange={setOpen}
+              className={styles.audienceEntry}
+              data-highlight-surface=""
+              // One stable anchor survives both animation directions. Not the
+              // button: revealing an anchor takes it out of the Tab order.
+              data-message-id={row.id}
+              // Open, a click anywhere in the box folds it, except on its own
+              // controls and links or at the end of a text selection.
+              onClick={(event) => {
+                const target = event.target as Element;
+                if (
+                  !open ||
+                  !event.currentTarget.contains(target) ||
+                  target.closest(
+                    "a, button, input, textarea, select, summary, [role='button'], [role='menuitem'], [contenteditable='true']",
+                  ) ||
+                  !target.ownerDocument.getSelection()?.isCollapsed
+                )
+                  return;
+                setOpen(false);
+              }}
             >
-              <div className={styles.activityExpansionContent}>
-                <div className={styles.audienceContent}>{message}</div>
-              </div>
-            </Collapsible.Panel>
-          </Collapsible.Root>
-        </div>
-      )}
+              <Collapsible.Trigger
+                ref={trigger}
+                data-buzz-ui=""
+                className={styles.audienceLine}
+                aria-label={`${author.name}${to.length ? ` to ${to.map((who) => who.name).join(", ")}` : ""}: ${preview}${row.edited ? " (edited)" : ""}`}
+              >
+                {!bubble && avatar(author)}
+                {!open && (
+                  <RemoteWorkIcon
+                    session={session}
+                    viewer={props.viewer ?? session?.viewer}
+                    pubkey={row.authorId}
+                    active={active}
+                  />
+                )}
+                {active && <TypingDots size="message" />}
+                {open && bubble && "Collapse"}
+                {!open && (
+                  <span className={styles.audiencePreviewText}>
+                    <ShimmerText active={active}>{visiblePreview}</ShimmerText>
+                  </span>
+                )}
+                {!open && row.edited && <EditedMarker />}
+              </Collapsible.Trigger>
+              <Collapsible.Panel
+                className={`${styles.audiencePanel} ${styles.audienceBody}`}
+                inert={!open || undefined}
+                aria-hidden={!open || undefined}
+              >
+                <div className={styles.activityExpansionContent}>
+                  <div className={styles.audienceContent}>{message}</div>
+                </div>
+              </Collapsible.Panel>
+            </Collapsible.Root>
+          </div>
+        )
+      }
     />
   );
   return bubble ? (
@@ -1882,7 +1973,7 @@ function AgentsMessageRow(props: MessageRowProps & { failure?: boolean }) {
             picture: author.picture,
           },
         ]}
-        stackPrevious={activity?.container !== "standalone"}
+        stackPrevious={!failure && activity?.container !== "standalone"}
         picture={author.picture}
         layout={props.layout === "thread" ? "thread" : "timeline"}
       >

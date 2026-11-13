@@ -9,15 +9,16 @@ Build defaults are readable binary data, **never secret storage**.
 | Input | Consumer and boundary |
 | --- | --- |
 | `BUZZ_EXTERNAL_MCP_COMMUNITIES` | Frontend build: space-separated secure community origins allowed to authorize external MCP access. Empty disables access. See below. |
-| `BUZZ_OWNER_MCP_COMMUNITIES` | Frontend build: space-separated secure community origins where an agent's app-hosted runs can read its owner's channels and members with the owner's access. Empty disables them. See below. |
 | `BUZZ_WORKFLOW_RESTRICTED_COMMUNITIES` | Frontend build: space-separated secure community origins where workflow messages cannot start or steer local agents. Empty keeps checked workflow delegation everywhere. See below. |
 | `BUZZ_BUILDERLAB_URL` | Shared frontend/native build: the live development broker's Builderlab, and whether a build without an added sign-in server keeps the built-in one; no runtime override. See below. |
 | `BUZZ_BUILDERLAB_APPS_DOMAIN` | Shared frontend/native build: exact Apps cookie domain paired with the login origin for native viewer SSO; no runtime override. |
 | `BUZZ_BUILDERLAB_APPS_CONTROL_PLANE` | Shared frontend/native build: HTTPS origin of the Apps control plane for the configured login origin, for deployments the built-in public table does not list; no runtime override. |
 | `BUZZ_BUILD_REPOSITORY_ACCESS` | Native build: default [repository access rules](repository-access.md#default-rules), in `repository-access.json`'s schema. Unset means none. |
 | `BUZZ_DEFAULT_COMMUNITY_URL` | Packaged frontend build: secure relay origin to select once, after identity setup, only when this viewer has no saved community record. Saved choices, including Personal space, always win. Unset in OSS builds. |
+| `BUZZ_BUILD_MANAGED_PLUGINS_URL` | Native build: `https` URL of a version 1 [managed plugin policy](managed-plugins.md#packaged-policy). The desktop app fetches it and keeps the last good copy, used when no `managed-plugins.json` exists. It only recommends. Unset in OSS builds. |
 | `BUZZ_DATABRICKS_HOST` | Frontend build and dev server: `https://` Databricks workspace URL passed as `DATABRICKS_HOST` to every bundled `goose-acp`, which then prefers it to the host in goose's config. Unset in OSS builds. See [Databricks host](#databricks-host). |
 | `BUZZ_AGENT_GATEWAY` | Shared frontend/native build, process environment only: non-secret agent gateway deployment descriptor (version 2: gateway origin, exact community IDs/origins, access check path, context header profile and per-harness upstream bases). Unset, the release default, leaves gateway routing off. See [Agent gateway](#agent-gateway). |
+| `BUZZ_MOBILE_APP_IOS_URL`, `BUZZ_MOBILE_APP_ANDROID_URL` | Frontend build: `https://` store listings for the build's mobile app, shown with QR codes on the mobile Settings card to people whose Builderlab account holds this device's backed-up key. Unset in OSS builds. See [Mobile app links](#mobile-app-links). |
 | `BUZZ_RELAY_URL` | Live development broker's default community, not an agent relay override or a packaged default. |
 | `BUZZ_BUILD_AUTO_CONNECT_DEFAULT_RELAY` | Presence-only alias for fresh-viewer community selection in live development only. Saved viewer choice wins. |
 | `BUZZ_BUILD_FEDERATED_IDENTITY_CONFIG` | Native and frontend build: sign-in servers added to the built-in one, each with its adapter prefix and community hosts; empty opts out. See below. |
@@ -29,7 +30,9 @@ Build defaults are readable binary data, **never secret storage**.
 The retired v1 inputs `BUZZ_BUILD_AGENT_ENV`, `BUZZ_BUILD_BUZZ_AGENT_PROVIDER`
 and `BUZZ_BUILD_AGENT_ACCESS_OWNER_ONLY` are no longer read or compiled. Agents
 uses each plugin agent type's settings. Remove these old defaults from local/CI
-configuration; they do not configure Agents. Restart Vite to change broker or
+configuration; they do not configure Agents. `BUZZ_OWNER_MCP_COMMUNITIES`,
+which enabled the retired owner-read agent tools, is no longer read either.
+Restart Vite to change broker or
 routing configuration. Production frontend builds never load the dev broker or
 expose its auto-open seed. They can separately opt into the packaged community
 default below.
@@ -45,16 +48,6 @@ The distributor's release build chooses the allowed communities; this
 repository's workflow sets none. Community names do not grant access. The Agents service compares the exact canonical origin before
 opening a connection and on each tool call. Consent disables other communities,
 and Settings hides External apps there. Normal agent MCP servers are unchanged.
-
-## Owner MCP community flag
-
-`BUZZ_OWNER_MCP_COMMUNITIES` is a space-separated list of `https://` or
-`wss://` community origins, parsed as the external flag is. The default is
-empty, which turns the owner tools off in every community. Each build lists
-its own community origins. It is not an employee entitlement and grants no external app or plugin access.
-The Agents service compares the agent's exact canonical community origin when
-it starts a run and again on each call. See
-[owner tools](agents.md#owner-tools).
 
 ## Workflow restriction community flag
 
@@ -179,6 +172,24 @@ replayed. Memberships in other communities and hosted agents are unchanged.
 See `src/features/agents/gateway/` for the shared route, session and request
 context contract that harnesses consume.
 
+## Mobile app links
+
+Packagers that publish a Buzz mobile app can link its store listings:
+
+```sh
+BUZZ_MOBILE_APP_IOS_URL=https://apps.example.com/ios \
+BUZZ_MOBILE_APP_ANDROID_URL=https://apps.example.com/android bin/pnpm tauri build
+```
+
+The frontend reads each from repository-root `.env.local` or the process
+environment (process wins) and compiles it in. Each must be an `https://` URL
+without credentials; invalid values fail the build. When the Builderlab session
+is signed in and this device's key is the account's linked, backed-up key (so
+the phone restores it), the mobile Settings card says to install the app and
+sign in with Builderlab, with a link and QR code for each listing that is set. With neither
+set it gives the same instructions without links. Other identities keep the
+pairing flow.
+
 ## Builderlab URL build input
 
 Builderlab is the build's first sign-in server below: its identity origin with
@@ -217,6 +228,21 @@ hosted communities:
   "apiBasePath": "/api/goose/"
 }
 ```
+
+With the built-in server, a build also trusts a server for each Builderlab
+customer, named by the community's host: `buzz.{name}.builderlab.xyz` signs in
+at `https://{name}.builderlab.xyz/api/goose`, on demand, with no organization
+name. `{name}` is one DNS label. The server is added the first time one of its
+communities connects, with its own session saved under its own fingerprint, and
+listed (hosts only) so every later launch adds it again, even once none of its
+communities remain: its session stays in Settings, and deleting an agent still
+retires the agent's grant there. A full Buzz sign-out deletes the list. Its id
+is `bb-{name}`, as Builderlab names its deployments, so its descriptor matches
+one a build lists for the same deployment and a dev build finds the session
+that build saved. For names of 61 to 63 bytes, which would exceed the 64-byte
+id limit, it is the name's first 44 bytes and 16 hex digits of its SHA-256. A
+listed server that covers the host, or has the same id, wins: a distributor's build keeps at-launch sign-in and its organization name
+by listing its server. Builds without the built-in server have none of these.
 
 `BUZZ_BUILD_FEDERATED_IDENTITY_CONFIG` adds servers to it. Unset, the build
 has the built-in server only. Empty, it has no sign-in servers. Otherwise it is

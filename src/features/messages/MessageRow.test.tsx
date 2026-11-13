@@ -44,10 +44,12 @@ import {
 import { ToastProvider } from "../../shared/design-system/ui/Toast";
 import { ConversationPresentation } from "../conversation/ConversationPresentation";
 import { MessageRow } from "./MessageRow";
+import { MessageContextMenus } from "./MessageActionBar";
 import { ReplySummary } from "./ReplySummary";
 import { setClockPreference } from "../../shared/clock-preference";
 import { MessageManagement } from "./MessageManagement";
 import type { ChannelMessage, Profile } from "../relay/contracts";
+import type { AttachmentRendererProps } from "../conversation/contracts";
 import type { UnreadCapability, UnreadSnapshot } from "../relay/unread";
 import { createRelaySession, type RelaySession } from "../relay/session";
 import type { TypingEntry } from "../relay/typing";
@@ -87,7 +89,7 @@ it("discloses an automatic failure reply while keeping its original text availab
   try {
     const view = renderDom(<MessageRow {...props} />);
     const details = screen.getByRole("button", {
-      name: "Spongebob: Couldn’t finish · Details",
+      name: "Show activity history: Spongebob: Couldn’t finish",
     });
     expect(details).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText(content)).not.toBeInTheDocument();
@@ -95,7 +97,7 @@ it("discloses an automatic failure reply while keeping its original text availab
     expect(screen.getByText(content)).toBeVisible();
     expect(details).toHaveAttribute("aria-expanded", "true");
     expect(details).toHaveAccessibleName(
-      "Spongebob: Couldn’t finish · Hide details",
+      "Collapse activity history: Spongebob: Couldn’t finish",
     );
     fireEvent.click(details);
     expect(details).toHaveAttribute("aria-expanded", "false");
@@ -111,7 +113,9 @@ it("discloses an automatic failure reply while keeping its original text availab
     );
     expect(screen.getByText("Here is the useful result.")).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: /Couldn’t finish · Details/ }),
+      screen.queryByRole("button", {
+        name: /activity history: Spongebob: Couldn’t finish/,
+      }),
     ).not.toBeInTheDocument();
     view.rerender(<MessageRow {...props} row={{ ...row, content }} />);
     expect(screen.getByText(content)).toBeVisible();
@@ -120,7 +124,7 @@ it("discloses an automatic failure reply while keeping its original text availab
   }
 });
 
-it("aligns a failure caption with its request rather than the agent author", () => {
+it("keeps automatic failure explanations in the incoming agent frame for every request author", () => {
   const request = { ...row, id: "request", authorId: "viewer" };
   const props = {
     row: { ...row, notice: "execution-failure" as const },
@@ -137,10 +141,13 @@ it("aligns a failure caption with its request rather than the agent author", () 
     const caption = () =>
       screen
         .getByRole("button", {
-          name: "Spongebob: Couldn’t finish · Details",
+          name: "Show activity history: Spongebob: Couldn’t finish",
         })
         .closest("[data-message-notice]");
-    expect(caption()).toHaveAttribute("data-viewer-message");
+    expect(caption()).not.toHaveAttribute("data-viewer-message");
+    expect(
+      caption()?.closest("[data-agent-response-preview]"),
+    ).toBeInTheDocument();
     view.rerender(
       <MessageRow
         {...props}
@@ -1163,6 +1170,86 @@ it("lets a plugin draw an image it claims, apart from the gallery", () => {
     "card from /api/relay/media?url=https%3A%2F%2Fimage.test%2Fada.png",
     "1 image",
   ]);
+});
+
+it("lets a plugin open a file from the host file card, keeping Download", () => {
+  const placements: unknown[] = [];
+  const messages: unknown[] = [];
+  const viewer = {
+    id: "pdf",
+    title: "PDF",
+    key: "test.plugin/pdf",
+    pluginId: "test.plugin",
+    revision: "one",
+    matches: (attachment: { name?: string }) =>
+      !!attachment.name?.endsWith(".pdf"),
+    component: ({
+      attachment,
+      source,
+      placement,
+      message,
+      FileCard,
+      open,
+    }: AttachmentRendererProps) => {
+      placements.push(placement);
+      messages.push(message?.id);
+      return FileCard ? (
+        <FileCard
+          attachment={attachment}
+          source={source}
+          onOpenLink={open}
+          typeLabel="PDF"
+          onPreview={() => open(`panel:${attachment.name}`)}
+        />
+      ) : null;
+    },
+  };
+  const viewers = [viewer];
+  const none: never[] = [];
+  const open = vi.fn(() => true);
+  const media = (url: string) =>
+    `/api/relay/media?url=${encodeURIComponent(url)}`;
+  renderDom(
+    <MessageRow
+      row={{
+        ...row,
+        attachments: [
+          {
+            url: "https://relay.test/report",
+            kind: "file",
+            name: "report.pdf",
+            size: 2048,
+          },
+          { url: "https://relay.test/notes", kind: "file", name: "notes.zip" },
+        ],
+      }}
+      profile={undefined}
+      media={media}
+      onOpenLink={open}
+      canOpenLink={(target) => target.startsWith("panel:")}
+      day={false}
+      retry={undefined}
+      extensions={{
+        tools: { snapshot: () => none, subscribe: () => () => {} },
+        inline: { snapshot: () => none, subscribe: () => () => {} },
+        attachments: { snapshot: () => viewers, subscribe: () => () => {} },
+      }}
+    />,
+  );
+  expect(placements).toContain("message");
+  expect(messages).toContain(row.id);
+  expect(screen.getByText("PDF · 2 KB")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Preview report.pdf" }));
+  expect(open).toHaveBeenCalledWith("panel:report.pdf", { rootId: "root" });
+  expect(
+    screen.getByRole("link", { name: "Download report.pdf" }),
+  ).toHaveAttribute("href", media("https://relay.test/report"));
+  expect(
+    screen.getByRole("link", { name: "Download notes.zip" }),
+  ).toHaveAttribute("href", media("https://relay.test/notes"));
+  expect(
+    screen.queryByRole("button", { name: "Preview notes.zip" }),
+  ).toBeNull();
 });
 
 it("renders external audio sources as open file cards", () => {
@@ -2367,7 +2454,7 @@ it("keeps audio and video players between their original image runs", () => {
 });
 
 it.each([true, false])(
-  "uses smaller shared avatars without shrinking thread profile controls (clickable=%s)",
+  "keeps timeline-sized thread avatars and one step smaller nested ones (clickable=%s)",
   (clickable) => {
     const props = {
       row: { ...row, authorId: "a".repeat(64) },
@@ -2382,7 +2469,7 @@ it.each([true, false])(
     const view = renderDom(<MessageRow {...props} compactAvatar />);
     expect(view.container.querySelector(".buzz-avatar")).toHaveAttribute(
       "data-size",
-      "tiny",
+      "small",
     );
     if (clickable) {
       expect(
@@ -2392,7 +2479,7 @@ it.each([true, false])(
     view.rerender(<MessageRow {...props} />);
     expect(view.container.querySelector(".buzz-avatar")).toHaveAttribute(
       "data-size",
-      "small",
+      "default",
     );
     view.unmount();
   },
@@ -2970,6 +3057,81 @@ it.each(["menu", "toolbar", "coordination"] as const)(
   },
 );
 
+it("lets a menu action in a list's shared menu open targets as its row", async () => {
+  const actions = [
+    {
+      id: "open",
+      title: "Open",
+      key: "test.plugin/open",
+      pluginId: "test.plugin",
+      revision: "one",
+      placement: "menu" as const,
+      matches: () => true,
+      component: ({
+        canOpen,
+        open,
+      }: {
+        canOpen(target: string): boolean;
+        open(target: string): boolean;
+      }) => (
+        <button type="button" onClick={() => open("buzz://target")}>
+          {canOpen("buzz://target") ? "Open target" : "Target unavailable"}
+        </button>
+      ),
+    },
+  ];
+  const none: never[] = [];
+  const empty = { snapshot: () => none, subscribe: () => () => {} };
+  const channelList = { channels: [], status: "ready" };
+  const session = {
+    viewer: "viewer",
+    presence: {
+      subscribe: () => () => {},
+      status: () => "unknown",
+      limited: () => false,
+    },
+    unread: {
+      subscribe: () => () => {},
+      subscribeSync: () => () => {},
+      snapshot: () => undefined,
+      following: () => false,
+    },
+    messages: { report: undefined },
+    channels: { subscribeList: () => () => {}, list: () => channelList },
+  } as unknown as RelaySession;
+  const onOpenLink = vi.fn(() => true);
+  try {
+    renderDom(
+      <MessageContextMenus>
+        <div>
+          <MessageRow
+            row={{ ...row, replyCount: 0, threadRootId: "thread" }}
+            session={session}
+            profile={undefined}
+            media={() => undefined}
+            onOpenLink={onOpenLink}
+            canOpenLink={(target) => target === "buzz://target"}
+            day={false}
+            retry={undefined}
+            extensions={{
+              tools: empty,
+              inline: empty,
+              actions: { snapshot: () => actions, subscribe: () => () => {} },
+            }}
+          />
+        </div>
+      </MessageContextMenus>,
+    );
+    fireEvent.contextMenu(screen.getByText("Root"));
+    fireEvent.click(await screen.findByRole("button", { name: "Open target" }));
+    expect(onOpenLink).toHaveBeenCalledWith("buzz://target", {
+      rootId: "thread",
+    });
+  } finally {
+    cleanup();
+  }
+});
+
 it.each(["timeline", "thread", "continuation"] as const)(
   "right-aligns own %s rows and keeps only the last grouped avatar",
   (layout) => {
@@ -3065,7 +3227,7 @@ it.each(["timeline", "thread", "continuation"] as const)(
       expect(container.querySelector("[data-own]")).toHaveTextContent("Root");
       expect(container.querySelector(".buzz-avatar")).toHaveAttribute(
         "data-size",
-        "tiny",
+        "small",
       );
       expect(
         screen.getByRole("button", { name: "View author profile" }),

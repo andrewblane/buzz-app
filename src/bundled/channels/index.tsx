@@ -3,8 +3,8 @@ import { ChannelCompletion } from "./ChannelCompletion";
 import { channelQuery } from "./channel-query";
 import { isChannelRoute } from "../../features/channel-navigation/routes";
 import type { PluginModule } from "../../plugins/api";
-import { MessagesPage } from "./MessagesPage";
-import { PageTabs } from "./PageTabs";
+import { ChannelsPage } from "./ChannelsPage";
+import { ConversationWorkspace, PageTabs } from "./PageTabs";
 import { registerCanvas } from "./canvas-panel";
 import { ChannelTemplateSettings } from "./ChannelTemplateSettings";
 import { ChatCircleIcon, CopyIcon } from "../../shared/design-system/icons";
@@ -38,6 +38,9 @@ export const apply: PluginModule["apply"] = (ctx) => {
   const extensions = ctx.conversation;
   extensions.registerTabs((props) => (
     <PageTabs {...props} host={ctx} extensions={extensions} />
+  ));
+  extensions.registerWorkspace((props) => (
+    <ConversationWorkspace {...props} host={ctx} extensions={extensions} />
   ));
   const relay = ctx.relay;
   const navigator = ctx.navigation;
@@ -129,13 +132,13 @@ export const apply: PluginModule["apply"] = (ctx) => {
     id: "channels",
     title: "Channels",
     primary: true,
-    placement: "topbar",
+    placement: "dock",
     layout: "workspace",
     companion: true,
     handlesNavigation: true,
     route: { version: 1, validate: isChannelRoute },
     component: ({ companion, navigation }) => (
-      <MessagesPage
+      <ChannelsPage
         chatMenus={ctx.conversation.chatMenus}
         navigation={navigation}
         navigator={navigator}
