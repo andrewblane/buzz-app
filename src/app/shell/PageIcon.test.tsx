@@ -150,6 +150,21 @@ it("masks one-colour SVGs at the host stroke and leaves other images alone", () 
   expect(decoded(glyphMask(sized, 2.5))).toContain(
     'stroke-width="1.6666666666666667"',
   );
+  for (const width of ["100%", "1em"]) {
+    const relative = svgImage(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" stroke="#333" fill="none"><path d="M1 1h9"/></svg>`,
+    );
+    expect(decoded(glyphMask(relative, 2.5))).toContain('stroke-width="2.5"');
+  }
+  const sheet = svgImage(
+    '<svg xmlns="http://www.w3.org/2000/svg"><style>path{stroke:currentColor;stroke-width:1}</style><path d="M1 1h9"/></svg>',
+  );
+  expect(decoded(glyphMask(sheet, 2.5))).not.toContain("stroke-width:1");
+  // A mask keeps alpha, so an opacity duotone keeps its lighter tone.
+  const duotone = svgImage(
+    '<svg xmlns="http://www.w3.org/2000/svg" fill="#333"><path opacity="0.4" d="M1 1h9"/><path d="M1 5h9"/></svg>',
+  );
+  expect(decoded(glyphMask(duotone, 2.5))).toContain('opacity="0.4"');
   const accented = `data:image/svg+xml;base64,${btoa(String.fromCharCode(...new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" stroke="#333"><title>café</title><path d="M1 1h9"/></svg>')))}`;
   expect(decoded(glyphMask(accented, 2.5))).toContain("café");
   // Without a stroke width the source is masked unchanged.

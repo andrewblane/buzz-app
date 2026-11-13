@@ -89,6 +89,9 @@ export function glyphMask(
       .getAttribute("style")
       ?.replace(/(^|;)\s*stroke-width\s*:[^;]*/gi, "$1");
     if (style !== undefined) element.setAttribute("style", style);
+    if (element.localName === "style")
+      element.textContent =
+        element.textContent?.replace(/stroke-width\s*:[^;}]*;?/gi, "") ?? "";
   }
   const grid =
     Number(
@@ -97,7 +100,9 @@ export function glyphMask(
         ?.trim()
         .split(/[\s,]+/)[2],
     ) ||
-    Number.parseFloat(root.getAttribute("width") ?? "") ||
+    Number(
+      /^\s*([\d.]+)(?:px)?\s*$/.exec(root.getAttribute("width") ?? "")?.[1],
+    ) ||
     24;
   root.setAttribute("stroke-width", String((Number(strokeWidth) * grid) / 24));
   return `data:image/svg+xml,${encodeURIComponent(new XMLSerializer().serializeToString(root))}`;
