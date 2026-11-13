@@ -1700,7 +1700,8 @@ export function ChannelMembersDialog({
           )
         ) {
           setQuery("");
-          setSelectedRole("All");
+          setSelectedIdentity("All");
+          setSelectedAccess("All");
         }
         return;
       }
