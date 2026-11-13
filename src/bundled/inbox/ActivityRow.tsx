@@ -115,7 +115,7 @@ export const ActivityMessageRow = memo(function ActivityMessageRow({
           {readable && (
             <span className={styles.rowAction}>
               <IconButton
-                size="sm"
+                size="xs"
                 variant="ghost"
                 disabled={pending}
                 aria-label={`Mark as read ${sender} in ${context}`}

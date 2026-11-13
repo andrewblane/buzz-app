@@ -36,7 +36,9 @@ export function AppDock({
       className={styles.frame}
       aria-label="Apps"
       id="shell-rail"
-      hidden={!open}
+      data-open={open || undefined}
+      inert={!open}
+      aria-hidden={!open}
       data-compact={compact || undefined}
       onKeyDown={(event) => {
         if (

@@ -452,7 +452,7 @@ for 30 days expires.
   work in that folder for the rest of the conversation. A chip someone else
   sends, or a folder no longer in your repositories folder, grants nothing.
   A bare **!**, or **!** before a space, stays text.
-- **Activity** is the default landing view. The visible filter strip below its title selects All, Channels, Threads,
+- **Activity** is the default landing view. With no conversation selected, the detail pane shows “No conversation selected”; use **+** to start a new message. The visible filter strip below its title selects All, Channels, Threads,
   Mentions, DMs or Reactions. The sidebar’s **Agents** card shows up to four of your
   non-archived agents that are eligible to message in the current community,
   ranked by your usage; older library entries alone do not qualify. Like Pins,
@@ -961,6 +961,8 @@ for 30 days expires.
   immediately, and touch devices show them without waiting.
 - **Team card**: Activity and Drafts & sent appear above up to four recent
   conversations. **Open Team** opens the full conversation list.
+  **Open Team** and **Open Solo** show an unread dot and unread text styling when
+  conversations hidden beyond the card’s four visible rows have unread messages.
 - **Sidebar sections**: in **All**, use the arrow beside **Solo** or **Team** to
   collapse either section independently. Buzz remembers the collapsed sections
   for that community and identity. Collapsed section headings highlight when

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -8,6 +9,8 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { NavigationItem } from "../../shared/design-system/ui/NavigationItem";
+import { RailOpenConversations } from "./RailConversationItem";
+import type { RelaySession } from "../../features/relay/session";
 import { RailArrangement, RailGroup } from "./RailArrangement";
 import { writeView } from "../../shared/view-state";
 import type { RailEntry } from "./rail-pins";
@@ -58,6 +61,27 @@ test.each([false, true])(
         },
       },
     }));
+    const listeners = new Set<() => void>();
+    const unreadChannels = new Set(["chat-0"]);
+    const subscribe = (_target: unknown, listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    };
+    const session = {
+      unread: {
+        subscribe,
+        subscribeActivity: subscribe,
+        snapshot: (target: { channelId: string }) => ({
+          manual: "none",
+          observedCount: unreadChannels.has(target.channelId) ? 1 : 0,
+        }),
+        activity: () => ({ items: [] }),
+      },
+      sidebarPreferences: {
+        subscribe: () => () => {},
+        snapshot: () => ({ data: { muted: [] } }),
+      },
+    } as unknown as RelaySession;
     render(
       <RailArrangement
         partition="preview-test"
@@ -74,6 +98,15 @@ test.each([false, true])(
               <RailGroup
                 id="solo"
                 title="Solo"
+                renderOpen={(hidden, open) => (
+                  <RailOpenConversations
+                    session={session}
+                    channels={[]}
+                    hidden={hidden}
+                    label="Open Solo"
+                    onClick={open}
+                  />
+                )}
                 leadingEntryIds={leading.map((entry) => entry.id)}
                 rows={[...leading, ...entries].map((entry) => ({
                   entry,
@@ -91,6 +124,24 @@ test.each([false, true])(
     const open = screen.getByRole("button", { name: "Open Solo" });
     expect(open.hasAttribute("data-selected")).toBe(false);
     expect(open.hasAttribute("aria-current")).toBe(false);
+    // Visible unread rows do not light up the overflow destination.
+    expect(within(open).queryByRole("img", { name: "Unread" })).toBeNull();
+    act(() => {
+      unreadChannels.add("chat-4");
+      listeners.forEach((listener) => {
+        listener();
+      });
+    });
+    expect(within(open).getByRole("img", { name: "Unread" })).not.toBeNull();
+    expect(open.getAttribute("data-state")).toBe("unread");
+    act(() => {
+      unreadChannels.delete("chat-4");
+      listeners.forEach((listener) => {
+        listener();
+      });
+    });
+    expect(within(open).queryByRole("img", { name: "Unread" })).toBeNull();
+    expect(open.getAttribute("data-state")).toBe("read");
     if (withLeading) {
       const activity = screen.getByRole("button", {
         name: "activity",

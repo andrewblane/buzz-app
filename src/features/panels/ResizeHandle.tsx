@@ -134,21 +134,6 @@ export function ResizeHandle({
       tabIndex={0}
       data-tooltip="Drag to resize · Double-click to reset"
       onDoubleClick={reset}
-      onPointerMove={(event) => {
-        if (event.pointerType !== "mouse" || drag.current) return;
-        const bounds = event.currentTarget.getBoundingClientRect();
-        const offset = Math.max(
-          -2,
-          Math.min(2, (event.clientX - bounds.left - bounds.width / 2) / 2),
-        );
-        event.currentTarget.style.setProperty(
-          "--resize-pointer-offset",
-          `${offset}px`,
-        );
-      }}
-      onPointerLeave={(event) => {
-        event.currentTarget.style.removeProperty("--resize-pointer-offset");
-      }}
       onKeyDown={(event) => {
         const step = event.shiftKey ? 48 : 16;
         const panel =

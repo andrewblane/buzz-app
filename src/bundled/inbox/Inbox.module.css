@@ -68,11 +68,13 @@
 .rowAction {
   display: flex;
   position: absolute;
-  inset-block-start: var(--space-row-gap);
+  inset-block-start: calc(
+    var(--conversation-row-pad-block, var(--space-3)) -
+    var(--space-half)
+  );
   inset-inline-end: calc(
-    var(--space-control-inset) +
-    var(--space-row-gap) +
-    var(--space-2)
+    var(--conversation-row-pad-inline, var(--space-4)) -
+    var(--space-1)
   );
   opacity: 0;
 }
@@ -105,20 +107,19 @@
   vertical-align: middle;
 }
 
-.reactionHeading {
+.rowIdentity {
   display: flex;
   min-width: 0;
   align-items: baseline;
+  gap: var(--space-2);
+}
+.rowIdentity > :is(span, strong) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .reactionTail {
   flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.reactionPreview {
-  max-inline-size: 64ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -135,6 +136,7 @@
 .collectionPanes {
   display: grid;
   grid-template-columns: auto 0 minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
 }
@@ -157,7 +159,7 @@
   --collection-content-inset: var(--space-4);
   max-width: max(220px, calc(100cqw - 320px));
 }
-.collectionPanes[data-list-open="false"] > .sheetFeed + hr,
+.collectionPanes[data-list-open="false"] .sheetFeed + hr,
 .sheetHost[data-narrow] .sheetFeed + hr {
   display: none;
 }
@@ -182,7 +184,43 @@
   display: none;
 }
 
-/* The list keeps a fixed width while the reader lays out once at its new size. */
+.listTrack {
+  display: contents;
+}
+.collectionPanes[data-list-controlled] > .listTrack {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  clip-path: none;
+  transition: clip-path 0s var(--duration-panel-enter) allow-discrete;
+}
+.collectionPanes[data-list-controlled][data-list-open="false"] > .listTrack {
+  clip-path: inset(0 calc(-1 * var(--space-2)) 0 0);
+  transition-delay: 0s;
+}
+:where(.collectionPanes[data-list-controlled] > .listTrack) > .sheetFeed {
+  flex: none;
+}
+.sheetHost[data-narrow] .collectionPanes[data-list-controlled] > .listTrack {
+  display: contents;
+}
+
+/* Match split panels: stable tracks and fixed-width content during the reveal. */
+.collectionPanes[data-list-controlled] {
+  grid-template-columns: minmax(0, var(--collection-list-width, 352px)) 0 minmax(
+      0,
+      1fr
+    );
+}
+.collectionPanes[data-list-controlled][data-list-animate] {
+  transition: grid-template-columns var(--duration-panel-enter)
+    var(--easing-enter);
+}
+.collectionPanes[data-list-controlled][data-list-open="false"] {
+  grid-template-columns: minmax(0, 0px) 0 minmax(0, 1fr);
+  transition-duration: var(--duration-fast);
+}
 :where(.collectionPanes[data-list-controlled]) .sheetFeed {
   display: flex;
   visibility: visible;
@@ -199,11 +237,9 @@
 }
 :where(.collectionPanes[data-list-controlled][data-list-open="false"])
   .sheetFeed {
-  position: absolute;
-  inset: 0 auto 0 0;
   visibility: hidden;
   opacity: 0;
-  transform: translateX(-100%);
+  transform: translateX(calc(-1 * var(--space-3)));
   pointer-events: none;
 }
 :where(
@@ -213,11 +249,22 @@
   transition-duration: var(--time-fast), var(--time-fast), 0s;
   transition-delay: 0s, 0s, var(--time-fast);
 }
-:where(html[data-keyboard-input] .collectionPanes[data-list-controlled])
+:where(
+    html:is([data-keyboard-input], [data-sidebar-resizing])
+      .collectionPanes[data-list-controlled]
+  )
   .sheetFeed {
   transition: none;
 }
+html:is([data-keyboard-input], [data-sidebar-resizing])
+  .collectionPanes[data-list-controlled] {
+  transition: none;
+}
 @media (prefers-reduced-motion: reduce) {
+  .collectionPanes[data-list-controlled],
+  .collectionPanes[data-list-controlled] > .listTrack {
+    transition: none;
+  }
   :where(.collectionPanes[data-list-controlled][data-list-animate]) .sheetFeed {
     transition: none;
   }
@@ -227,6 +274,7 @@
   border-inline-start: 0;
 }
 
+.sheetHost[data-narrow] .collectionPanes[data-list-controlled],
 .sheetHost[data-narrow] .collectionPanes {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -242,6 +290,22 @@
 
 .sheetHost[data-narrow] .collectionDetail {
   border-inline-start: 0;
+}
+.collectionPanes[data-list-controlled] > .collectionDetail {
+  grid-column: 3;
+}
+.sheetHost[data-narrow]
+  .collectionPanes[data-list-controlled]
+  > .collectionDetail {
+  grid-column: 1;
+}
+
+.sheetHost[data-narrow] .collectionPanes[data-list-controlled] .sheetFeed {
+  position: absolute;
+  inset: 0 auto 0 0;
+}
+.sheetHost[data-narrow] .collectionPanes[data-list-open="false"] .sheetFeed {
+  transform: translateX(-100%);
 }
 
 .sheetHost[data-narrow]
@@ -268,6 +332,7 @@
   .collectionDetail {
   display: flex;
 }
+
 .sheetHost[data-narrow]
   .collectionPanes[data-list-controlled][data-list-open="true"][data-detail-selected]
   .sheetFeed {
@@ -280,4 +345,11 @@
 }
 .sheetHost[data-narrow] .collectionPanes[data-detail-selected] .listDismiss {
   display: flex;
+}
+
+.unselectedConversation {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  padding: var(--space-panel-inset);
 }

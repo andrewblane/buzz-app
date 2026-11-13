@@ -1,5 +1,13 @@
 .frame {
   display: flex;
+  width: var(--shell-rail-width, var(--size-navigation-rail));
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+  transition:
+    transform var(--duration-panel-enter) var(--easing-enter),
+    opacity var(--duration-panel-enter) var(--easing-enter),
+    visibility 0s;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
@@ -17,8 +25,22 @@
   flex-direction: column;
   padding: 0;
 }
-.frame[hidden] {
-  display: none;
+.frame:not([data-open]) {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(calc(-1 * var(--space-3)));
+  transition-duration: var(--duration-fast), var(--duration-fast), 0s;
+  transition-delay: 0s, 0s, var(--duration-fast);
+}
+html:is([data-keyboard-input], [data-sidebar-resizing]) .frame {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .frame {
+    transition: none;
+    transform: none;
+  }
 }
 .apps {
   min-width: 0;
@@ -42,7 +64,7 @@
 }
 
 @media (max-width: 650px) {
-  .frame:not([hidden]) {
+  .frame {
     position: absolute;
     inset: 0 auto 0 0;
     width: min(var(--size-navigation-rail), calc(100vw - var(--space-8)));
@@ -58,4 +80,16 @@
   height: 0;
   margin-block: calc(-1 * var(--space-3));
   z-index: 1;
+}
+
+@media (max-width: 650px) {
+  .frame:not([data-open]) {
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame:not([data-open]) {
+    transform: none;
+  }
 }

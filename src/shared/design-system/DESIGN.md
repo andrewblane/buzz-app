@@ -587,9 +587,11 @@ applies `--scroll-fade-always`. Reduced transparency and forced colors remove
 the fade.
 
 ConversationTimeline wraps history in `conversation-history-viewport` for layout
-only: messages retain their full opacity and sharpness while scrolling, without
-a blur or fade. Conversation identity headers float above the history, which
-scrolls behind the avatars and name. A 104px initial history inset and 64px
+only: messages retain their full opacity and sharpness outside the header.
+Conversation identity headers float above history with `ScrollEdgeMaterial`
+softening messages underneath the avatars and name. The material fades below
+the header, passes pointer input through, and uses an opaque surface for reduced
+transparency or forced colors. A 104px initial history inset and 64px
 leading space scroll away with the content. Conversation headers use a 12px
 bottom inset.
 Tab strips keep their own wider horizontal fade.
@@ -1849,6 +1851,8 @@ Values scale with the host interface-size preference.
   and heading roles use unitless 1.1 leading so wrapped headings have breathing room.
 - Regular (400) is for reading and form labels; Medium (500) is for actions and
   structure. Existing `font-semibold` consumers resolve to Medium.
+  Unread sidebar conversation labels, including Open Team/Solo, use the dedicated
+  `--type-weight-navigation-unread` (600) to distinguish unread rows at a glance.
 - Mono uses `detail/body-xsmall` at 12/16 with 0.03em tracking.
   `--type-xsmall-size` points to the existing 12px step, keeping the semantic
   independent from caption even though their sizes currently match. `text-mono-lg` and

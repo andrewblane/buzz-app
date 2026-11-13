@@ -11,7 +11,10 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import type { RelaySession } from "../../features/relay/session";
-import { RailConversationItem } from "./RailConversationItem";
+import {
+  RailConversationItem,
+  RailOpenConversations,
+} from "./RailConversationItem";
 import type { NavigationScope } from "../../features/navigation/targets";
 import type { NavigationOpenOptions } from "../../features/navigation/controller";
 import { targetKey } from "../../features/navigation/targets";
@@ -569,6 +572,15 @@ export function RailNavigation({
     <RailGroup
       id="messages"
       title="Team"
+      renderOpen={(hidden, open) => (
+        <RailOpenConversations
+          session={session}
+          channels={channels}
+          hidden={hidden}
+          label="Open Team"
+          onClick={open}
+        />
+      )}
       rowsLabel="Recent conversations"
       rows={[
         ...teamPages.flatMap(pageRow),
@@ -851,6 +863,15 @@ export function RailNavigation({
               <RailGroup
                 id="solo"
                 title="Solo"
+                renderOpen={(hidden, open) => (
+                  <RailOpenConversations
+                    session={session}
+                    channels={channels}
+                    hidden={hidden}
+                    label="Open Solo"
+                    onClick={open}
+                  />
+                )}
                 rows={soloChats.flatMap((channel) => {
                   const entry = byId.get(`channel:${channel.id}`);
                   return entry ? [sourceRow(entry, "solo")] : [];

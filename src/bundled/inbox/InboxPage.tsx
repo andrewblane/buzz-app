@@ -39,12 +39,12 @@ import {
 import { selectProfiles } from "../../features/relay/profile-selection";
 import { useIdentityNames } from "../../features/identity-names/react";
 import {
+  shortTime,
   CollectionFilters,
   ConversationList,
 } from "../../features/conversation/ConversationList";
 import { useConversationPresentation } from "../../features/conversation/ConversationPresentation";
 import { useVisibleChannelPreviews } from "../../features/conversation/latest-previews";
-import { relativeTimestamp } from "../../shared/relative-timestamp";
 import { EmptyState } from "../../shared/design-system/ui/EmptyState";
 import { Button } from "../../shared/design-system/ui/Button";
 import {
@@ -1374,7 +1374,7 @@ const InboxList = memo(function InboxList({
                         key={row.item.id}
                         {...common}
                         item={row.item}
-                        time={relativeTimestamp(row.item.createdAt)}
+                        time={shortTime(row.item.createdAt)}
                         channel={channel}
                         selected={selectedId === row.item.id}
                       />
@@ -1383,7 +1383,7 @@ const InboxList = memo(function InboxList({
                         key={row.item.id}
                         {...common}
                         item={row.item}
-                        time={relativeTimestamp(row.item.createdAt)}
+                        time={shortTime(row.item.createdAt)}
                         channel={channel}
                         feed={feed}
                         previewId={`${previewId}-${row.item.id}`}

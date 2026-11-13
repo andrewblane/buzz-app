@@ -62,8 +62,7 @@
 @media (hover: hover) and (pointer: fine) {
   .handle:hover::after {
     opacity: var(--resize-grip-opacity, 1);
-    transform: translate(calc(-50% + var(--resize-pointer-offset, 0px)), -50%)
-      scaleY(1);
+    transform: translate(-50%, -50%) scaleY(1);
   }
   .handle:hover::before {
     opacity: 1;

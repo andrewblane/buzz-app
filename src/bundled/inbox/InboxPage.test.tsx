@@ -115,6 +115,24 @@ it.each([false, true])(
   },
 );
 
+it("Activity shows an unselected state until new message is requested", async () => {
+  const h = fixture({ sheet: true, withWriter: true });
+  render(h.view);
+  expect(await screen.findByText("No conversation selected")).toBeVisible();
+  expect(
+    screen.queryByRole("textbox", { name: "New message", exact: true }),
+  ).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "New message", exact: true }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("textbox", { name: "New message", exact: true }),
+    ).toBeVisible(),
+  );
+  expect(screen.queryByText("No conversation selected")).toBeNull();
+});
+
 it("a sheet host's local UI update does not recalculate the Activity feed", async () => {
   const h = fixture();
   const closed = () => false;
@@ -5159,8 +5177,15 @@ it.each([
       row.textContent?.includes("Please review"),
     );
     if (!mention) throw new Error("Missing fixture rows");
-    // The floating Activity composer stays available while a row read saves.
-    const editor = await screen.findByRole("textbox");
+    // Explicitly open the Activity composer before moving focus into it.
+    fireEvent.click(
+      screen.getByRole("button", { name: "New message", exact: true }),
+    );
+    const editor = await waitFor(() => {
+      const input = screen.getByRole("textbox");
+      expect(input).not.toHaveAttribute("aria-disabled", "true");
+      return input;
+    });
     const list = screen.getByRole("list", { name: "Activity", hidden: true });
     await waitFor(() => expect(list).toHaveAttribute("aria-busy", "false"));
     if (outcome === "fails") h.failSave();

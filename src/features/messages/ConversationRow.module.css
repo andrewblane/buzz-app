@@ -70,6 +70,15 @@
   align-items: center;
 }
 
+.frame[data-layout="navigation"] [data-conversation-row][data-state="unread"] {
+  font-weight: var(--type-weight-navigation-unread);
+}
+
+.frame[data-layout="navigation"]
+  [data-conversation-row][data-state="unread"]:not([data-selected]) {
+  --navigation-item-text: var(--text-navigation-unread);
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -180,7 +189,7 @@
   box-shadow: 0 0 0 var(--space-half) var(--surface-rail-card);
 }
 
-/* Unread changes nothing but the dot: a read row looks the same without it. */
+/* Selected labels and dots share the selected row's foreground. */
 
 /* A selected row takes the sidebar's accent; every part follows its ink. */
 [data-conversation-row][data-selected]

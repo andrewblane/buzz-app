@@ -4,3 +4,8 @@ hr.railResize {
   inset-block: 0;
   left: var(--shell-rail-width);
 }
+
+[data-detail-container]:not([data-rail-open]) > .railResize {
+  visibility: hidden;
+  pointer-events: none;
+}
