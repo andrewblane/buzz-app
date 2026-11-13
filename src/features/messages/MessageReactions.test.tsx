@@ -1019,10 +1019,18 @@ it("keeps the raw emoji when the name table fails to load, and the next reveal r
   );
   const unhandled = vi.fn();
   process.on("unhandledRejection", unhandled);
+  const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
   try {
     fireEvent.mouseEnter(pill);
     fireEvent.mouseMove(pill);
     const preview = await screen.findByRole("tooltip", {}, { timeout: 2500 });
+    // The mocked import rejects after one tick or several; wait for its handler.
+    await waitFor(() =>
+      expect(warned).toHaveBeenCalledWith(
+        "The reaction name table didn't load",
+        expect.any(Error),
+      ),
+    );
     await act(flush);
     expect(preview.textContent).not.toContain(":+1:");
     expect(unhandled).not.toHaveBeenCalled();
@@ -1032,5 +1040,6 @@ it("keeps the raw emoji when the name table fails to load, and the next reveal r
   } finally {
     vi.doUnmock("./reaction-name");
     process.off("unhandledRejection", unhandled);
+    warned.mockRestore();
   }
 });
