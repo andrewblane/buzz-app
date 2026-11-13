@@ -1339,7 +1339,12 @@ tab, asks **Discard changes?** first; **Keep editing** keeps them.
   macOS (inside the app's installed name, such as `Buzz Foundation.app`), with
   no setup or token. Without such a plugin there are no tools to
   offer; do not promise them.
-- **Settings → Plugins → GitHub → Links → Show GitHub cards** controls preview cards below messages containing GitHub links. It starts on and is saved for your viewing on this device across all communities. Links stay clickable when cards are hidden. Cards require the desktop Link previews plugin.
+- **Settings → Plugins → GitHub → Links → Show GitHub cards** controls preview
+  cards below messages containing GitHub links. It starts on and is saved for
+  your viewing on this device across all communities. Links stay clickable when
+  cards are hidden. Cards require the desktop Link previews plugin. Your saved
+  choice also applies while the GitHub plugin is disabled; re-enable it to
+  change this setting.
 - **Settings → Plugins → GitHub → Links → Open GitHub links in Buzz** controls
   whether supported GitHub links and the linked-PR shortcut open in a side
   panel or your browser. It starts on and is saved on this device across all
