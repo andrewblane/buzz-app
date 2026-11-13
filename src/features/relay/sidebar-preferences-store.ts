@@ -42,6 +42,7 @@ type FilterFailure = Readonly<{
 type OrderFailure = Readonly<{
   sectionId: string;
   sectionIds: readonly string[];
+  layout?: readonly string[];
   error: string;
 }>;
 type Snapshot = Readonly<{
@@ -142,7 +143,11 @@ export function createSidebarPreferencesStore({
   const latestMove = new Map<string, number>();
   let nextOrder = 0;
   let pendingOrder:
-    | Readonly<{ id: number; sectionIds: readonly string[] }>
+    | Readonly<{
+        id: number;
+        sectionIds: readonly string[];
+        layout?: readonly string[];
+      }>
     | undefined;
   let failedOrder: OrderFailure | undefined;
   const orderWritable = () =>
@@ -193,7 +198,14 @@ export function createSidebarPreferencesStore({
         .sort((a, b) => rank(a.id) - rank(b.id))
         .map((section, order) => ({ ...section, order }));
     }
-    return { ...data, sections, assignments, starred: [...starred] };
+    const layout = pendingOrder?.layout ?? data.layout;
+    return {
+      ...data,
+      sections,
+      assignments,
+      ...(layout ? { layout } : {}),
+      starred: [...starred],
+    };
   };
   let generation = 0;
   let nextSortMutation = 0;
@@ -268,6 +280,7 @@ export function createSidebarPreferencesStore({
         data.sections.map((section) => Object.freeze({ ...section })),
       ),
       assignments: Object.freeze({ ...data.assignments }),
+      ...(data.layout ? { layout: Object.freeze([...data.layout]) } : {}),
       starred: Object.freeze([...data.starred]),
       muted: Object.freeze([...data.muted]),
       ...(data.sort ? { sort: Object.freeze({ ...data.sort }) } : {}),
@@ -760,7 +773,11 @@ export function createSidebarPreferencesStore({
         return orderWritable();
       },
       /** Optimistic whole-list order; the latest intent supersedes older ones. */
-      reorderSections(sectionId: string, sectionIds: readonly string[]) {
+      reorderSections(
+        sectionId: string,
+        sectionIds: readonly string[],
+        layout?: readonly string[],
+      ) {
         if (!orderWritable() || !writeOrder)
           return Promise.reject(
             new Error("Sidebar section order is unavailable"),
@@ -768,7 +785,11 @@ export function createSidebarPreferencesStore({
         const save = writeOrder;
         const writeGeneration = generation;
         const signal = writeLifetime.signal;
-        const intent = { id: ++nextOrder, sectionIds: [...sectionIds] };
+        const intent = {
+          id: ++nextOrder,
+          sectionIds: [...sectionIds],
+          ...(layout ? { layout: [...layout] } : {}),
+        };
         pendingOrder = intent;
         failedOrder = undefined;
         mutation++;
@@ -780,13 +801,19 @@ export function createSidebarPreferencesStore({
               if (closed || generation !== writeGeneration)
                 throw new Error("Sidebar section order is unavailable");
               signal.throwIfAborted();
-              const groups = await save(intent.sectionIds, signal);
+              const groups = await save(
+                intent.sectionIds,
+                signal,
+                intent.layout,
+              );
               if (closed || generation !== writeGeneration || !confirmed)
                 throw new Error("Sidebar section order is unavailable");
+              const savedLayout = groups.layout ?? confirmed.layout;
               confirmed = {
                 ...confirmed,
                 sections: groups.sections,
                 assignments: groups.assignments,
+                ...(savedLayout ? { layout: savedLayout } : {}),
               };
               return retained(confirmed);
             } catch (error) {
@@ -799,6 +826,7 @@ export function createSidebarPreferencesStore({
                 failedOrder = {
                   sectionId,
                   sectionIds: intent.sectionIds,
+                  ...(intent.layout ? { layout: intent.layout } : {}),
                   error: error instanceof Error ? error.message : String(error),
                 };
               throw error;

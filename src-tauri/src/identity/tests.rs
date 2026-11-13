@@ -427,6 +427,24 @@ fn sidebar_registers_bind_legacy_projection_and_preserve_tombstones() {
     let mut mismatch = sections.clone();
     mismatch["sections"][0]["name"] = json!("Wrong");
     assert!(super::validate_sidebar_payload("channel-sections", &mismatch).is_err());
+    let mut layout = sections.clone();
+    layout["sectionOrder"] = reg(json!([
+        "dms",
+        "group:work",
+        "starred",
+        "channels",
+        "forums"
+    ]));
+    assert!(super::validate_sidebar_payload("channel-sections", &layout).is_ok());
+    for invalid in [
+        json!(["dms", "group:work", "starred", "channels"]),
+        json!(["dms", "dms", "starred", "channels", "forums"]),
+        json!(["dms", "work", "starred", "channels", "forums"]),
+        json!("dms"),
+    ] {
+        layout["sectionOrder"] = reg(invalid);
+        assert!(super::validate_sidebar_payload("channel-sections", &layout).is_err());
+    }
     for invalid in [
         json!(null),
         json!({"v":2}),
