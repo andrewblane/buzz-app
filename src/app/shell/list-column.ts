@@ -123,14 +123,20 @@ export function useListColumn(navigator: Navigation | undefined) {
   });
   /**
    * Call before opening: the visit that open lands on shows the list as it is
-   * (opens from the list), or closed (the sidebar opens destinations directly).
+   * (opens from the list), closed (the sidebar opens destinations directly),
+   * or open on a named section (a section opened on one of its conversations).
    */
   const ask = useCallback(
-    (next: "keep" | "close") => {
+    (next: "keep" | "close" | { section: string }) => {
       asked.current = {
         from: latest.current.entryId,
         attempt: navigator?.snapshot().attempt.id,
-        list: next === "keep" ? latest.current.list : closed,
+        list:
+          next === "keep"
+            ? latest.current.list
+            : next === "close"
+              ? closed
+              : { open: true, section: next.section },
       };
       // Closing applies at once, even when the destination is already open.
       if (next === "close")

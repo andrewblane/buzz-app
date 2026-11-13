@@ -64,7 +64,7 @@ test("the combined rail pins destinations and opens centered Messages", async ({
   for (const action of [
     "New chat",
     "New workspace",
-    "New DM",
+    "New message",
     "New channel",
     "New section",
   ])
@@ -74,7 +74,9 @@ test("the combined rail pins destinations and opens centered Messages", async ({
   await page.keyboard.press("Escape");
   await expect(headerNew).toBeFocused();
   await headerNew.click();
-  await page.getByRole("menuitem", { name: "New DM", exact: true }).click();
+  await page
+    .getByRole("menuitem", { name: "New message", exact: true })
+    .click();
   await expect(
     page.getByRole("region", { name: "New message", exact: true }),
   ).toBeVisible();
@@ -1225,7 +1227,12 @@ test.describe("Sidebar row limits", () => {
       exact: true,
     });
     await expect(customPage.locator("[data-rail-row]")).toHaveCount(6);
+    // The section opens on its first conversation; a reload keeps the
+    // conversation, and its list is one toggle away.
     await page.reload();
+    await page
+      .getByRole("button", { name: "Show Saved chats list", exact: true })
+      .click();
     await expect(customPage.locator("[data-rail-row]")).toHaveCount(6);
     await expect(customCard.locator("[data-rail-row]")).toHaveCount(4);
     await page.screenshot({

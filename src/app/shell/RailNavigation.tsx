@@ -28,6 +28,8 @@ import { dmLabel } from "../../features/conversation/dm-label";
 import { useIdentityNames } from "../../features/identity-names/react";
 import { useSavedHiddenDmIds } from "../../bundled/channels/useHiddenDms";
 import { soloDraftTarget } from "../../features/channel-navigation/routes";
+import { routedSection } from "./list-column";
+import type { OpenTarget } from "../../features/navigation/targets";
 import {
   sidebarSectionTarget,
   isSidebarSectionRoute,
@@ -76,6 +78,7 @@ export function RailNavigation({
   sidebarSections,
   list: listColumn,
   listNavigator = directNavigator,
+  openInSection,
   shortcuts,
   compact = false,
 }: {
@@ -94,6 +97,8 @@ export function RailNavigation({
   list?: { section: string; slot: Element | null } | undefined;
   /** Opens from the list column, which keep that column as it is. */
   listNavigator?: Navigation;
+  /** Opens a conversation with the list showing the section it was opened from. */
+  openInSection?: ((section: string, target: OpenTarget) => void) | undefined;
   /** Registers the chords that open Team on one of its views. */
   shortcuts?: Pick<ShortcutsService, "registerHost"> | undefined;
   compact?: boolean;
@@ -600,11 +605,8 @@ export function RailNavigation({
             data-rail-view-more=""
             aria-label="Open Team"
             icon={<ArrowRightIcon size={18} />}
-            selected={
-              navigation.entry.target.kind === "page" &&
-              !isSidebarSectionRoute(navigation.entry.target.route?.params) &&
-              selected === "buzz.channels/channels"
-            }
+            // Team's own address only: a draft on this page is not Team.
+            selected={routedSection(navigation.entry.target) === "messages"}
             onClick={() => onSelect("buzz.channels/channels")}
           />
         }
@@ -666,9 +668,25 @@ export function RailNavigation({
         pageSection={pageSection}
         compact={!pageSection && compact}
         selectedSection={selectedSection}
-        openSection={(id) =>
-          void navigator.open(sidebarSectionTarget(scope, id))
-        }
+        openSection={(id) => {
+          // A section a person made has no page of its own: open its first
+          // conversation beside its list.
+          const first =
+            id === "messages" || id === "solo"
+              ? undefined
+              : railSections(
+                  railLayout,
+                  contributed.map((section) => ({
+                    id: section.key,
+                    title: section.title,
+                  })),
+                )
+                  .entries(id, [], byId)
+                  .find((entry) => entry.target.kind === "conversation");
+          if (first?.target.kind === "conversation" && openInSection)
+            openInSection(id, first.target);
+          else void navigator.open(sidebarSectionTarget(scope, id));
+        }}
         isPinned={(entry) => pinned.has(entry.id)}
         onTogglePin={(entry, nextPinned) => {
           if (nextPinned) {

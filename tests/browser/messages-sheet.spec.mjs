@@ -278,7 +278,7 @@ test("conversation lists default closed for direct opens and open for View more"
   await page.goForward();
   await expect(row).toBeVisible();
   await rail.getByRole("button", { name: "Create", exact: true }).click();
-  await page.getByRole("menuitem", { name: /^New DM/ }).click();
+  await page.getByRole("menuitem", { name: /^New message/ }).click();
   await expect(
     detail.getByRole("button", { name: "Show Team list", exact: true }),
   ).toBeVisible();

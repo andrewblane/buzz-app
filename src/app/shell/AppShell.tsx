@@ -9,6 +9,7 @@ import { navigationOwner, orderPages, pagePlacement } from "./presentation";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -202,7 +203,8 @@ function AppShellContent({
   // both open the sidebar collapses to its rail, and returns when either closes.
   const fourColumns = !!listSection && listColumn.list.open && sidePanels > 0;
   const collapsedForPanel = useRef(false);
-  useEffect(() => {
+  // Before paint, so the reader changes width once, not twice.
+  useLayoutEffect(() => {
     if (fourColumns) {
       setSidebarOpen((open) => {
         if (open) collapsedForPanel.current = true;
@@ -224,6 +226,14 @@ function AppShellContent({
           return hostNavigation.open(target, options);
         }) as typeof hostNavigation.open,
       },
+    [hostNavigation, askList],
+  );
+  // A section opened on one of its conversations lists that section.
+  const openInSection = useCallback(
+    (section: string, target: OpenTarget) => {
+      askList({ section });
+      void hostNavigation?.open(target);
+    },
     [hostNavigation, askList],
   );
   // Opens from the list keep it showing.
@@ -410,6 +420,7 @@ function AppShellContent({
           sidebarSections={searchServices.sidebarSections}
           navigator={railNavigator}
           listNavigator={listNavigator ?? searchServices.navigation}
+          openInSection={openInSection}
           shortcuts={searchServices.shortcuts}
           list={listSection && { section: listSection.section, slot: listSlot }}
           pages={pages}

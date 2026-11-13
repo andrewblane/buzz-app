@@ -296,7 +296,7 @@ it("filters the combined sidebar without navigating or resetting Solo sections",
   const creationLabels = [
     "New solo chat",
     "New workspace",
-    "New DM",
+    "New message",
     "New channel",
     "New section",
   ];
@@ -311,7 +311,9 @@ it("filters the combined sidebar without navigating or resetting Solo sections",
     keys: "[MouseRight]",
     target: screen.getByRole("button", { name: "New" }),
   });
-  await user.click(await screen.findByRole("menuitem", { name: "New DM" }));
+  await user.click(
+    await screen.findByRole("menuitem", { name: "New message" }),
+  );
   expect(f.open).toHaveBeenLastCalledWith({
     version: 1,
     kind: "page",

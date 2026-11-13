@@ -120,3 +120,12 @@ test("an open that stayed on its visit asks nothing of a later one", () => {
   t.go("alpha", conversation("alpha"), true);
   expect(t.list()).toMatchObject({ open: false });
 });
+
+test("a section opened on one of its conversations lists that section", () => {
+  const t = harness();
+  t.go("team", team);
+  act(() => t.column().setOpen(false));
+  act(() => t.column().ask({ section: "saved" }));
+  t.go("alpha", conversation("alpha"));
+  expect(t.list()).toMatchObject({ open: true, section: "saved" });
+});

@@ -209,7 +209,7 @@ function ReadyNewMenu({
           <MenuGroup>
             <MenuGroupLabel emphasis="quiet">Team</MenuGroupLabel>
             <MenuItem disabled={!scope} onClick={() => compose()}>
-              New DM
+              New message
               {shortcut(composing ? 2 : 3)}
             </MenuItem>
             <MenuItem
