@@ -2150,10 +2150,10 @@ test("live streams request no agent telemetry without plugin demand", async () =
 
 /** Joins `count` channels over the real HTTP boundary, delivers an event in
  * the last one, which lies outside the first live REQ batch, and swaps it for
- * a new channel. Waits carry the scale check's 30 s budget; smaller counts
- * finish well inside the default test timeout. Returns the closed harness for
- * its upstream record. */
-async function joinedBeyondFirstBatch(count, batches) {
+ * a new channel. `budget` is the timeout in ms of the establishment wait and
+ * of the swap wait; the delivery wait between them keeps vi.waitFor's 1 s
+ * default. Returns the closed harness for its upstream record. */
+async function joinedBeyondFirstBatch(count, batches, budget) {
   const h = await harness();
   let traffic;
   try {
@@ -2198,7 +2198,7 @@ async function joinedBeyondFirstBatch(count, batches) {
           ),
         ).toHaveLength(count);
       },
-      { timeout: 30_000 },
+      { timeout: budget },
     );
     expect(h.sockets).toHaveLength(1);
     // Live-only REQs each name a batch; a batch small enough to replay inside
@@ -2237,7 +2237,7 @@ async function joinedBeyondFirstBatch(count, batches) {
           false,
         );
       },
-      { timeout: 30_000 },
+      { timeout: budget },
     );
     return h;
   } finally {
@@ -2247,11 +2247,15 @@ async function joinedBeyondFirstBatch(count, batches) {
   }
 }
 
+// Each budgeted wait gets the 5 s that the default test timeout allowed this
+// case as a whole. The longest failing run is both of them plus the 1 s
+// delivery wait, 11 s, so the 20 s test timeout lets a failed wait throw and
+// the helper's cleanup finish inside this test, not during the next one.
 test("real broker delivers outside the first joined batch", async () => {
   // The lone overflow channel replays inside its own REQ, so only the first
   // batch is a live-only REQ.
-  await joinedBeyondFirstBatch(LIVE_BATCH_SIZE + 1, 1);
-});
+  await joinedBeyondFirstBatch(LIVE_BATCH_SIZE + 1, 1, 5_000);
+}, 20_000);
 
 // Asserts wall-clock time: about 20 s of single-threaded CPU inside the 30 s
 // budget. A shared Vitest shard's two workers timed it out under load, so CI
@@ -2260,7 +2264,7 @@ test("real broker delivers outside the first joined batch", async () => {
 test.skipIf(!process.env.BUZZ_BROKER_SCALE)(
   "real broker keeps 100,000 joined channels and delivers outside the first batch",
   async () => {
-    const h = await joinedBeyondFirstBatch(100_000, 49);
+    const h = await joinedBeyondFirstBatch(100_000, 49, 30_000);
     const active = new Set();
     for (const { kind, id } of h.frames) {
       if (kind === "REQ") active.add(id);
