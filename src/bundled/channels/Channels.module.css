@@ -940,6 +940,11 @@ details:not([open]) > summary .sectionChevron {
   margin-left: auto;
   gap: var(--space-1h);
 }
+/* Plugins draw their own launcher icons; the host's stroke keeps the row a set. */
+.channelLaunchers [class~="buzz-button-label"] svg,
+.channelLaunchers [class~="buzz-button-label"] svg * {
+  stroke-width: 2;
+}
 .channelDrawer {
   --panel-motion-exit-duration: 0ms;
   --panel-motion-offset: translateY(var(--space-3));

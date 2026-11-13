@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { BrowserIcon } from "../../shared/design-system/icons/index";
-import { PageIcon, paintsCurrentColor } from "./PageIcon";
+import { PageIcon, glyphMask, paintsCurrentColor } from "./PageIcon";
 
 afterEach(() => {
   cleanup();
@@ -121,4 +121,71 @@ it("swaps in the component icon when a masked SVG fails to load", () => {
   fireEvent.error(container.querySelector("img") as Element);
   expect(container.querySelector("span")).toBeNull();
   expect(container.querySelector("svg")).toBeInstanceOf(SVGSVGElement);
+});
+
+const svgImage = (svg: string) =>
+  `data:image/svg+xml,${encodeURIComponent(svg)}`;
+const decoded = (image: string | undefined) =>
+  decodeURIComponent(image?.split(",")[1] ?? "");
+
+it("masks one-colour SVGs at the host stroke and leaves other images alone", () => {
+  const grey = svgImage(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#7a7a7a" stroke-width="2"><path d="M3 5h9" stroke-width="1.5"/><path d="M3 9h9" style="stroke-width: 1"/></svg>',
+  );
+  const masked = decoded(glyphMask(grey, 2.5));
+  expect(masked.match(/stroke-width/g)).toEqual(["stroke-width"]);
+  expect(masked).toContain(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#7a7a7a" stroke-width="2.5">',
+  );
+  // A 16-unit icon gets the same rendered weight as a 24-unit one.
+  const small = svgImage(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" stroke="#333" fill="none"><path d="M1 1h9"/></svg>',
+  );
+  expect(decoded(glyphMask(small, 2.5))).toContain(
+    'stroke-width="1.6666666666666667"',
+  );
+  const sized = svgImage(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" stroke="#333" fill="none"><path d="M1 1h9"/></svg>',
+  );
+  expect(decoded(glyphMask(sized, 2.5))).toContain(
+    'stroke-width="1.6666666666666667"',
+  );
+  const accented = `data:image/svg+xml;base64,${btoa(String.fromCharCode(...new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" stroke="#333"><title>café</title><path d="M1 1h9"/></svg>')))}`;
+  expect(decoded(glyphMask(accented, 2.5))).toContain("café");
+  // Without a stroke width the source is masked unchanged.
+  expect(glyphMask(grey)).toBe(grey);
+  expect(glyphMask(bag, 2.5)).toContain("stroke-width%3D%222.5%22");
+
+  const twoColours = svgImage(
+    '<svg xmlns="http://www.w3.org/2000/svg"><path fill="red"/><path fill="blue"/></svg>',
+  );
+  const gradient = svgImage(
+    '<svg xmlns="http://www.w3.org/2000/svg"><linearGradient id="g"/><path fill="url(#g)"/></svg>',
+  );
+  const styled = svgImage(
+    '<svg xmlns="http://www.w3.org/2000/svg" stroke="#000"><style>.b{fill:red}</style><path class="b"/></svg>',
+  );
+  for (const image of [
+    twoColours,
+    gradient,
+    styled,
+    owl,
+    fox,
+    svgImage("<svg"),
+  ])
+    expect(glyphMask(image, 2.5)).toBeUndefined();
+});
+
+it("draws a one-colour plugin SVG as a mask with the host stroke", () => {
+  const grey = svgImage(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#7a7a7a" stroke-width="2"><path d="M3 5h9"/></svg>',
+  );
+  const { container } = render(
+    <PageIcon icon={BrowserIcon} image={grey} size={20} strokeWidth={2.5} />,
+  );
+  const mask = container.firstElementChild as HTMLElement;
+  expect(mask).toHaveClass("bg-current");
+  expect(mask.getAttribute("style")).toContain("stroke-width%3D%222.5%22");
+  // The hidden probe still watches the declared source for load failures.
+  expect(mask.querySelector("img")).toHaveAttribute("src", grey);
 });
