@@ -97,9 +97,11 @@ it("a click in a conversation resumes typing in its message box", async () => {
   await user.click(screen.getByText("Main message"));
   await settle();
   expect(screen.getByRole("textbox", { name: "Main draft" })).toHaveFocus();
-  await user.click(screen.getByRole("button", { name: "React" }));
+  // A control that takes focus from its click keeps it.
+  const react = screen.getByRole("button", { name: "React" });
+  await user.click(react);
   await settle();
-  expect(screen.getByRole("textbox", { name: "Main draft" })).toHaveFocus();
+  expect(react).toHaveFocus();
 });
 
 it("a click in a thread tab resumes typing in the thread's own message box", async () => {
@@ -117,7 +119,7 @@ it("shared chrome returns focus to the pane typed in last, else main", async () 
   await settle();
   expect(screen.getByRole("textbox", { name: "Main draft" })).toHaveFocus();
   await user.click(screen.getByRole("textbox", { name: "Thread draft" }));
-  await user.click(screen.getByRole("button", { name: "Open channel" }));
+  await user.click(screen.getByText("Channels"));
   await settle();
   expect(screen.getByRole("textbox", { name: "Thread draft" })).toHaveFocus();
 });
@@ -192,6 +194,25 @@ it("keyboard activation and touch taps keep their focus", async () => {
     target: message,
     pointerName: "touch",
   } as never);
+  await settle();
+  expect(screen.getByRole("textbox", { name: "Main draft" })).not.toHaveFocus();
+});
+
+it("a click that dismisses a modal leaves focus to the modal's own return", async () => {
+  const user = userEvent.setup();
+  const { rerender } = render(
+    <>
+      <Shell />
+      <div role="dialog" aria-modal="true" aria-label="Confirm">
+        Confirm
+      </div>
+    </>,
+  );
+  // The modal closes on this click and restores its opener's focus later.
+  document.addEventListener("click", () => rerender(<Shell />), {
+    once: true,
+  });
+  await user.click(screen.getByText("Channels"));
   await settle();
   expect(screen.getByRole("textbox", { name: "Main draft" })).not.toHaveFocus();
 });

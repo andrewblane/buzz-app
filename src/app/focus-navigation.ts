@@ -122,22 +122,21 @@ const OWNS_CLICK = [
   '[aria-haspopup]:not([aria-haspopup="false"])[aria-expanded="true"]',
 ].join(", ");
 
-/** Focus a click leaves on no control, or on the control it pressed. */
-function passiveFocus(active: Element | null, target: Element) {
-  if (
+// Open layers a click outside dismisses; their own close returns focus.
+const DISMISSIBLE =
+  '[aria-modal="true"], [role="menu"], [role="listbox"], [data-open][data-side]';
+
+// Containers a click focuses only as a side effect: a message row (selectable
+// by keyboard), its history scroller, or the pane itself.
+const PASSIVE = `[data-message-id], [data-message-id] > [data-layout], [data-message-scroller], [data-channel-history], ${COVERING}, #main-content`;
+
+/** Focus a click left on no control, or on a container it only passed through. */
+function passiveFocus(active: Element | null) {
+  return (
     !active ||
     active === document.body ||
-    active === document.documentElement
-  )
-    return true;
-  if (!(active instanceof HTMLElement) || active.closest(OWNS_CLICK))
-    return false;
-  // Message rows, scrollers and panes take programmatic focus on click.
-  if (active.tabIndex < 0) return true;
-  // Chromium focuses a pressed button or link; WebKit leaves it on body.
-  return (
-    active.contains(target) &&
-    active.matches('button, a[href], [role="button"], [role="link"]')
+    active === document.documentElement ||
+    (active.matches(PASSIVE) && !active.closest(OWNS_CLICK))
   );
 }
 
@@ -149,15 +148,18 @@ function passiveFocus(active: Element | null, target: Element) {
 export function installComposerClickFocus() {
   let origin: HTMLElement | null | undefined;
   let touch = false;
+  let dismissing = false;
   let frame: number | undefined;
   const down = (event: PointerEvent) => {
     origin = focusedWorkspace();
     // A tap must not raise an on-screen keyboard.
     touch = event.pointerType === "touch";
+    dismissing = !!document.querySelector(DISMISSIBLE);
   };
   const click = (event: MouseEvent) => {
     if (
       touch ||
+      dismissing ||
       // Keyboard activation (detail 0) keeps keyboard focus where it is.
       event.detail === 0 ||
       event.button !== 0 ||
@@ -180,7 +182,7 @@ export function installComposerClickFocus() {
         !target.isConnected ||
         target.closest(OWNS_CLICK) ||
         (selection && !selection.isCollapsed) ||
-        !passiveFocus(document.activeElement, target)
+        !passiveFocus(document.activeElement)
       )
         return;
       const main = document.getElementById("main-content");
