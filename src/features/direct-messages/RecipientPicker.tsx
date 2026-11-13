@@ -2,7 +2,7 @@ import { Virtualizer } from "virtua";
 import { Popover } from "@base-ui/react/popover";
 import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useAgentChoices } from "../agents/use-choices";
-import { canMessageAgent } from "../agents/choices";
+import { agentUnavailable, canMessageAgent } from "../agents/choices";
 import type { ChannelSummary } from "../relay/contracts";
 import type { RelaySession } from "../relay/session";
 import { channelIcon, channelText } from "../channels/channel-icon";
@@ -118,7 +118,7 @@ export function RecipientPicker({
     key: query,
     settled: !directory.loading,
   });
-  const agents = useAgentChoices(session, false);
+  const agents = useAgentChoices(session, false, true);
   const removal = useChipRemoval();
   const chosen = selected.length + (channel ? 1 : 0);
   const atLimit = chosen >= maxRecipients;
@@ -168,7 +168,7 @@ export function RecipientPicker({
     keys,
   } = useMemo(() => {
     const controlled = new Set(
-      agents.identities.filter(canMessageAgent).map((agent) => agent.pubkey),
+      agents.selectable.filter(canMessageAgent).map((agent) => agent.pubkey),
     );
     const relationships = peopleRelationships(channels, controlled);
     const inDirectory = new Map(
@@ -176,7 +176,7 @@ export function RecipientPicker({
     );
     // An eligible agent's own name, kept for ranking and for Space.
     const agentName = new Map(
-      agents.identities.flatMap((agent) =>
+      agents.selectable.flatMap((agent) =>
         canMessageAgent(agent) && agent.name
           ? [[agent.pubkey, agent.name] as const]
           : [],
@@ -227,7 +227,7 @@ export function RecipientPicker({
     const byVerifiedName = withVerifiedNames(pool, pageNames, profiles);
     const typedKey = typedPublicKey(query);
     const localAgents = query.trim()
-      ? agents.identities.flatMap((agent): Recipient[] => {
+      ? agents.selectable.flatMap((agent): Recipient[] => {
           if (
             !canMessageAgent(agent) ||
             !agent.name ||
@@ -256,6 +256,7 @@ export function RecipientPicker({
       (person) =>
         person.pubkey !== viewer &&
         !excludedPubkeys.includes(person.pubkey) &&
+        !agentUnavailable(session, person.pubkey) &&
         (!person.isAgent || controlled.has(person.pubkey)) &&
         !selected.some((item) => item.pubkey === person.pubkey),
     );
@@ -341,7 +342,7 @@ export function RecipientPicker({
       keys: candidates.map((person) => person.pubkey),
     };
   }, [
-    agents.identities,
+    agents.selectable,
     channels,
     profiles,
     directory.people,
@@ -354,7 +355,7 @@ export function RecipientPicker({
     selected,
     labels,
     excludedPubkeys,
-    session.profiles,
+    session,
   ]);
   const discriminator = (person: Recipient) => identities.get(person.pubkey);
   // Only a community-verified identity supplies the detail beside the name.
@@ -438,6 +439,7 @@ export function RecipientPicker({
       selection.current.length + (channel ? 1 : 0) >= maxRecipients ||
       person.pubkey === session.viewer ||
       excludedPubkeys.includes(person.pubkey) ||
+      agentUnavailable(session, person.pubkey) ||
       (person.isAgent && !controlled.has(person.pubkey)) ||
       selection.current.some((item) => item.pubkey === person.pubkey)
     )
@@ -585,6 +587,9 @@ export function RecipientPicker({
                 <span className={styles.agent}>{discriminator(person)}</span>
               )}
               {person.isAgent && <span className={styles.agent}>Agent</span>}
+              {agentUnavailable(session, person.pubkey) && (
+                <span className={styles.agent}>Unavailable</span>
+              )}
             </span>
           ))}
           <input

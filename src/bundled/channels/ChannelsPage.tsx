@@ -39,6 +39,10 @@ import {
   soloDraftTarget,
 } from "../../features/channel-navigation/routes";
 import { WorkspaceControl } from "../../features/solo/WorkspaceControl";
+import {
+  newChat,
+  useRegionWorkspace,
+} from "../../features/solo/chat-workspace";
 import type { ChannelLifecycleAction } from "../../features/relay/channel-lifecycle-protocol";
 import type { CommunityMembership } from "../moderation/membership";
 import { useFirstChannel } from "./first-channel";
@@ -278,7 +282,7 @@ export function ChannelsPage({
                   <Button
                     type="button"
                     variant="primary"
-                    onClick={() => relay.retry()}
+                    onClick={() => relay.tryAgain()}
                   >
                     Try again
                   </Button>
@@ -786,6 +790,20 @@ function ChannelWorkspace({
   // The Solo treatment: an agent conversation. In the owner's own chat it
   // also files into a project; the conversation scope owns composer policy.
   const solo = current?.channelType === "solo";
+  // Until a region's chat has a message, `#` can also file it, as its
+  // workspace control does.
+  const filed = useRegionWorkspace(queries, solo ? currentId : undefined);
+  const watched = filed ? currentId : undefined;
+  const fresh = useSyncExternalStore(
+    useCallback(
+      (listener: () => void) =>
+        watched
+          ? queries.channels.subscribeWindow(watched, listener)
+          : () => {},
+      [queries, watched],
+    ),
+    () => !!watched && newChat(queries.channels.window(watched)),
+  );
   // Solo has no main tab workspace; its threads open beside the chat.
   const threadPane = solo ? ("side" as const) : undefined;
   // Confirmations belong to this visit; a Solo conversation that leaves the
@@ -803,13 +821,14 @@ function ChannelWorkspace({
         if (trigger?.isConnected) trigger.focus({ preventScroll: true });
       },
       completed() {
+        const shown = new Set(handoff?.soloNeighbors.current?.(channel.id));
         // Unarchive restores the open chat; every other action leaves it.
         if (action !== "unarchive" && !origin?.aborted && navigator)
           void navigator.open(
             soloSuccessor(
               scope,
               queries.channels.list().channels,
-              neighbors,
+              neighbors.filter((id) => shown.has(id)),
               channel.id,
             ),
           );
@@ -971,16 +990,32 @@ function ChannelWorkspace({
   ]);
   // A live connection can still be confirming its restored membership. Keep
   // the pending intent; an exact reader cannot use display-only authority.
-  const exact =
-    cached || current?.cached
-      ? undefined
-      : navigation && requestedMessage && requestedThread === requestedMessage
-        ? { request: navigation, inTimeline: false }
-        : exactOpening?.request === navigation
-          ? exactOpening
-          : undefined;
+  const exact = useMemo(
+    () =>
+      cached || current?.cached
+        ? undefined
+        : navigation && requestedMessage && requestedThread === requestedMessage
+          ? { request: navigation, inTimeline: false }
+          : exactOpening?.request === navigation
+            ? exactOpening
+            : undefined,
+    [
+      cached,
+      current?.cached,
+      navigation,
+      requestedMessage,
+      requestedThread,
+      exactOpening,
+    ],
+  );
   // The route addresses a thread; its tab owns presentation, the route only
   // selects it and supplies the reveal request.
+  const detailSource =
+    !solo &&
+    navigation?.target.kind === "conversation" &&
+    !!navigation.target.detail &&
+    navigation.target.context === "channel";
+  const detailReply = detailSource && requestedMessage !== requestedThread;
   const routedThread = useMemo(
     () =>
       !cached &&
@@ -993,7 +1028,7 @@ function ChannelWorkspace({
             channelId: current.id,
             messageId: requestedMessage,
             rootId: exact.rootId ?? requestedThread ?? requestedMessage,
-            pane: threadPane,
+            pane: detailReply ? ("main" as const) : threadPane,
             navigation,
           }
         : undefined,
@@ -1005,6 +1040,7 @@ function ChannelWorkspace({
       requestedThread,
       exact,
       threadPane,
+      detailReply,
     ],
   );
   // Open in channel also shows the thread's root in the timeline, reading
@@ -1508,7 +1544,7 @@ function ChannelWorkspace({
         pendingReturn.current = undefined;
       tabState.enterVisit(
         `${navigation.entryId}:${detail ? "detail" : routedThread ? "thread" : "channel"}`,
-        detail ? undefined : routedThread,
+        detail && !detailReply ? undefined : routedThread,
         !!detail,
         detail && currentId
           ? { channelId: currentId, target: detail.target }
@@ -1523,8 +1559,10 @@ function ChannelWorkspace({
           detail.target,
           detail.rootId,
         );
-        if (entry && historyPanel(entry)) open(entry);
-        else navigation.complete({ status: "failed", reason: "unavailable" });
+        if (entry && historyPanel(entry)) {
+          open(entry, false, detailSource ? "side" : undefined);
+          if (detailSource && !detailReply) tabState.selectMain(undefined);
+        } else navigation.complete({ status: "failed", reason: "unavailable" });
       }
       // Reselect it over the restored selection and give it its own visit.
       if (reopen) open(reopen);
@@ -1589,6 +1627,8 @@ function ChannelWorkspace({
     exact?.request,
     exact?.inTimeline,
     routedThread,
+    detailReply,
+    detailSource,
     tabState.enterVisit,
     tabState.select,
     tabState.selectMain,
@@ -1803,14 +1843,16 @@ function ChannelWorkspace({
         // Internal panel targets also use buzz:. Only routable links belong
         // to the navigator; registered panels handle the remaining targets.
         if (target) {
+          const opensAnotherChannel =
+            target.kind === "conversation" && target.channelId !== current?.id;
           if (target.kind === "conversation" && target.messageId) {
-            tabState.leaveVisit();
+            if (!opensAnotherChannel) tabState.leaveVisit();
             threadTrigger.current =
               document.activeElement instanceof HTMLElement
                 ? document.activeElement
                 : null;
           }
-          open(undefined);
+          if (!opensAnotherChannel) open(undefined);
           void navigator.open(target);
           return true;
         }
@@ -2054,7 +2096,14 @@ function ChannelWorkspace({
             cached={cached}
             // The composer below mounts TypingIndicator for members of a live channel.
             navigation={
-              !requestedMessage || exact?.inTimeline ? navigation : undefined
+              !requestedMessage ||
+              exact?.inTimeline ||
+              (contextTarget &&
+                !detailReply &&
+                navigation?.target.kind === "conversation" &&
+                navigation.target.detail)
+                ? navigation
+                : undefined
             }
             holding={contextHolding}
             inlineTarget={contextTarget}
@@ -2153,6 +2202,24 @@ function ChannelWorkspace({
                 <WorkspaceControl session={queries} channelId={current.id} />
               ) : undefined
             }
+            workspace={
+              filed && fresh
+                ? {
+                    preferences: queries.soloPreferences,
+                    choose: (id) =>
+                      void filed
+                        .file(id || undefined)
+                        .catch((reason: unknown) =>
+                          notify(
+                            reason instanceof Error
+                              ? reason.message
+                              : String(reason),
+                            "error",
+                          ),
+                        ),
+                  }
+                : undefined
+            }
             onSend={onComposerSend}
             onCommand={handleCommand}
             focusRequest={composerFocus}
@@ -2241,9 +2308,13 @@ function ChannelWorkspace({
                 draft.project,
                 draft.agent,
                 draft.linked,
+                draft.region,
+                draft.draft,
                 retiredSoloDraft.generation,
               ])}
               linkedId={draft.linked}
+              region={draft.region}
+              draft={draft.draft}
               source={linkedSource}
               visit={navigation}
               focusRequest={

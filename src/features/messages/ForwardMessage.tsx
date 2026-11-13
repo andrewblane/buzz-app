@@ -16,7 +16,7 @@ import { Textarea } from "../../shared/design-system/ui/Textarea";
 import { ToastNotice } from "../../shared/design-system/ui/Toast";
 import { BuzzLinkPreview } from "../conversation/BuzzLinkPreview";
 import { useConversationPresentation } from "../conversation/ConversationPresentation";
-import { canMessageAgent } from "../agents/choices";
+import { agentUnavailable, canMessageAgent } from "../agents/choices";
 import { channelText } from "../channels/channel-icon";
 import { RecipientPicker } from "../direct-messages/RecipientPicker";
 import type { Recipient } from "../direct-messages/usePeople";
@@ -415,14 +415,15 @@ function ForwardMessageDialog({
           if (target.kind !== "person") return;
           const { person } = target;
           if (
-            (person.isAgent ||
+            agentUnavailable(session, person.pubkey) ||
+            ((person.isAgent ||
               session.profiles.snapshot().get(person.pubkey)?.isAgent) &&
-            !session.agentChoices
-              .snapshot()
-              .identities.some(
-                (choice) =>
-                  choice.pubkey === person.pubkey && canMessageAgent(choice),
-              )
+              !session.agentChoices
+                .snapshot()
+                .identities.some(
+                  (choice) =>
+                    choice.pubkey === person.pubkey && canMessageAgent(choice),
+                ))
           )
             throw new Error(
               "This agent is no longer available for direct messages. Choose another person.",
