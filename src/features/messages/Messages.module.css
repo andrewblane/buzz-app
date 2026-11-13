@@ -245,7 +245,7 @@
   min-width: 0;
 }
 .author {
-  font-weight: var(--type-weight-medium);
+  font-weight: var(--type-weight-message-sender);
   flex-shrink: 0;
   min-width: 0;
   max-width: 100%;
@@ -3469,7 +3469,7 @@ html[data-keyboard-navigation] .rawDiff:focus-visible {
   pointer-events: auto;
 }
 :where(html[data-message-density="compact"]) .message .author {
-  font-weight: var(--type-weight-medium);
+  font-weight: var(--type-weight-message-sender);
 }
 :where(html[data-message-density="compact"])
   .messageBubble

@@ -1853,13 +1853,14 @@ Values scale with the host interface-size preference.
   structure. Existing `font-semibold` consumers resolve to Medium.
   Unread sidebar conversation labels, including Open Team/Solo, use the dedicated
   `--type-weight-navigation-unread` (600) to distinguish unread rows at a glance.
+  Message sender names use `--type-weight-message-sender` (600).
 - Mono uses `detail/body-xsmall` at 12/16 with 0.03em tracking.
   `--type-xsmall-size` points to the existing 12px step, keeping the semantic
   independent from caption even though their sizes currently match. `text-mono-lg` and
   `text-mono-sm` are compatibility aliases for this same setting, not extra sizes.
 - Caption uses 12/16 and 0.0133em tracking. Buzz’s `text-body` uses 14/20; `text-label` uses 16/24 and `text-body-lg` uses 20/28.
 - Message prose and composer text use `text-message`: 14px with 21.5/14 leading
-  (21.5px at default), Regular (400) weight and -0.01em tracking, keeping the
+  (21.5px at default), Regular (400) weight and zero tracking, keeping the
   same compact reading rhythm while writing and reading messages. The message
   renderer uses `space-4` between prose blocks, with
   `space-2` between an introductory paragraph and its following list. Labels,

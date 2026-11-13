@@ -2,6 +2,7 @@ import type { RelaySession } from "../../features/relay/session";
 import type { ChannelSummary } from "../../features/relay/contracts";
 import type { RailEntry } from "./rail-pins";
 import type { useIdentityNames } from "../../features/identity-names/react";
+import { usePresenceStatus } from "../../features/presence/react";
 import { AvatarStack } from "../../shared/design-system/ui/AvatarStack";
 import { Avatar } from "../../shared/design-system/ui/Avatar";
 import { ChannelAvatar } from "../../features/channels/ChannelAvatar";
@@ -38,16 +39,27 @@ export function RailEntryArtwork({
   >["identities"];
   agentEntries: readonly RailEntry[];
 }) {
+  const channelId =
+    entry.target.kind === "conversation" ? entry.target.channelId : undefined;
+  const channel = channelId ? channelsById.get(channelId) : undefined;
+  const participants =
+    channel?.channelType === "dm"
+      ? [...new Set(channel.participants ?? [])].filter(
+          (person) => person !== session.viewer,
+        )
+      : [];
+  const person =
+    entry.target.kind === "person"
+      ? entry.target.pubkey
+      : participants.length === 1
+        ? participants[0]
+        : undefined;
+  const presence = usePresenceStatus(
+    person ? session.presence : undefined,
+    person,
+  );
+  const statusBadge = presence === "unknown" ? undefined : presence;
   const avatarArtwork = () => {
-    const channelId =
-      entry.target.kind === "conversation" ? entry.target.channelId : undefined;
-    const channel = channelId ? channelsById.get(channelId) : undefined;
-    const participants =
-      channel?.channelType === "dm"
-        ? [...new Set(channel.participants ?? [])].filter(
-            (person) => person !== session.viewer,
-          )
-        : [];
     if (avatarOnly && participants.length > 1)
       return (
         <AvatarStack
@@ -68,6 +80,7 @@ export function RailEntryArtwork({
           src={avatarMedia(entry.picture, session.media)}
           alt=""
           fallback={entry.label}
+          statusBadge={statusBadge}
         />
       );
     if (entry.kind === "chat" && !avatarOnly) {
@@ -110,7 +123,12 @@ export function RailEntryArtwork({
       <Icon size={18} />
     );
   };
-  const avatar = avatarArtwork();
+  const avatar = (
+    <>
+      {avatarArtwork()}
+      {statusBadge && <span className="sr-only">Presence: {statusBadge}</span>}
+    </>
+  );
   if (!avatarOnly) return avatar;
   return (
     <span className={styles.pinArtwork}>

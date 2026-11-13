@@ -14,6 +14,22 @@
   color: var(--text-standard);
   cursor: pointer;
 }
+
+/* Stretch the existing access control across the sibling name capsule. */
+[class~="panel-header-title"]:has(.identity) {
+  position: relative;
+}
+[class~="panel-header-title"] .identity::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  cursor: pointer;
+}
+/* A transform would re-anchor the stretched target to the avatar on press. */
+[class~="panel-header-title"] .identity:active {
+  scale: none;
+}
 .avatars {
   position: relative;
   z-index: 1;

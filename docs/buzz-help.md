@@ -961,6 +961,8 @@ for 30 days expires.
   immediately, and touch devices show them without waiting.
 - **Team card**: Activity and Drafts & sent appear above up to four recent
   conversations. **Open Team** opens the full conversation list.
+  People and one-to-one DM avatars in sidebar cards show online, away, or offline
+  presence when known; channels and group chats do not show a single presence dot.
   **Open Team** and **Open Solo** show an unread dot and unread text styling when
   conversations hidden beyond the card’s four visible rows have unread messages.
 - **Sidebar sections**: in **All**, use the arrow beside **Solo** or **Team** to
