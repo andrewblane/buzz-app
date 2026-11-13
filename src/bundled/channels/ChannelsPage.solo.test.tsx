@@ -1350,21 +1350,21 @@ it("offers the header's chat actions from the sidebar row, plus inline Rename", 
   const header = await items("Chat actions");
   expect(header).toEqual([
     "Chat settings",
-    "Work",
-    "New workspace",
     "Share access",
     "Copy link",
     "Convert to channel",
+    "Work",
+    "New workspace",
     "Archive chat",
     "Delete chat",
   ]);
   expect(await items("Actions for Planning")).toEqual([
     "Rename",
     "Chat settings",
-    "Move to",
     "Share access",
     "Copy link",
     "Convert to channel",
+    "Move to",
     "Archive chat",
     "Delete chat",
   ]);

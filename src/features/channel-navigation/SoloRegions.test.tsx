@@ -808,7 +808,7 @@ it("replaces personal filing with a reveal chip and rejects a move selected just
     screen.getByRole("button", { name: "Start a huddle" }),
   ).toBeInTheDocument();
   const items = screen.getAllByRole("button").map((item) => item.textContent);
-  expect(items.indexOf("Start a huddle")).toBeGreaterThan(
+  expect(items.indexOf("Start a huddle")).toBeLessThan(
     items.indexOf("Chat settings"),
   );
   expect(items.indexOf("Start a huddle")).toBeLessThan(
