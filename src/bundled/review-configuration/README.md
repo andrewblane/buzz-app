@@ -21,7 +21,7 @@ threads. It resets each lane to Needs review. Incomplete original submissions re
 the original browser profile instead. Existing review notifications run only on Submit.
 Agent admission continues automatically as described below.
 
-All three pages use the shell's page navigation. Only Review Configuration appears in the sidebar; Submit PR has a Back button returning to it. Pull requests opens the existing All PRs page with Back navigation. Repository and lane editing
+All three pages use the shell's page navigation. Review Configuration stays in the sidebar; the Pull requests icon in the dock opens the existing PR list directly. Its Submit PR button opens the submission form. Existing configuration actions and Back buttons remain available. Repository and lane editing
 remain local sections; reloading returns Configuration to its repository list.
 Restarted submissions use a versioned delivery generation; older plugin versions cannot read or resume them.
 The channel selection is remembered per identity/community; one eligible channel

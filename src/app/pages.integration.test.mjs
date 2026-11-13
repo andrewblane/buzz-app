@@ -146,8 +146,9 @@ test("the app runtime exposes ready bundled pages and removes them on disable", 
       .snapshot()
       .find((page) => page.key === "buzz.review-configuration/all");
     assert.ok(allPrs);
-    assert.equal(allPrs.title, "All PRs");
-    assert.equal(allPrs.primary, false);
+    assert.equal(allPrs.title, "Pull requests");
+    assert.equal(allPrs.primary, true);
+    assert.equal(allPrs.placement, "dock");
     await services.plugins.change("disable", "buzz.review-configuration");
     assert.equal(
       services.pages

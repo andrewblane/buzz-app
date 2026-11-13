@@ -51,8 +51,8 @@ export const apply: PluginModule["apply"] = (ctx) => {
       id: page,
       title: reviewPageTitle(page),
       layout: "workspace",
-      primary: page === "configuration",
-      placement: "sidebar",
+      primary: page !== "submit",
+      placement: page === "all" ? "dock" : "sidebar",
       route: { version: 1, validate: (params) => !!messageRoute(params) },
       component: ({ navigation }) => (
         <ReviewConfigurationPage

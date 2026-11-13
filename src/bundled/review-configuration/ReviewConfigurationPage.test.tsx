@@ -565,6 +565,27 @@ it("opens the separate submit page without repository or lane configuration", as
   expect(screen.queryByText("Repositories")).toBeNull();
 });
 
+it("opens Submit PR directly from Pull requests and preserves configuration navigation", async () => {
+  const test = fixture();
+  const onNavigate = vi.fn(async () => {});
+  render(
+    <ReviewConfigurationCommunity
+      session={test.session}
+      page="all"
+      onNavigate={onNavigate}
+    />,
+  );
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("button", { name: "Submit PR", exact: true }),
+  );
+  expect(onNavigate).toHaveBeenCalledWith("submit");
+  await user.click(
+    screen.getByRole("button", { name: "Back to Review Configuration" }),
+  );
+  expect(onNavigate).toHaveBeenCalledWith("configuration");
+});
+
 it("requires a routing value and saves each lane before allowing another", async () => {
   const test = fixture();
   render(<ReviewConfigurationCommunity session={test.session} />);
@@ -669,7 +690,7 @@ it("opens the PR table from the home page action", async () => {
   );
   const user = userEvent.setup();
   await screen.findByRole("button", { name: "Register repository" });
-  expect(screen.queryByRole("region", { name: "All PRs" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Pull requests" })).toBeNull();
   await user.click(screen.getByRole("button", { name: "Pull requests" }));
   expect(onNavigate).toHaveBeenCalledWith("all");
   await user.click(screen.getByRole("button", { name: "Submit PR" }));

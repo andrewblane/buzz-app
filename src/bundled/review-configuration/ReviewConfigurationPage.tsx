@@ -26,6 +26,7 @@ import type { RelaySession } from "../../features/relay/session";
 import {
   ArrowLeftIcon,
   ListChecksIcon,
+  GitPullRequestIcon,
 } from "../../shared/design-system/icons";
 import { NavigationItem } from "../../shared/design-system/ui/NavigationItem";
 import { Button } from "../../shared/design-system/ui/Button";
@@ -55,7 +56,7 @@ export const reviewPageTitle = (page: ReviewPage) =>
   page === "submit"
     ? "Submit PR"
     : page === "all"
-      ? "All PRs"
+      ? "Pull requests"
       : "Review Configuration";
 
 function Frame({
@@ -70,7 +71,14 @@ function Frame({
     <FullPageSurface aria-label={title}>
       <div className="review-config-page text-body">
         <PanelHeader
-          title={<PanelHeaderLabel title={title} icon={<ListChecksIcon />} />}
+          title={
+            <PanelHeaderLabel
+              title={title}
+              icon={
+                page === "all" ? <GitPullRequestIcon /> : <ListChecksIcon />
+              }
+            />
+          }
         />
         <div className="review-config-scroll">
           <div className="review-config-content" data-review-page={page}>
@@ -352,6 +360,15 @@ export function ReviewConfigurationCommunity({
           >
             <ArrowLeftIcon /> Back to Review Configuration
           </Button>
+          {page === "all" && (
+            <Button
+              variant="prominent"
+              disabled={editing || !onNavigate}
+              onClick={() => void navigate("submit")}
+            >
+              Submit PR
+            </Button>
+          )}
         </div>
       )}
       {navigationError && <p role="alert">{navigationError}</p>}
