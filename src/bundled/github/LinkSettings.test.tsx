@@ -29,7 +29,9 @@ it("defaults to Buzz and persists browser opening across settings remounts", asy
   expect(openGitHubLinksInBuzz()).toBe(false);
   view.unmount();
   render(<LinkSettings active={() => true} />);
-  const restored = screen.getByRole("switch");
+  const restored = screen.getByRole("switch", {
+    name: "Open GitHub links in Buzz",
+  });
   expect(restored).not.toBeChecked();
   restored.focus();
   await user.keyboard(" ");
@@ -40,7 +42,9 @@ it("defaults to Buzz and persists browser opening across settings remounts", asy
 it("updates mounted controls for another window's saved choice and storage clear", () => {
   render(<LinkSettings active={() => true} />);
   act(() => setOpenGitHubLinksInBuzz(false));
-  expect(screen.getByRole("switch")).not.toBeChecked();
+  expect(
+    screen.getByRole("switch", { name: "Open GitHub links in Buzz" }),
+  ).not.toBeChecked();
   const key = localStorage.key(0);
   if (!key) throw new Error("Preference was not saved");
   act(() => {
@@ -49,7 +53,9 @@ it("updates mounted controls for another window's saved choice and storage clear
       new StorageEvent("storage", { key, storageArea: localStorage }),
     );
   });
-  expect(screen.getByRole("switch")).toBeChecked();
+  expect(
+    screen.getByRole("switch", { name: "Open GitHub links in Buzz" }),
+  ).toBeChecked();
   act(() => setOpenGitHubLinksInBuzz(false));
   act(() => {
     localStorage.clear();
@@ -57,7 +63,9 @@ it("updates mounted controls for another window's saved choice and storage clear
       new StorageEvent("storage", { key: null, storageArea: localStorage }),
     );
   });
-  expect(screen.getByRole("switch")).toBeChecked();
+  expect(
+    screen.getByRole("switch", { name: "Open GitHub links in Buzz" }),
+  ).toBeChecked();
 });
 
 it("retains the saved choice on write failure and allows retry", async () => {
@@ -67,22 +75,34 @@ it("retains the saved choice on write failure and allows retry", async () => {
     .mockImplementation(() => {
       throw new Error("Storage unavailable");
     });
-  await userEvent.click(screen.getByRole("switch"));
-  expect(screen.getByRole("switch")).toBeChecked();
+  await userEvent.click(
+    screen.getByRole("switch", { name: "Open GitHub links in Buzz" }),
+  );
+  expect(
+    screen.getByRole("switch", { name: "Open GitHub links in Buzz" }),
+  ).toBeChecked();
   expect(openGitHubLinksInBuzz()).toBe(true);
   expect(screen.getByRole("alert")).toHaveTextContent(
     "Your choice could not be saved",
   );
   write.mockRestore();
-  await userEvent.click(screen.getByRole("switch"));
-  expect(screen.getByRole("switch")).not.toBeChecked();
+  await userEvent.click(
+    screen.getByRole("switch", { name: "Open GitHub links in Buzz" }),
+  );
+  expect(
+    screen.getByRole("switch", { name: "Open GitHub links in Buzz" }),
+  ).not.toBeChecked();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
 it("does not save through an inactive settings contribution", async () => {
   render(<LinkSettings active={() => false} />);
-  await userEvent.click(screen.getByRole("switch"));
-  expect(screen.getByRole("switch")).toBeChecked();
+  await userEvent.click(
+    screen.getByRole("switch", { name: "Open GitHub links in Buzz" }),
+  );
+  expect(
+    screen.getByRole("switch", { name: "Open GitHub links in Buzz" }),
+  ).toBeChecked();
   expect(localStorage.length).toBe(0);
 });
 

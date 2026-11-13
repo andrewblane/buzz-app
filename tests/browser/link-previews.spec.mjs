@@ -67,6 +67,50 @@ test("link previews draw web cards below messages and let a plugin claim its own
     await page.getByRole("button", { name: "Toggle theme" }).click();
     await expect(first.locator("[data-tracker-card]")).toBeVisible();
     await expect(launch).toBeVisible();
+
+    // Real settings, plugin registration and browser storage must agree across
+    // reloads; a component remount cannot establish this boundary.
+    const github = "https://github.com/example-org/project/pull/42";
+    const card = page.locator(`[data-link-previews] a[href="${github}"]`);
+    const toggle = page.getByRole("switch", { name: "Show GitHub cards" });
+    await expect(toggle).toBeChecked();
+    await expect(card).toBeVisible();
+    await toggle.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: test.info().outputPath("cards-on.png"),
+      fullPage: true,
+    });
+    await toggle.click();
+    await expect(card).toHaveCount(0);
+    await expect(launch).toBeVisible();
+    const messageLink = page.locator(`a[href="${github}"]`);
+    await expect(messageLink).toBeVisible();
+    await messageLink.click();
+    await expect(page.getByRole("status")).toHaveText(github);
+    await page.reload();
+    await expect(toggle).not.toBeChecked();
+    await expect(launch).toBeVisible();
+    await expect(card).toHaveCount(0);
+    expect(
+      await page.evaluate(() => window.linkPreviewFixture.asked),
+    ).not.toContain(github);
+    await page.setViewportSize({ width: 480, height: 950 });
+    await page.evaluate(() => {
+      document.documentElement.dataset.colorMode = "light";
+      document.documentElement.style.fontSize = "200%";
+    });
+    await toggle.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: test.info().outputPath("cards-off-narrow.png"),
+      fullPage: true,
+    });
+    await toggle.focus();
+    await page.keyboard.press("Space");
+    await expect(toggle).toBeChecked();
+    await expect(card).toBeVisible();
+    await page.reload();
+    await expect(toggle).toBeChecked();
+    await expect(card).toBeVisible();
   } finally {
     await server.close();
   }

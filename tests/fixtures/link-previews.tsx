@@ -8,9 +8,8 @@ import type { ChannelMessage } from "../../src/features/relay/contracts";
 import type { RelaySession } from "../../src/features/relay/session";
 import type { HostPage } from "../../src/features/host/service";
 import * as links from "../../src/bundled/links";
-import { LinkPreview } from "../../src/bundled/link-previews/LinkPreview";
-import { createLoader } from "../../src/bundled/link-previews/loader";
-import { previewable } from "../../src/bundled/link-previews/safety";
+import * as webPreviews from "../../src/bundled/link-previews";
+import { LinkSettings } from "../../src/bundled/github/LinkSettings";
 import channelStyles from "../../src/bundled/channels/Channels.module.css";
 import { ToastProvider } from "../../src/shared/design-system/ui/Toast";
 import "@fontsource-variable/inter/wght.css";
@@ -66,27 +65,16 @@ const requestBytes = async () => ({
   body: await png(1200, 630),
 });
 const asked: string[] = [];
-const loader = createLoader({
+const host = {
   readPage: (url, options) => {
     asked.push(url);
     return readPage(url, options);
   },
   requestBytes,
-});
-Object.assign(window, { linkPreviewFixture: { asked } });
-
-const webPreviews: PluginModule = {
-  inject: ["conversation"],
-  apply(ctx) {
-    ctx.conversation.registerLinkPreview({
-      id: "web",
-      title: "Web page preview",
-      matches: (url) => !!previewable(url),
-      order: 100,
-      component: (props) => <LinkPreview {...props} loader={loader} />,
-    });
-  },
 };
+Object.assign(window, { linkPreviewFixture: { asked } });
+// Model the desktop capability flag and page reader, without native IPC.
+Object.assign(globalThis, { isTauri: true });
 const siteOverride: PluginModule = {
   inject: ["conversation"],
   apply(ctx) {
@@ -108,6 +96,7 @@ const modules: Record<string, PluginModule> = {
   "fixture.tracker": siteOverride,
 };
 const root = new Context();
+root.provide("host", host);
 const runtime = new PluginRuntime(
   root,
   async (plugin) => modules[plugin.manifest.id] ?? links,
@@ -156,6 +145,10 @@ const rows = [
     "three",
     "Reading list: https://a.example.org/ https://b.example.org/ https://c.example.org/ https://d.example.org/ https://e.example.org/",
   ),
+  message(
+    "github",
+    "A change to inspect: https://github.com/example-org/project/pull/42",
+  ),
 ];
 const profiles = new Map([["a".repeat(64), { name: "Morgan" }]]);
 const directory = { status: "ready", channels: [] };
@@ -202,6 +195,7 @@ function Preview() {
       }}
     >
       <h1>Link previews</h1>
+      <LinkSettings active={() => true} />
       <div style={{ display: "flex", gap: 8 }}>
         <button
           type="button"

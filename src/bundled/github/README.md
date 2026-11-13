@@ -13,5 +13,7 @@ Preview GitHub repositories, pull requests, issues, and commits without leaving 
    shortcut in your browser instead. This choice is saved on this device; pull
    request indicators and agent tools stay enabled.
 2. On a pull request, switch between **Discussion** and **Checks**.
+   In **Settings → Plugins → GitHub → Links**, turn off **Show GitHub cards**
+   to hide preview cards below messages on this device. Message links stay clickable.
 3. Switch a pull request from **Summary** to **Changes** to read its diff.
 4. Choose **Open on GitHub** to see the full page.
