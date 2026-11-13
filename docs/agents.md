@@ -534,9 +534,10 @@ one-off process; Codex: an ephemeral thread). Its signal aborts
 `STANDALONE_DEADLINE_MS` after it starts, including any wait for the harness to
 be ready. The prompt text lives in `attention-prompt.ts`.
 
-A plugin wakes an agent with `ctx.agents.wake(pubkey, { channel, root?, text })`,
+A plugin wakes an agent with `ctx.agents.wake(pubkey, { channel, root?, topLevel?, text })`,
 in the conversation of that channel and thread, or of a Solo chat when it leaves
-out `root`. It throws when this copy of the app does not run the agent or its
+out `root`. `topLevel: true` wakes it at the top level of any other channel, the
+conversation a whole-channel watch wakes it in, so it can start a thread there. It throws when this copy of the app does not run the agent or its
 mention lane is full. The wake is a `plugin` trigger in the mention lane, with
 the mention's rate limit, and is dropped like a queued mention when the agent
 stops running here. Nothing goes to the relay. Claude, Codex, goose and Pi take
@@ -584,6 +585,35 @@ the same conversation ahead of newer notes if delivery definitely never began.
 They remain in memory only, and the call returns false unless this copy runs
 the agent. Pi agents don't take notes yet: the call still returns true for one,
 but its turns never include the note.
+
+A plugin with `host.files` gives one conversation of the owner's local agent
+its own working folder with
+`ctx.agents.assignConversationFolder(pubkey, { channelId, root? }, path)`,
+before that conversation's first turn. The conversation's session then starts
+in that folder, so the harness loads its repository configuration (for Claude:
+`CLAUDE.md`, `.mcp.json`, skills, hooks and settings). A protected agent
+starts there under its policy's unchanged containment; protected Claude loads
+no repository configuration there, as in its workspace. The agent's workspace
+stays reachable, and the base prompt names it by absolute path as the place for
+`RESEARCH/`, `PLANS/` and the other workspace folders. `place` names the
+conversation as session controls do: no root for a DM, a Solo chat or a
+channel-scoped agent. A root for a DM or Solo chat rejects, and a huddle room
+takes no folder. `path` is absolute or `~/…` and must be an existing
+directory; the call resolves with it as a real path. The folder is kept only on
+this device and is set once: the same folder again resolves, another rejects,
+because a session's history is found by the folder it ran in. For the same
+reason, a conversation that already has a session in the workspace rejects:
+the harness's `sessions` list names the conversations that do. If the folder
+later disappears, the conversation's next turn fails with an error naming it
+and never falls back to the workspace. The folder applies on the device that
+runs the agent, so messages from any of the owner's clients, such as mobile,
+start there. Another program that does not share this device's agent state,
+such as a development build with its own storage, an older build or another
+computer, does not see the folder and starts the conversation in the
+workspace. `ctx.agents.conversationFolder(pubkey,
+place)` returns the folder. Claude and Codex (`conversationFolders` on the
+type) support folders; other harnesses and agents on an execution target
+reject. Plugins feature-detect the method.
 
 A type marks its primary configuration tab with `role: "settings"`. In the
 Agents build view and profile panel, the host keeps that tab at a stable
@@ -1149,8 +1179,21 @@ helpers in `features/agents/relay-removal.ts`) then runs:
    the agent. The relay refuses membership changes in an archived channel, so its
    roster keeps the deleted agent.
 2. A fresh archive read runs; unless it already lists the identity, it is archived
-   through the request path above when a consent path exists. An agent that never
-   published an owner-attested profile has nothing to hide and is not archived.
+   through the request path above, and the relay must confirm it. When the agent's
+   profile carries no owner proof usable now (none, or one outside its time bounds)
+   and the viewer is not relay admin, the owner issues a fresh NIP-OA proof for the
+   request; only an agent whose saved owner is the viewer gets one. The relay
+   archives for an ordinary owner only when the request's proof and the target's
+   latest profile both name that owner, so when the profile has no matching proof
+   the app first force-republishes the agent's own profile
+   (`AgentsNative.publishProfile(member, true)`): the app's standard profile —
+   `name`, `bot`, `picture` and `about` — with the saved owner proof. It replaces
+   any other fields or tags on the relay's latest profile; that is intended, since
+   the agent is being deleted and the app owns its profile. A re-read must show
+   the live profile now names the viewer before the archive request, carrying the
+   issued proof, goes. A connection that
+   can't write archives can't finish Delete. A community that advertises no
+   archive authority skips this step: nothing is hidden by an archive there.
 3. The owner's agent record is deleted.
 4. Only after every step is confirmed is the key erased and the row dropped.
 
@@ -1158,7 +1201,28 @@ If a step fails or the app quits partway, nothing is erased and nothing retries 
 the background. The agent stays listed and stopped, including after a relaunch, with
 a note in its settings that Delete didn't finish; pressing Delete again reruns the
 whole cleanup. Rows deleted by older builds, whose key is already erased, only have
-the owner's agent record deleted and the row dropped.
+the owner's agent record deleted and the row dropped. Delete, that cleanup and
+Forget each end by rereading the community's agent choices.
+
+Every forward-looking route asks one rule, `agentUnavailable` in
+`features/agents/choices.ts`, by key: the identity is archived here
+(`archiveHides`) or its Delete started. Profile flags such as `is_agent` don't
+decide it. Mention admission, the composer's send, every new kind 9 signed by the
+session, New message (suggestions, selection, selected chips, shown as
+unavailable, and send), Forward, Command-K People and its new-DM action, stream
+member search and additions, and template lineups all ask it; bringing back an
+owner's agent from another community lifts only the archive half. Message history,
+author search and the Agents page's recovery view still read `identities`. An
+event signed before the Delete started is still confirmed on retry.
+
+A hosted agent is archived before its provider is asked to remove it, which can't
+be undone. If the archive isn't confirmed, the provider is not called and the agent
+is as it was. If the provider then fails, the agent stays archived and listed, and
+may still be running; Delete again finds it archived and asks the provider again.
+Its key is its provider's, so a hosted agent whose profile names no owner can't be
+archived by an ordinary owner: Delete stops unfinished and says so. Where the
+community advertises no archive authority, the archive is skipped, and a provider
+failure says the agent wasn't archived.
 
 An agent in several communities leaves each of them this way, one at a time,
 and its key is erased once none is left. Delete marks every row `deleting` with
@@ -1277,6 +1341,17 @@ or outside click closes the popup. Human typing remains in the ordinary
 conversation indicator.
 
 ### Local plugin-agent lifecycle
+
+`session.activity` exposes local work for mentions and conversation wakes from
+plugins, watches, timers, catch-up, and sources. Synthetic requests set
+`syntheticMessage: true`; their `messageId` is local and has no relay message.
+Their optional `requestText` holds the exact wake text supplied to the harness,
+without truncation. A harness read at admission updates that text before execution.
+Mentions omit `requestText`; consumers read their published request by ID.
+The same work entry keeps the destination, lifecycle, and `publishedMessageIds`.
+Reply IDs remain after the short notification echo window, within the existing
+local activity budget. This evidence is local to the running app and is not a
+durable transcript. Standalone wakes without a conversation have no local entry.
 
 The popup resets on conversation changes and when current work ends. Idle and
 past sessions remain in the agent's profile Activity tab rather
