@@ -20,6 +20,9 @@ import {
   writeView,
 } from "../../shared/view-state";
 import { CanvasEditor } from "./CanvasEditor";
+import type { CodeBlockRenderer } from "../../features/conversation/contracts";
+import type { Contribution } from "../../plugins/contributions";
+import { ToastProvider } from "../../shared/design-system/ui/Toast";
 import type { ChannelCanvas } from "../../features/channel-templates/capability";
 import {
   LIVE_CANVAS_BYTES,
@@ -164,6 +167,56 @@ it("keeps editing after a save and uses the saved revision for the next edit", a
     "true",
   );
   expect(screen.getByRole("button", { name: "Edit Markdown" })).toHaveFocus();
+});
+
+it("renders plugin code blocks in View and in the draft preview", async () => {
+  const user = userEvent.setup();
+  const diagram: Contribution<CodeBlockRenderer> = {
+    id: "diagram",
+    key: "test/diagram",
+    pluginId: "test",
+    revision: "1",
+    title: "Diagram",
+    matches: (language) => language === "mermaid",
+    component: ({ code }) => <figure>{code}</figure>,
+  };
+  const renderers = [diagram];
+  const canvas = {
+    available: true,
+    history: vi.fn(async () => ({ revisions: [head], next: undefined })),
+    read: vi.fn(async () => ({
+      ...head,
+      content: "```mermaid\nsaved graph\n```",
+    })),
+    save: vi.fn(async () => head),
+  };
+  render(
+    <CanvasEditor
+      canvas={canvas}
+      profiles={profiles}
+      scope={scope}
+      channelId={channelId}
+      codeBlocks={{ snapshot: () => renderers, subscribe: () => () => {} }}
+    />,
+    { wrapper: ToastProvider },
+  );
+  const text = screen.getByRole("textbox", { name: "Canvas Markdown" });
+  await waitFor(() => expect(text).not.toHaveValue(""));
+  // View stays mounted but hidden while Edit is open.
+  expect(
+    within(screen.getByLabelText("Saved Canvas")).getByRole("figure", {
+      hidden: true,
+    }),
+  ).toHaveTextContent("saved graph");
+  fireEvent.change(text, {
+    target: { value: "```mermaid\ndraft graph\n```" },
+  });
+  await user.click(screen.getByRole("button", { name: "Preview draft" }));
+  expect(
+    within(
+      screen.getByRole("region", { name: "Canvas draft preview" }),
+    ).getByRole("figure"),
+  ).toHaveTextContent("draft graph");
 });
 
 it("previews the current draft without saving and returns to the same editor", async () => {

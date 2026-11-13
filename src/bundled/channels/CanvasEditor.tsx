@@ -47,7 +47,7 @@ export function CanvasEditor({
   readOnly?: boolean;
   /** Opens a Buzz link in the app; false lets the link open externally. */
   openLink?: (url: string) => boolean;
-  /** Plugin code-block renderers for the View tab. */
+  /** Plugin code-block renderers for View and the draft preview. */
   codeBlocks?: ContributionReader<CodeBlockRenderer> | undefined;
 }) {
   const panelId = useId();
@@ -414,7 +414,11 @@ export function CanvasEditor({
                 aria-label="Canvas draft preview"
               >
                 {draft ? (
-                  <CanvasMarkdown content={draft} openLink={openViewLink} />
+                  <CanvasMarkdown
+                    content={draft}
+                    openLink={openViewLink}
+                    codeBlocks={codeBlocks}
+                  />
                 ) : (
                   <p className="text-secondary">This draft is empty.</p>
                 )}
