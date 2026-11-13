@@ -75,6 +75,9 @@ it("keeps a paused delete's confirmation and offers Retry only after the pause, 
   const retry = screen.getByRole("button", { name: "Retry" });
   expect(retry).toHaveAttribute("aria-disabled", "true");
   expect(retry).toHaveAttribute("data-variant", "destructive");
+  // The reopened dialog moves focus on its next animation frame, which the
+  // fake clock does not drive; wait for that real frame.
+  await act(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
   expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
   // Keyboard and screen-reader users can still reach Retry and its state.
   retry.focus();
