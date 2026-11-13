@@ -36,7 +36,6 @@ import {
 import { DraftMentionRoster } from "./draft-mention-roster";
 import {
   allowsOutsideMentions,
-  archivedMention,
   mentionAdmission,
   pastedMentionRecipient,
 } from "./mention-admission";
@@ -76,6 +75,7 @@ import { useEditWithUpArrowPreference } from "./edit-key-preference";
 import { matches } from "../shortcuts/bindings";
 import { isApplePlatform } from "../shortcuts/format";
 import { useChosenAgent } from "../solo/default-agent";
+import { agentUnavailable } from "../agents/choices";
 import { useAgentChoices } from "../agents/use-choices";
 import {
   soloAgentsOnly,
@@ -173,6 +173,9 @@ import {
   type HostCompletionEdit,
 } from "../conversation/completion";
 import { useCompletionEditor } from "../conversation/useCompletionEditor";
+import { ComposerAnnotators } from "../conversation/ComposerAnnotators";
+import { AnnotationMenu } from "./AnnotationMenu";
+import type { AnnotationMenuRequest } from "./composer-dom";
 import { formatMediaTime, mediaTimeReply } from "./media-timecode";
 import { RichComposerInput } from "./RichComposerInput";
 import type { MessageLinkOrigin } from "./MessageRow";
@@ -1178,7 +1181,9 @@ function Composer({
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: A changed draft or edit target retires feedback about the previous paste.
   useEffect(() => {
-    // Avoid queuing a redundant passive update after every native keystroke.
+    // Clear only shown feedback. Even an unchanged value schedules a render
+    // here, inside each keystroke's commit, so fast typing would never let
+    // React's nested-update count reset (React error #185).
     if (pasteTooLong) setPasteTooLong(false);
   }, [draft, editing.target]);
   const editScope = useMessageEditScope();
@@ -1456,6 +1461,11 @@ function Composer({
   const completion = useCompletionEditor(
     input,
     active && !editingDisabled && !!outbox?.supports(9),
+  );
+  const [annotationMenu, setAnnotationMenu] = useState<AnnotationMenuRequest>();
+  const closeAnnotationMenu = useCallback(
+    () => setAnnotationMenu(undefined),
+    [],
   );
   function loadSaved(raw: string | null) {
     diagnose("load", revision.current, raw);
@@ -2779,14 +2789,14 @@ function Composer({
         (agents?.joinable() ?? []).map((agent) => agent.pubkey),
       );
       if (
-        capturedRecipients.some(
-          (p) => archivedMention(session, p.pubkey) && !bringable.has(p.pubkey),
+        capturedRecipients.some((p) =>
+          agentUnavailable(session, p.pubkey, bringable),
         )
       )
         throw new Error(
           routing && !captured.recipients.length
-            ? "An agent you're sending to is archived. Choose another agent to send."
-            : "A selected recipient is archived. Remove it before sending.",
+            ? "An agent you're sending to is archived or being deleted. Choose another agent to send."
+            : "A selected recipient is archived or being deleted. Remove it before sending.",
         );
       if (
         ownSoloConversation &&
@@ -3423,6 +3433,33 @@ function Composer({
             </AddressedAgentsContext.Provider>
           </WorkspaceCompletion.Provider>
         )}
+        {extensions?.annotators && (
+          // Annotators see exactly what completion providers may observe.
+          <ComposerAnnotators
+            registry={extensions.annotators}
+            input={input}
+            enabled={active && !editingDisabled && !!outbox?.supports(9)}
+            epoch={[
+              scope,
+              channelId,
+              threadRootId ?? "",
+              editing.target?.id ?? "",
+            ].join("\n")}
+            session={session}
+            scope={scope}
+            channelId={channelId}
+            threadRootId={threadRootId}
+            inviteAgents={agentChoices && !editing.target}
+          />
+        )}
+        {annotationMenu && (
+          <AnnotationMenu
+            key={`${annotationMenu.revision}:${annotationMenu.mark.start}`}
+            request={annotationMenu}
+            input={input}
+            onClose={closeAnnotationMenu}
+          />
+        )}
         <BackgroundUploadStatus
           session={session}
           focusTarget={input}
@@ -3555,6 +3592,9 @@ function Composer({
               }}
               onFormatsChange={setActiveFormats}
               onEditLink={setLinkEdit}
+              onAnnotationMenu={
+                extensions?.annotators ? setAnnotationMenu : undefined
+              }
               // Pasted identity links notify admitted recipients under their
               // current names; edits never add recipients. Send still asks
               // before adding someone outside the channel.

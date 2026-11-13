@@ -36,6 +36,14 @@ and `-end` for row geometry. Other host classes and module class names are
 private. Conversations are not drag sources and cannot file into personal
 workspaces.
 
+A source can open a channel that also appears in Team with
+`ctx.navigation.open(target, { sidebar: "preserve" })`. This opening keeps the
+sidebar scope, scroll, and disclosure state. It does not select or reveal the
+Team row. The source supplies its own selected row. Check
+`ctx.navigation.snapshot().attempt.sidebar` along with the target to select it
+only for this opening. Retry retains the option. Later opens and Back/Forward
+use the normal destination rules. The option does not change access or focus.
+
 `data-solo-destination-id` is a supported behavior hook. A primary
 `Conversation.Link` carries its channel ID; secondary links omit the marker.
 Recovery destinations use the same marker. Nexus uses it to identify dragged
@@ -72,6 +80,27 @@ the first message, so the Outbox retries both after a restart. A source's
 source is not running and ready. Before the create, the host saves on this
 device how the chat started; `started` returns it to that region's source until
 `forget`. Sources reconcile their own records from it by channel ID.
+
+Check `handle.draftContext === true` before passing
+`draft: { context: JsonValue, key?: string }` to `openDraft`. The host retains
+and returns this JSON through `started`; only the source interprets it. It uses
+the same create, first-message, Outbox and reconciliation flow as any region
+draft. There is no source callback before creation.
+
+Without a key, context uses the existing region/workspace draft. A key gives
+the source a separate text, attachment, settings, model and effort slot. It
+stays the same when the user changes workspace. Keys are 1–128 characters from
+`A-Z`, `a-z`, `0-9`, `.`, `_`, `:`, and `-`, starting with a letter or digit.
+Use a stable key for the same intent, and different keys for different drafts.
+Context travels in navigation history, including reload, so keep secrets out.
+The navigation parser copies JSON and limits the complete target to 8 KiB.
+Missing or invalid required context must be handled by the source. A failed
+start returns the prompt and files to the same draft slot as before.
+
+The existing `lead` and `leadWorkspaceId` fields remain during migration.
+Sources can move role intent into JSON and select workspace rows with
+`selected` when the capability is present. They must retain their old path on
+older hosts. Remove the old host fields only after consumers have migrated.
 With `lead`, a workspace draft's start also records that the chat leads that
 workspace, but only while the draft still targets it. The host does not store
 Leads; the source saves the Lead in its own records.
