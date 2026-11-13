@@ -1162,6 +1162,8 @@ export const ChannelActivityRow = memo(function ChannelActivityRow({
       : channel.preview
         ? messagePreview(channel.preview)
         : "";
+  const poster =
+    dm || solo ? undefined : replyIsNewest ? thread.authorId : latest?.authorId;
   const content = (
     <ConversationRow
       layout={layout}
@@ -1180,6 +1182,15 @@ export const ChannelActivityRow = memo(function ChannelActivityRow({
               src: avatarMedia(profiles.get(id)?.picture, session.media),
               shape: profiles.get(id)?.isAgent ? "squircle" : "circle",
             }))}
+          />
+        ) : poster ? (
+          // A channel shows who posted last, not its initials.
+          <Avatar
+            size="fill"
+            alt=""
+            shape={profiles.get(poster)?.isAgent ? "squircle" : "circle"}
+            fallback={nameOf(poster)}
+            src={avatarMedia(profiles.get(poster)?.picture, session.media)}
           />
         ) : !dm && !solo ? (
           <ChannelAvatar size="fill" shape="squircle" name={channel.name} />

@@ -875,6 +875,7 @@ and are asked to sign in again in Buzz.
 - **Conversation list filters**: All combines chats, DMs and channels by recent
   activity. Threads shows channel threads; Direct combines chats, DMs and mentions.
   In Team, Channels shows channels only.
+  A channel's row shows the avatar of whoever posted there last.
   Reactions lists reactions to your messages. The Solo list adds two views:
   Working shows Solo chats with an active agent; Waiting shows Solo chats where
   the other side spoke last and no agent is working. Scroll the filter buttons

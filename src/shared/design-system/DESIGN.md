@@ -115,6 +115,8 @@ Messages reuses the list and scrollport recipes in
 `features/channels/channel-icon.ts` so feed and rail colors stay consistent.
 Use `features/channels/ChannelAvatar` for channel artwork in rows and previews:
 the first two characters of the name, uppercase, inside the shared Avatar treatment.
+A channel row in the conversation list shows the latest poster's avatar instead,
+and falls back to the channel artwork until a latest message is known.
 Access metadata retains its explicit public/private labels and icons.
 
 ### Detail panels
