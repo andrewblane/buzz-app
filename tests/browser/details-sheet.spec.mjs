@@ -730,6 +730,67 @@ test("long thread sheet settles when it ends in collapsed activity", async ({
   ).toBeInViewport();
 });
 
+// Retained branches are chosen by index, so after compaction an expanded
+// branch must keep its own row mounted, not a neighbour's.
+test("long thread sheet keeps an expanded branch mounted after collapsed activity", async ({
+  page,
+  app,
+}) => {
+  await open(page, app);
+  const root = app.append("primary", "alpha", "Retained thread root", true);
+  const post = (content, parent, tags) =>
+    app.append(
+      "primary",
+      "alpha",
+      content,
+      false,
+      false,
+      root.id,
+      parent,
+      tags,
+    );
+  const agents = [["audience", "agents"]];
+  for (const n of [1, 2, 3]) post(`Agents update ${n}`, undefined, agents);
+  const replies = Array.from({ length: 120 }, (_, i) =>
+    post(`Retained thread reply ${i}`),
+  );
+  const branch = replies.at(-6);
+  const nested = post("Retained nested reply", branch.id);
+  post("Another retained nested reply", branch.id);
+  const row = page.locator(
+    `[data-channel-timeline] [data-message-id="${root.id}"]`,
+  );
+  await expect(row).toBeVisible();
+  await hoverMessage(row);
+  await row.getByRole("button", { name: "Reply", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Thread", exact: true });
+  const history = sheet.getByRole("region", {
+    name: "Thread messages",
+    exact: true,
+  });
+  await expect(history.locator("[data-thread-window]")).toBeVisible();
+  await expect(history).not.toHaveAttribute("data-positioning");
+  await history
+    .locator(`[data-message-id="${branch.id}"]`)
+    .locator("xpath=ancestor::*[@data-thread-window-index][1]")
+    .getByRole("button", { name: /^View 2 replies/ })
+    .click();
+  await expect(
+    history.locator(`[data-message-id="${nested.id}"]`),
+  ).toBeVisible();
+  await sheet
+    .getByRole("textbox", { name: "Reply to thread", exact: true })
+    .focus();
+  await history.hover();
+  await page.mouse.wheel(0, -100000);
+  await expect(
+    history.locator(`[data-message-id="${replies[0].id}"]`),
+  ).toBeInViewport();
+  await expect(
+    history.locator(`[data-message-id="${nested.id}"]`),
+  ).toBeAttached();
+});
+
 // Only real layout bounds a panel's scrollport; jsdom reports no overflow.
 test("a long GitHub panel over the composer scrolls under the wheel", async ({
   page,
