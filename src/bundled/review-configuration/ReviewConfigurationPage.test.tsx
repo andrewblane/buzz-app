@@ -576,9 +576,7 @@ it("opens Submit PR directly from Pull requests and preserves configuration navi
     />,
   );
   const user = userEvent.setup();
-  await user.click(
-    screen.getByRole("button", { name: "Submit PR", exact: true }),
-  );
+  await user.click(screen.getByRole("button", { name: "Submit PR" }));
   expect(onNavigate).toHaveBeenCalledWith("submit");
   await user.click(
     screen.getByRole("button", { name: "Back to Review Configuration" }),
