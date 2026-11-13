@@ -96,3 +96,106 @@ export function paneFocusTarget(pane?: "main" | "side") {
   );
   return targets[(index + 1) % targets.length];
 }
+
+// Places a click keeps for itself: editing, embedded apps, terminals, overlays,
+// find, stateful controls and tab strips (tab selection focuses its content).
+const OWNS_CLICK = [
+  "input",
+  "textarea",
+  "select",
+  '[contenteditable]:not([contenteditable="false"])',
+  "iframe",
+  ".xterm",
+  "dialog",
+  '[role="dialog"]',
+  '[role="alertdialog"]',
+  '[role="menu"]',
+  '[role="listbox"]',
+  '[role="tablist"]',
+  "search",
+  '[role="search"]',
+  '[role="slider"]',
+  '[role="switch"]',
+  '[role="checkbox"]',
+  '[role="radiogroup"]',
+  "[data-open][data-side]",
+  '[aria-haspopup]:not([aria-haspopup="false"])[aria-expanded="true"]',
+].join(", ");
+
+/** Focus a click leaves on no control, or on the control it pressed. */
+function passiveFocus(active: Element | null, target: Element) {
+  if (
+    !active ||
+    active === document.body ||
+    active === document.documentElement
+  )
+    return true;
+  if (!(active instanceof HTMLElement) || active.closest(OWNS_CLICK))
+    return false;
+  // Message rows, scrollers and panes take programmatic focus on click.
+  if (active.tabIndex < 0) return true;
+  // Chromium focuses a pressed button or link; WebKit leaves it on body.
+  return (
+    active.contains(target) &&
+    active.matches('button, a[href], [role="button"], [role="link"]')
+  );
+}
+
+/**
+ * A click anywhere that does not take focus for itself resumes typing in the
+ * clicked pane's message box (a thread tab's own, say), or from shared chrome
+ * the last focused pane's. Panes without a message box keep their focus.
+ */
+export function installComposerClickFocus() {
+  let origin: HTMLElement | null | undefined;
+  let touch = false;
+  let frame: number | undefined;
+  const down = (event: PointerEvent) => {
+    origin = focusedWorkspace();
+    // A tap must not raise an on-screen keyboard.
+    touch = event.pointerType === "touch";
+  };
+  const click = (event: MouseEvent) => {
+    if (
+      touch ||
+      // Keyboard activation (detail 0) keeps keyboard focus where it is.
+      event.detail === 0 ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    )
+      return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const pane = target.closest<HTMLElement>(COVERING);
+    const from = origin;
+    if (frame !== undefined) cancelAnimationFrame(frame);
+    // Let the click's own work (opening a popover, choosing a tab) land first.
+    frame = requestAnimationFrame(() => {
+      frame = undefined;
+      const selection = document.getSelection();
+      if (
+        !target.isConnected ||
+        target.closest(OWNS_CLICK) ||
+        (selection && !selection.isCollapsed) ||
+        !passiveFocus(document.activeElement, target)
+      )
+        return;
+      const main = document.getElementById("main-content");
+      const composer = pane
+        ? composerIn(pane)
+        : (composerIn(from) ??
+          composerIn(main?.querySelector<HTMLElement>(PRIMARY) ?? main));
+      composer?.focus({ preventScroll: true });
+    });
+  };
+  window.addEventListener("pointerdown", down, true);
+  window.addEventListener("click", click);
+  return () => {
+    window.removeEventListener("pointerdown", down, true);
+    window.removeEventListener("click", click);
+    if (frame !== undefined) cancelAnimationFrame(frame);
+  };
+}
