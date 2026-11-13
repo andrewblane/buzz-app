@@ -36,6 +36,11 @@ function fake(
     for (const listener of listeners) listener();
   };
   const agents = {
+    /** An unrelated update: the same agents in a new list. */
+    rebuild: () => {
+      state = { ...state, interrupted: [...state.interrupted] };
+      for (const listener of listeners) listener();
+    },
     snapshot: () => state,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
@@ -155,4 +160,85 @@ it("offers details for a single mention, without naming its agent again", async 
   expect(
     screen.queryByRole("heading", { name: "Echo" }),
   ).not.toBeInTheDocument();
+});
+
+it("keeps one read per agent across unrelated snapshot updates", async () => {
+  let signal!: AbortSignal;
+  let release!: (events: RelayEvent[]) => void;
+  const agents = fake(
+    ["Echo"],
+    { Echo: [{ id: id(5), channelId: "c1" }] },
+    (_agent, given) => {
+      signal = given;
+      return new Promise((resolve) => {
+        release = resolve;
+      });
+    },
+  );
+  const trigger = await screen.findByRole("button", { name: "1 mention" });
+  act(() => fireEvent.click(trigger));
+  await screen.findByText("Checking…");
+  act(() => agents.rebuild());
+  act(() => agents.rebuild());
+  expect(agents.readInterrupted).toHaveBeenCalledOnce();
+  expect(signal.aborted).toBe(false);
+  act(() => release([mention(5, "Ship it")]));
+  expect(await screen.findByText("In channel · “Ship it”")).toBeVisible();
+  act(() => agents.rebuild());
+  expect(agents.readInterrupted).toHaveBeenCalledOnce();
+  expect(screen.getByText("In channel · “Ship it”")).toBeVisible();
+});
+
+it("reads a failed preview again when reopened, keeping one that worked", async () => {
+  let fail = true;
+  const agents = fake(
+    ["Echo"],
+    { Echo: [{ id: id(6), channelId: "c1" }] },
+    async () => {
+      if (fail) throw new Error("offline");
+      return [mention(6, "Try again")];
+    },
+  );
+  const trigger = await screen.findByRole("button", { name: "1 mention" });
+  act(() => fireEvent.click(trigger));
+  expect(await screen.findByText("Couldn’t load details")).toBeVisible();
+  fail = false;
+  act(() => fireEvent.click(trigger));
+  act(() => fireEvent.click(trigger));
+  expect(await screen.findByText("In channel · “Try again”")).toBeVisible();
+  expect(agents.readInterrupted).toHaveBeenCalledTimes(2);
+  act(() => fireEvent.click(trigger));
+  act(() => fireEvent.click(trigger));
+  await screen.findByText("In channel · “Try again”");
+  expect(agents.readInterrupted).toHaveBeenCalledTimes(2);
+});
+
+it("puts the details list in the tab order, so a long one scrolls by keyboard", async () => {
+  fake(["Echo"], { Echo: [{ id: id(8), channelId: "c1" }] });
+  const trigger = await screen.findByRole("button", { name: "1 mention" });
+  act(() => fireEvent.click(trigger));
+  const list = await screen.findByRole("region", {
+    name: "Interrupted conversations",
+  });
+  expect(list).toHaveAttribute("tabindex", "0");
+});
+
+it("stops its reads when the notice goes", async () => {
+  let signal!: AbortSignal;
+  const agents = fake(
+    ["Echo"],
+    { Echo: [{ id: id(9), channelId: "c1" }] },
+    (_agent, given) => {
+      signal = given;
+      return new Promise(() => {});
+    },
+  );
+  const trigger = await screen.findByRole("button", { name: "1 mention" });
+  act(() => fireEvent.click(trigger));
+  await screen.findByText("Checking…");
+  act(() =>
+    fireEvent.click(screen.getByRole("button", { name: "Don’t resume" })),
+  );
+  await waitFor(() => expect(signal.aborted).toBe(true));
+  expect(agents.dismissInterrupted).toHaveBeenCalledOnce();
 });

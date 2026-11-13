@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Accordion } from "../../shared/design-system/ui/Accordion";
 import { Button } from "../../shared/design-system/ui/Button";
 import { ToastNotice } from "../../shared/design-system/ui/Toast";
 import { messagePreview } from "../notifications/content";
 import type { RelayEvent } from "../relay/events";
 import { threadReference } from "../relay/thread-reference";
+import styles from "./InterruptedNotice.module.css";
 import { useAgentsSnapshot } from "./react";
 import type { Agent, Agents } from "./service";
 
@@ -52,25 +53,41 @@ function InterruptedDetails({
   interrupted: readonly Agent[];
 }) {
   const [open, setOpen] = useState(false);
-  // Read once opened, and kept: closing it again does not read again.
-  const [requested, setRequested] = useState(false);
+  // Each agent's read once settled: its events, or "failed", read again on the
+  // next open. Keyed by agent, so snapshot rebuilds neither cancel nor repeat it.
   const [read, setRead] = useState<
-    Readonly<Record<string, readonly RelayEvent[] | null>>
+    Readonly<Record<string, readonly RelayEvent[] | "failed">>
   >({});
+  const reading = useRef(new Map<string, AbortController>());
   useEffect(() => {
-    if (!requested) return;
-    const controller = new AbortController();
+    const current = reading.current;
+    return () => {
+      for (const controller of current.values()) controller.abort();
+      current.clear();
+    };
+  }, []);
+  const start = useEffectEvent(() => {
     for (const agent of interrupted) {
-      const settle = (events: readonly RelayEvent[] | null) => {
-        if (!controller.signal.aborted)
-          setRead((prior) => ({ ...prior, [agent.key]: events }));
+      const settled = read[agent.key];
+      if ((settled && settled !== "failed") || reading.current.has(agent.key))
+        continue;
+      if (settled === "failed") setRead(({ [agent.key]: _, ...rest }) => rest);
+      const controller = new AbortController();
+      reading.current.set(agent.key, controller);
+      const settle = (result: readonly RelayEvent[] | "failed") => {
+        if (reading.current.get(agent.key) !== controller) return;
+        reading.current.delete(agent.key);
+        setRead((prior) => ({ ...prior, [agent.key]: result }));
       };
       agents
         .readInterrupted(agent, controller.signal)
-        .then(settle, () => settle(null));
+        .then(settle, () => settle("failed"));
     }
-    return () => controller.abort();
-  }, [requested, agents, interrupted]);
+  });
+  const keys = interrupted.map((agent) => agent.key).join(" ");
+  useEffect(() => {
+    if (open && keys) start();
+  }, [open, keys]);
   const groups = interrupted.map((agent) => ({
     agent,
     turns: agents.interruptedTurns(agent),
@@ -80,18 +97,20 @@ function InterruptedDetails({
     <Accordion
       variant="activity"
       value={open ? ["details"] : []}
-      onValueChange={(value) => {
-        setOpen(value.includes("details"));
-        if (value.includes("details")) setRequested(true);
-      }}
+      onValueChange={(value) => setOpen(value.includes("details"))}
       items={[
         {
           value: "details",
           title: `${count} ${count === 1 ? "mention" : "mentions"}`,
           content: (
-            <div className="grid max-h-48 gap-3 overflow-y-auto">
+            <section
+              aria-label="Interrupted conversations"
+              // biome-ignore lint/a11y/noNoninteractiveTabindex: Scroll owner supports keyboard access to the overflowing list.
+              tabIndex={0}
+              className={`grid max-h-48 gap-3 overflow-y-auto ${styles.conversations}`}
+            >
               {groups.map(({ agent, turns }) => (
-                <section key={agent.key} className="grid gap-2">
+                <div key={agent.key} className="grid gap-2">
                   {interrupted.length > 1 && (
                     <h4 className="m-0 text-label-sm text-subtle">
                       {agent.name}
@@ -109,9 +128,9 @@ function InterruptedDetails({
                       </li>
                     ))}
                   </ul>
-                </section>
+                </div>
               ))}
-            </div>
+            </section>
           ),
         },
       ]}
@@ -123,7 +142,7 @@ function InterruptedDetails({
  * a mention was not found, one per mention. */
 function conversations(
   turns: ReturnType<Agents["interruptedTurns"]>,
-  events: readonly RelayEvent[] | null | undefined,
+  events: readonly RelayEvent[] | "failed" | undefined,
 ) {
   const rows = new Map<
     string,
@@ -131,9 +150,17 @@ function conversations(
   >();
   for (const turn of turns) {
     const channel = turn.channel?.name ?? "Unknown channel";
-    const event = events?.find((item) => item.id === turn.id);
+    const event =
+      events === "failed"
+        ? undefined
+        : events?.find((item) => item.id === turn.id);
     if (!event) {
-      const detail = events === undefined ? "Checking…" : "Details unavailable";
+      const detail =
+        events === undefined
+          ? "Checking…"
+          : events === "failed"
+            ? "Couldn’t load details"
+            : "Details unavailable";
       rows.set(turn.id, { key: turn.id, channel, detail, count: 1 });
       continue;
     }
