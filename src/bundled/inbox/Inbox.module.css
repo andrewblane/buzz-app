@@ -107,6 +107,10 @@
   vertical-align: middle;
 }
 
+.reactionPlaceholder {
+  color: var(--text-subtle);
+}
+
 .rowIdentity {
   display: flex;
   min-width: 0;

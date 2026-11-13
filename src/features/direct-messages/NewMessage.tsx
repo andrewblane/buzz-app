@@ -1,3 +1,4 @@
+import { agentUnavailable } from "../agents/choices";
 import {
   creationDestinationKey,
   creationPeople as validRecipients,
@@ -409,15 +410,18 @@ export function NewMessage({
     const controlled = new Set(
       session.agentChoices
         .snapshot()
-        .identities.filter(canMessageAgent)
+        // Forward-looking: neither archived nor being deleted.
+        .selectable.filter(canMessageAgent)
         .map((agent) => agent.pubkey),
     );
     if (
       recipients.some(
         (person) =>
-          (person.isAgent ||
+          // By key, whatever its profile says.
+          agentUnavailable(session, person.pubkey) ||
+          ((person.isAgent ||
             session.profiles.snapshot().get(person.pubkey)?.isAgent) &&
-          !controlled.has(person.pubkey),
+            !controlled.has(person.pubkey)),
       )
     )
       throw new Error(

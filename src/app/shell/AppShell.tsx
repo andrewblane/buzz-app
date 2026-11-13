@@ -42,6 +42,7 @@ import { CommunityShortcuts } from "./CommunityShortcuts";
 import { MarkAllReadShortcut } from "./MarkAllReadShortcut";
 import type { Appearance } from "../../shared/theme/service";
 import { PageSearch, type SearchServices } from "./PageSearch";
+import { FindInPage } from "./FindInPage";
 import { BestieNavigationProvider } from "./BestieNavigation";
 import type { NavigationOpenOptions } from "../../features/navigation/controller";
 import {
@@ -437,7 +438,10 @@ function AppShellContent({
           }
           {navigationControls}
         </div>
-        <div className="shell-search">{search}</div>
+        <div className="shell-search">
+          {search}
+          <FindInPage shortcuts={searchServices?.shortcuts} />
+        </div>
         <div
           className="shell-actions"
           data-tauri-drag-region={macDesktop ? undefined : true}

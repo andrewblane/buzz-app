@@ -112,6 +112,8 @@ function ScopedSidebar({
     props.navigator.subscribe,
     () => props.navigator.snapshot().attempt.id,
   );
+  const preserveSidebar =
+    props.navigator.snapshot().attempt.sidebar === "preserve";
   const [observedAttempt, setObservedAttempt] = useState(attempt);
   const [view, setView] = useState(() => {
     const saved = readView<{ filter?: unknown; location?: unknown } | null>(
@@ -209,7 +211,10 @@ function ScopedSidebar({
   ) {
     // A restriction keeps the saved filter for when it ends.
     setView({
-      filter: view.filter === "all" || restriction ? view.filter : destination,
+      filter:
+        view.filter === "all" || restriction || preserveSidebar
+          ? view.filter
+          : destination,
       location,
     });
   }
@@ -347,6 +352,7 @@ function ScopedSidebar({
           sidebarRows={props.sidebarRows}
           cached={!!connection.cached}
           layoutReady={filter === "team" || soloReady}
+          preserveSidebar={preserveSidebar}
           connectionError={connection.error}
           render={({
             sidebar,
@@ -443,7 +449,7 @@ function ScopedSidebar({
                         sidebar={sidebar}
                         sectionKey="scope:team"
                         title="Team"
-                        ownsCurrent={destination === "team"}
+                        ownsCurrent={destination === "team" && !preserveSidebar}
                         location={sidebarLocation}
                       >
                         {content}

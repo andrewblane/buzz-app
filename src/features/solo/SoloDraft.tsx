@@ -11,6 +11,7 @@ import { ConversationListToggle } from "../conversation/ConversationListToggle";
 import { useAgentChoices } from "../agents/use-choices";
 import { AvatarStack } from "../../shared/design-system/ui/AvatarStack";
 import { avatarMedia } from "../../shared/avatar-source";
+import type { SoloDraftStart } from "../channel-navigation/solo-navigation-contract";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { useToastNotification } from "../../shared/design-system/ui/Toast";
 import { GearIcon } from "../../shared/design-system/icons";
@@ -194,14 +195,14 @@ export function SoloDraft({
   source,
   visit,
   region,
-  lead,
+  draft: regionDraft,
   embedded = false,
   navigation,
   draftPrefix,
   onDraftChange,
   onBusyChange,
 }: {
-  lead?: boolean | undefined;
+  draft?: SoloDraftStart["draft"];
   region?: string | undefined;
   /** Only the composer, inside a host's own page (New message's To). */
   embedded?: boolean;
@@ -232,7 +233,7 @@ export function SoloDraft({
   projectId?: string | undefined;
 }) {
   const draftKey = region
-    ? regionDraftKey(region, projectId)
+    ? regionDraftKey(region, projectId, regionDraft?.key)
     : linkedId
       ? linkedDraftKey(linkedId)
       : projectId
@@ -491,9 +492,8 @@ export function SoloDraft({
         startKey &&
         !writeView(scope, startKey, {
           region,
+          ...(regionDraft ? { draft: regionDraft } : {}),
           ...(project ? { workspace: project } : {}),
-          // Only while it still targets the workspace it leads.
-          ...(lead && project === projectId ? { lead: true } : {}),
         })
       )
         throw new Error(

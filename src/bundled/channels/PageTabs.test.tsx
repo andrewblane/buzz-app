@@ -17,7 +17,12 @@ import { setThreadPlacementPreference } from "../../features/messages/thread-pre
 import { createRelaySession } from "../../features/relay/session";
 import type { RelaySession } from "../../features/relay/session";
 import type { ConversationTab as Tab } from "./useChannelTabState";
-import { PageTabs, type PageTabOptions, type PageTabTarget } from "./PageTabs";
+import {
+  ConversationWorkspace,
+  PageTabs,
+  type PageTabOptions,
+  type PageTabTarget,
+} from "./PageTabs";
 
 // The tab's own conversation has its mounted suite; this owner places it.
 vi.mock("./ConversationTab", () => ({
@@ -27,7 +32,9 @@ vi.mock("./ConversationTab", () => ({
     visit,
     onResolvedRoot,
     parent,
+    intro,
   }: {
+    intro?: import("react").ReactNode;
     tab: Tab;
     channel: { name: string };
     visit: boolean;
@@ -42,6 +49,7 @@ vi.mock("./ConversationTab", () => ({
       data-focus={tab.focusRequest}
       data-reply={tab.kind === "thread" ? tab.replyRequest : undefined}
     >
+      {intro}
       {tab.kind} in {channel.name}
       {!visit && " unvisited"}
       {onResolvedRoot && (
@@ -109,13 +117,14 @@ function fixture(visits?: boolean) {
       ensure: () => Promise.resolve(),
     },
   } as unknown as RelaySession;
-  const connection = { status: "ready", session };
+  const connection = { status: "ready", session, scope: "origin:viewer" };
   const host = {
     relay: { snapshot: () => connection },
     panels: {
       snapshot: () => available,
       subscribe: () => () => {},
       resolve: () => undefined,
+      handleOpenRequests: () => () => {},
     },
     navigation: { open: vi.fn() },
   } as unknown as ConversationHostServices;
@@ -144,6 +153,8 @@ function fixture(visits?: boolean) {
     </PageTabs>,
   );
   return {
+    host,
+    session,
     openers,
     navigation: host.navigation,
     open(target: PageTabTarget, options?: PageTabOptions) {
@@ -396,3 +407,64 @@ it("opens a detail's conversation from its tab actions and hands focus to naviga
     }),
   );
 });
+
+it("a workspace owns its main reader, intro, menu, and no initial detail", async () => {
+  const user = userEvent.setup();
+  const f = fixture();
+  cleanup();
+  const source = vi.fn();
+  render(
+    <ConversationWorkspace
+      id="task"
+      session={f.session}
+      scope="origin:viewer"
+      target={{ channelId: "alpha", threadId: "root" }}
+      label="Task"
+      host={f.host}
+      intro={<a href="buzz://channel/alpha">Source channel: #alpha</a>}
+      actions={[{ label: "View in source channel", run: source }]}
+    />,
+  );
+  expect(screen.queryByText("Chat list")).toBeNull();
+  expect(screen.getByText("thread in alpha", { exact: false })).toBeVisible();
+  expect(
+    screen.getByRole("link", { name: "Source channel: #alpha" }),
+  ).toBeVisible();
+  expect(screen.queryAllByRole("tablist")).toHaveLength(1);
+  await user.click(
+    screen.getByRole("button", { name: "Conversation actions" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "View in source channel" }),
+  );
+  expect(source).toHaveBeenCalledOnce();
+});
+
+it.each([false, true])(
+  "a workspace requests composer focus unless another editor owns it (editing=%s)",
+  (editing) => {
+    const f = fixture();
+    cleanup();
+    render(
+      editing ? (
+        <input aria-label="Chat name" />
+      ) : (
+        <button type="button">Open task</button>
+      ),
+    );
+    screen.getByRole(editing ? "textbox" : "button").focus();
+    render(
+      <ConversationWorkspace
+        id="task"
+        session={f.session}
+        scope="origin:viewer"
+        target={{ channelId: "alpha" }}
+        label="Task"
+        host={f.host}
+      />,
+    );
+    const reader = screen.getByText("conversation in alpha", { exact: false });
+    if (editing) expect(reader).not.toHaveAttribute("data-focus");
+    else expect(reader).toHaveAttribute("data-focus", "1");
+  },
+);
