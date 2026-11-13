@@ -135,12 +135,15 @@ export function ActivityGroupPreview({
   return (
     <AgentResponsePreview
       name={name}
+      // Its execution hint describes one agent, so only a one-agent byline has it.
       bylineHint={
-        <RemoteAgentHint
-          session={session}
-          viewer={session?.viewer}
-          pubkey={primary}
-        />
+        participants.length === 1 && (
+          <RemoteAgentHint
+            session={session}
+            viewer={session?.viewer}
+            pubkey={primary}
+          />
+        )
       }
       participants={participants.map((id) => ({
         id,

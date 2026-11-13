@@ -730,9 +730,9 @@ it("names everyone in the run in its byline, not only its first speaker", () => 
   expect(
     screen.getByText("Gordon, Henry, and Darcy", { exact: true }),
   ).toBeVisible();
-  rerender(view(["Gordon", "Henry", "Darcy", "Catherine", "Gordon"]));
+  rerender(view(["Gordon", "Henry", "Darcy", "Catherine", "Oliver", "Gordon"]));
   expect(
-    screen.getByText("Gordon, Henry, and 2 others", { exact: true }),
+    screen.getByText("Gordon, Henry, and 3 others", { exact: true }),
   ).toBeVisible();
 });
 
