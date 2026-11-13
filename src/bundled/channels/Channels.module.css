@@ -968,6 +968,7 @@ details:not([open]) > summary .sectionChevron {
 [data-action-list] .channelLaunchers {
   flex-direction: column;
   align-items: stretch;
+  gap: var(--space-half);
   margin-left: 0;
   width: 100%;
 }

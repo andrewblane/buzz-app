@@ -131,6 +131,7 @@ export function Avatar({
   size = "default",
   shape = "circle",
   statusBadge,
+  statusBadgeSize = "default",
   loading,
 }: {
   src?: string | null | undefined;
@@ -148,6 +149,7 @@ export function Avatar({
   size?: AvatarSize;
   shape?: "circle" | "squircle";
   statusBadge?: "online" | "away" | "offline" | undefined;
+  statusBadgeSize?: "default" | "small";
   /** Immediate visible editors may bypass lazy scheduling, never image readiness. */
   loading?: "eager" | "lazy";
 }) {
@@ -161,6 +163,7 @@ export function Avatar({
       data-size={size}
       data-shape={shape}
       data-status={statusBadge}
+      data-status-size={statusBadgeSize}
     >
       <BaseAvatar.Root
         data-buzz-ui=""

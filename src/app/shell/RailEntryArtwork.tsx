@@ -81,6 +81,7 @@ export function RailEntryArtwork({
           alt=""
           fallback={entry.label}
           statusBadge={statusBadge}
+          statusBadgeSize={avatarOnly ? "small" : "default"}
         />
       );
     if (entry.kind === "chat" && !avatarOnly) {

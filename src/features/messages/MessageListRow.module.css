@@ -75,19 +75,3 @@
   overflow: hidden;
   overflow-wrap: anywhere;
 }
-
-/* Drafts & sent combines delivery status with the time. */
-@container drafts-sent (max-width: 30rem) {
-  .heading {
-    flex-wrap: wrap;
-  }
-
-  .identity {
-    flex-basis: 100%;
-  }
-
-  .rowDate {
-    max-inline-size: 100%;
-    margin-inline-start: auto;
-  }
-}

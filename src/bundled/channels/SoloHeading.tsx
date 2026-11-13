@@ -225,6 +225,7 @@ export function SoloToolbar({
         ) : (
           <MenuRoot key={regions.binding?.incarnation ?? "recovery"}>
             <MenuTrigger
+              openOnHover="control"
               render={
                 <IconButton
                   hint="familiar"

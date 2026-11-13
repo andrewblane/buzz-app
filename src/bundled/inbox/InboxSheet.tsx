@@ -24,7 +24,7 @@ import {
   type ConversationHostServices,
 } from "../../features/conversation/ConversationHost";
 import { useConversationPresentation } from "../../features/conversation/ConversationPresentation";
-import { EmptyState } from "../../shared/design-system/ui/EmptyState";
+import { NoConversationSelected } from "../../features/conversation/NoConversationSelected";
 import { PanelHeader } from "../../shared/design-system/ui/PanelHeader";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { PlusIcon, XIcon } from "../../shared/design-system/icons";
@@ -552,11 +552,7 @@ export function InboxSheet({
                   <>
                     {!draftKind && !drafting && !shown ? (
                       <div className={styles.unselectedConversation}>
-                        <EmptyState
-                          frame="none"
-                          icon={null}
-                          title="No conversation selected"
-                        />
+                        <NoConversationSelected />
                       </div>
                     ) : (
                       <div

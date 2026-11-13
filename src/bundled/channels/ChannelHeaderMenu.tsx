@@ -15,7 +15,12 @@ import {
   useChannelMenuActions,
   useChannelNavigation,
 } from "../../features/channel-navigation/ChannelNavigationState";
-import { DotsThreeIcon, InfoIcon } from "../../shared/design-system/icons";
+import {
+  DotsThreeIcon,
+  InfoIcon,
+  FileTextIcon,
+  HashArrowInIcon,
+} from "../../shared/design-system/icons";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import {
   MenuRoot,
@@ -103,7 +108,9 @@ export function ChannelHeaderMenu({
         {startChat}
         {finishConversion && (
           <MenuItem onClick={finishConversion}>
-            <MenuIcon>{null}</MenuIcon>
+            <MenuIcon>
+              <HashArrowInIcon size={16} />
+            </MenuIcon>
             Finish conversion
           </MenuItem>
         )}
@@ -127,7 +134,7 @@ export function ChannelHeaderMenu({
         {menuPanels?.map((panel) => (
           <MenuItem key={panel.key} onClick={() => openMenuPanel?.(panel)}>
             <MenuIcon>
-              <InfoIcon size={16} />
+              <FileTextIcon size={16} />
             </MenuIcon>
             {panel.channelMenu?.label}
           </MenuItem>
@@ -194,6 +201,7 @@ export function ChannelHeaderMenu({
       }}
     >
       <MenuTrigger
+        openOnHover="control"
         render={
           <IconButton
             hint="familiar"

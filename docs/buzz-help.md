@@ -526,7 +526,7 @@ and are asked to sign in again in Buzz.
   channels by their latest post or participating-thread activity. Conversation
   details place member avatars before the title, matching Team; select the header
   to view or manage members.
-  Close is on the left. Select the ellipsis on the right of the conversation
+  Close is on the left. Hover over or select the ellipsis on the right of the conversation
   header to open its tools and channel/chat actions together in one compact menu. Expanded details include **Open in Team** in that menu.
   Channel previews load as rows come into view; sender and Waiting filters may load additional previews to find matching conversations.
   Channel avatars in lists and previews show the first two letters of the channel name on a colored background.
@@ -964,7 +964,9 @@ and are asked to sign in again in Buzz.
   the rail available, so you can switch straight back to a chat.
   Saved links to it open the plugin, or offer to turn it on. Use the **Drafts**
   and **Sent** tabs to switch lists; Buzz remembers your choice for this community.
-  Rows lead with the destination and message text. It lists
+  The header, tabs, search and compact rows stay in a left-hand list, with the
+  selected conversation on the right. Until you choose a row, the detail area
+  says **No conversation selected**. Rows lead with the destination and message text. It lists
   the messages you started but did not send, newest
   change first, with the number of drafts shown beside it in the Messages
   sidebar, and your latest 100 sent messages in this community, grouped by

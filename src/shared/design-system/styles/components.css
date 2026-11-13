@@ -1561,7 +1561,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
-    padding: var(--space-5) var(--space-6);
+    padding: var(--space-4) var(--space-5);
   }
 
   /* Keep toolbar geometry while the conversation identity lives in content. */
@@ -1576,7 +1576,7 @@
 
   .panel-header[data-variant="compact"] {
     min-height: var(--size-panel-header);
-    padding: var(--space-5) var(--space-6);
+    padding: var(--space-4) var(--space-5);
   }
 
   .panel-header-title,
@@ -1632,7 +1632,7 @@
 
   /* Chat identity and toolbar controls share a top edge. */
   .panel-header[data-variant="conversation"] {
-    padding-block-end: var(--space-3);
+    padding-block-end: var(--space-2);
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
     align-items: start;
@@ -1655,7 +1655,7 @@
     z-index: 2;
   }
   .panel-header[data-history-overlay] > * {
-    margin-block-start: var(--space-5);
+    margin-block-start: var(--space-4);
   }
   .panel-header[data-history-overlay] > .panel-header-material {
     --scroll-edge-surface: var(--surface-panel);
@@ -2470,9 +2470,11 @@
     padding-block: calc(var(--space-1) - 0.5px) 0;
   }
   .panel-header .buzz-tabs[data-variant="navigation"] .buzz-tabs-list {
-    height: var(--size-control-sm);
+    height: auto;
+    min-height: calc(var(--size-control-sm) + 2 * var(--space-1));
     align-items: center;
-    padding-block: 0;
+    /* Keep capsule edges and elevation inside the scrollport's clip. */
+    padding: var(--space-1);
   }
   .buzz-tabs[data-variant="navigation"] .buzz-tabs-item {
     @apply glass-secondary;
