@@ -19,6 +19,7 @@ import type {
 } from "../features/navigation/controller";
 import { isBuiltInSettingsSection } from "./settings-sections";
 import { linkedPage, linkedPageTarget } from "../features/pages/plugin-link";
+import { dockOwner, dockReturn } from "./dock-return";
 
 const channelsKey = "buzz.channels/channels";
 /** Presentation-only lease for an already-confirmed Settings departure. */
@@ -420,47 +421,55 @@ export function useAppNavigation(
       void navigation.retry();
     }
   }, [navigation, state, failure, offline, relay.status]);
+  // The last visit opened inside each dock app, for the dock to return to.
+  const dockVisits = useRef(new Map<string, OpenTarget>());
+  const dockPages = useRef(pages);
+  dockPages.current = pages;
+  useEffect(() => {
+    const remember = () => {
+      const { status, entry } = navigation.snapshot();
+      if (status !== "opened") return;
+      const owner = dockOwner(dockPages.current, entry.target);
+      if (owner) dockVisits.current.set(owner, entry.target);
+    };
+    remember();
+    return navigation.subscribe(remember);
+  }, [navigation]);
   const select = (
     key: string,
     options?: Pick<NavigationOpenOptions, "focus"> & {
       /** Settings only: open at this section. */
       section?: string;
+      /** Return to the app's last visit when it is still in scope. */
+      resume?: boolean;
     },
   ) => {
     const selectedClient = services.communities.snapshot();
+    const scope =
+      selectedClient.viewer && selectedClient.selected
+        ? {
+            viewer: selectedClient.viewer,
+            communityOrigin: communityDestination(selectedClient.selected).url,
+          }
+        : null;
     let destination: OpenTarget;
     if (key === "settings")
       destination = {
         version: 1,
         kind: "settings",
         ...(options?.section ? { section: options.section } : {}),
-        ...(selectedClient.viewer && selectedClient.selected
-          ? {
-              scope: {
-                viewer: selectedClient.viewer,
-                communityOrigin: communityDestination(selectedClient.selected)
-                  .url,
-              },
-            }
-          : { scope: null }),
+        scope,
       };
     else {
       const selected = pages.find((page) => page.key === key);
       if (!selected) return;
-      destination = {
+      destination = (options?.resume &&
+        dockReturn(pages, key, dockVisits.current.get(key), scope)) || {
         version: 1,
         kind: "page",
         pluginId: selected.pluginId,
         pageId: selected.id,
-        ...(selectedClient.viewer && selectedClient.selected
-          ? {
-              scope: {
-                viewer: selectedClient.viewer,
-                communityOrigin: communityDestination(selectedClient.selected)
-                  .url,
-              },
-            }
-          : { scope: null }),
+        scope,
       };
     }
     void navigation.open(
