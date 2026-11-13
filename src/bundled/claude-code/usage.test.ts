@@ -276,6 +276,93 @@ it("finds the agent's sessions with the manifest's processes", async () => {
   ).toEqual([]);
 });
 
+it("reads a transcript too large for the app's read a page at a time", async () => {
+  home = mkdtempSync(join(tmpdir(), "claude-usage-"));
+  const project = join(home, ".claude/projects/-Users-me--buzz");
+  mkdirSync(join(project, "one/subagents"), { recursive: true });
+  writeFileSync(
+    join(project, "one.jsonl"),
+    `${threadPrompt()}\n${reply(1000, "m1", usage(1, 2))}`,
+  );
+  const sidechain = { isSidechain: true };
+  const first = reply(1500, "s1", usage(3, 4), "claude-opus-5-5", sidechain);
+  // A line of two-byte characters across the first page's end.
+  const across = JSON.stringify({
+    type: "assistant",
+    timestamp: at(1600),
+    requestId: "req-s2",
+    isSidechain: true,
+    message: {
+      id: "s2",
+      model: "claude-opus-5-5",
+      role: "assistant",
+      content: [{ type: "text", text: "é".repeat(5 << 20) }],
+      usage: usage(5, 6),
+    },
+  });
+  const last = reply(1700, "s3", usage(7, 8), "claude-opus-5-5", sidechain);
+  const big = `${first}\n${across}\n${last}\n`;
+  expect(Buffer.byteLength(big)).toBeGreaterThan(8 << 20);
+  writeFileSync(join(project, "one/subagents/agent-big.jsonl"), big);
+  const host = desktop(home);
+  const sessions = await readUsage(
+    {
+      ...host,
+      // The app refuses to read a file this large whole.
+      readFile: async (path) => {
+        const file = await host.readFile(path);
+        if (file.length > 1 << 20)
+          throw new Error(`${path} is larger than 50 MB`);
+        return file;
+      },
+    },
+    "~/.buzz",
+    agent,
+    [],
+    0,
+    new AbortController().signal,
+  );
+  expect(sessions).toHaveLength(1);
+  expect(sessions[0]?.gaps).toEqual([]);
+  expect(sessions[0]?.observations.map((entry) => entry.tokens)).toEqual([
+    { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+    { input: 3, output: 4, cacheRead: 0, cacheWrite: 0 },
+    { input: 5, output: 6, cacheRead: 0, cacheWrite: 0 },
+    { input: 7, output: 8, cacheRead: 0, cacheWrite: 0 },
+  ]);
+  expect(sessions[0]?.lastAt).toBe(Date.parse(at(1700)));
+});
+
+it("reports a too-large transcript gone before its pages are read", async () => {
+  home = mkdtempSync(join(tmpdir(), "claude-usage-"));
+  const project = join(home, ".claude/projects/-Users-me--buzz");
+  mkdirSync(join(project, "one/subagents"), { recursive: true });
+  writeFileSync(
+    join(project, "one.jsonl"),
+    `${threadPrompt()}\n${reply(1000, "m1", usage(1, 2))}`,
+  );
+  const big = join(project, "one/subagents/agent-big.jsonl");
+  writeFileSync(big, reply(1500, "s1", usage(3, 4)));
+  const host = desktop(home);
+  const [session] = await readUsage(
+    {
+      ...host,
+      readFile: async (path) => {
+        if (!path.includes("/subagents/")) return host.readFile(path);
+        rmSync(big);
+        throw new Error(`${path} is larger than 50 MB`);
+      },
+    },
+    "~/.buzz",
+    agent,
+    [],
+    0,
+    new AbortController().signal,
+  );
+  expect(session?.gaps).toEqual(["A subagent’s transcript is gone"]);
+  expect(session?.observations).toHaveLength(1);
+});
+
 it("reads again only the files changed since the last read", async () => {
   home = mkdtempSync(join(tmpdir(), "claude-usage-"));
   const base = home;
