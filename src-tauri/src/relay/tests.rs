@@ -1921,7 +1921,7 @@ async fn webp_thumbnails_fall_back_to_jpeg_only_when_missing() {
     let webp = format!("/media/{hash}.thumb.webp");
     let jpeg = format!("/media/{hash}.thumb.jpg");
     let (base, paths) = thumbnail_server("404 Not Found");
-    let response = serve_media(
+    let (served, response) = serve_media(
         &IdentityHost::fixture(),
         None,
         base.join(&webp).unwrap(),
@@ -1930,7 +1930,8 @@ async fn webp_thumbnails_fall_back_to_jpeg_only_when_missing() {
     .await
     .unwrap();
     assert_eq!(response.body(), b"jpeg");
-    assert_eq!(*paths.lock().unwrap(), [webp.clone(), jpeg]);
+    assert_eq!(served, base.join(&jpeg).unwrap());
+    assert_eq!(*paths.lock().unwrap(), [webp.clone(), jpeg.clone()]);
 
     let (base, paths) = thumbnail_server("401 Unauthorized");
     let status = serve_media(
@@ -1946,6 +1947,25 @@ async fn webp_thumbnails_fall_back_to_jpeg_only_when_missing() {
 
     let png = Url::parse(&format!("https://relay.test/media/{hash}.png")).unwrap();
     assert_eq!(jpeg_thumb(&png), None);
+}
+
+#[tokio::test]
+async fn saved_webp_thumbnails_fall_back_to_jpeg_under_its_name() {
+    let hash = "a".repeat(64);
+    let (base, _) = thumbnail_server("404 Not Found");
+    let dir = tempfile::tempdir().unwrap();
+    let url = base.join(&format!("/media/{hash}.thumb.webp")).unwrap();
+    let saved = save_media(
+        &IdentityHost::fixture(),
+        None,
+        url,
+        dir.path().to_owned(),
+        "",
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved, dir.path().join(format!("{hash}.thumb.jpg")));
+    assert_eq!(std::fs::read(&saved).unwrap(), b"jpeg");
 }
 
 #[test]
@@ -4650,5 +4670,35 @@ async fn a_plugin_request_refused_without_the_users_sign_in_is_not_their_refusal
         if refusal.community == "https://plugin-refusal-marker.test" {
             break;
         }
+    }
+}
+
+#[test]
+fn huddle_end_requires_one_parent_and_a_distinct_room() {
+    let parent = "00000000-0000-4000-8000-000000000001";
+    let room = "00000000-0000-4000-8000-000000000002";
+    let mut event = EventTemplate {
+        kind: 48103,
+        created_at: 1,
+        content: serde_json::json!({"ephemeral_channel_id": room}).to_string(),
+        tags: vec![vec!["h".into(), parent.into()]],
+    };
+    assert!(validate_event("https://relay.test", &event).is_ok());
+    event
+        .tags
+        .push(vec!["client-id".into(), uuid::Uuid::new_v4().to_string()]);
+    event.tags.push(vec!["ms".into(), "999".into()]);
+    assert!(validate_event("https://relay.test", &event).is_ok());
+    event.tags.push(vec!["h".into(), room.into()]);
+    assert!(validate_event("https://relay.test", &event).is_err());
+    event.tags.pop();
+    for content in [
+        "{}".to_string(),
+        "bad".into(),
+        serde_json::json!({"ephemeral_channel_id":parent}).to_string(),
+        serde_json::json!({"ephemeral_channel_id":"bad"}).to_string(),
+    ] {
+        event.content = content;
+        assert!(validate_event("https://relay.test", &event).is_err());
     }
 }

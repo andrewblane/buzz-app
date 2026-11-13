@@ -328,6 +328,9 @@ function setup(
     session: vi.fn(async () => {}),
     register: vi.fn(),
     addTool: vi.fn(),
+    createToolOperation: vi.fn(() => {
+      throw new Error("No operation provider in this fixture");
+    }),
     addInstructions: vi.fn(),
     tools: () => [],
     create: vi.fn(async () => {
@@ -384,6 +387,8 @@ function setup(
     interruptible: () => false,
     hostedInstructions: () => undefined,
     interrupt: vi.fn(async () => false),
+    assignConversationFolder: vi.fn(async () => "/folder"),
+    conversationFolder: () => undefined,
     note: () => false,
     classifier: () => "unavailable",
     saveTeam: vi.fn(async (change: TeamChange) => {

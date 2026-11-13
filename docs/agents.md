@@ -595,6 +595,35 @@ They remain in memory only, and the call returns false unless this copy runs
 the agent. Pi agents don't take notes yet: the call still returns true for one,
 but its turns never include the note.
 
+A plugin with `host.files` gives one conversation of the owner's local agent
+its own working folder with
+`ctx.agents.assignConversationFolder(pubkey, { channelId, root? }, path)`,
+before that conversation's first turn. The conversation's session then starts
+in that folder, so the harness loads its repository configuration (for Claude:
+`CLAUDE.md`, `.mcp.json`, skills, hooks and settings). A protected agent
+starts there under its policy's unchanged containment; protected Claude loads
+no repository configuration there, as in its workspace. The agent's workspace
+stays reachable, and the base prompt names it by absolute path as the place for
+`RESEARCH/`, `PLANS/` and the other workspace folders. `place` names the
+conversation as session controls do: no root for a DM, a Solo chat or a
+channel-scoped agent. A root for a DM or Solo chat rejects, and a huddle room
+takes no folder. `path` is absolute or `~/…` and must be an existing
+directory; the call resolves with it as a real path. The folder is kept only on
+this device and is set once: the same folder again resolves, another rejects,
+because a session's history is found by the folder it ran in. For the same
+reason, a conversation that already has a session in the workspace rejects:
+the harness's `sessions` list names the conversations that do. If the folder
+later disappears, the conversation's next turn fails with an error naming it
+and never falls back to the workspace. The folder applies on the device that
+runs the agent, so messages from any of the owner's clients, such as mobile,
+start there. Another program that does not share this device's agent state,
+such as a development build with its own storage, an older build or another
+computer, does not see the folder and starts the conversation in the
+workspace. `ctx.agents.conversationFolder(pubkey,
+place)` returns the folder. Claude and Codex (`conversationFolders` on the
+type) support folders; other harnesses and agents on an execution target
+reject. Plugins feature-detect the method.
+
 A type marks its primary configuration tab with `role: "settings"`. In the
 Agents build view and profile panel, the host keeps that tab at a stable
 `Settings` destination and supplies the current type identity plus retype
@@ -1287,6 +1316,17 @@ or outside click closes the popup. Human typing remains in the ordinary
 conversation indicator.
 
 ### Local plugin-agent lifecycle
+
+`session.activity` exposes local work for mentions and conversation wakes from
+plugins, watches, timers, catch-up, and sources. Synthetic requests set
+`syntheticMessage: true`; their `messageId` is local and has no relay message.
+Their optional `requestText` holds the exact wake text supplied to the harness,
+without truncation. A harness read at admission updates that text before execution.
+Mentions omit `requestText`; consumers read their published request by ID.
+The same work entry keeps the destination, lifecycle, and `publishedMessageIds`.
+Reply IDs remain after the short notification echo window, within the existing
+local activity budget. This evidence is local to the running app and is not a
+durable transcript. Standalone wakes without a conversation have no local entry.
 
 The popup resets on conversation changes and when current work ends. Idle and
 past sessions remain in the agent's profile Activity tab rather
