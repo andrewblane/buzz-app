@@ -593,7 +593,9 @@ export function PluginImport({
     fromGit = false,
   ) {
     if (!imports || pending.current || blocked) return;
-    const observe = currentPlugin ? checks.observe(currentPlugin) : undefined;
+    const observe = currentPlugin
+      ? checks.observe(currentPlugin, updateAction?.source)
+      : undefined;
     const returnTo = document.activeElement as HTMLElement | null;
     sourceTrigger.current = returnTo;
     pending.current = true;
@@ -1215,7 +1217,11 @@ export function PluginImport({
                   disabled={blocked || !candidate}
                   onClick={() => {
                     if (currentPlugin && candidate)
-                      checks.observe(currentPlugin)(candidate, null, candidate);
+                      checks.observe(currentPlugin, updateAction?.source)(
+                        candidate,
+                        null,
+                        candidate,
+                      );
                     setExisting(
                       catalog.plugins.find(
                         (item) => item.manifest.id === candidate?.manifest.id,

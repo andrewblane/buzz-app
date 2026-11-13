@@ -1609,6 +1609,119 @@ it("releases the serialized queue when a confirmed review unmounts and fails", a
   updates.dispose();
 });
 
+it.each([false, true])(
+  "reconciles queued review failure and recovery (managed pin=%s)",
+  async (managed) => {
+    const source = {
+      repository: "https://example.com/plugins.git",
+      reference: "main",
+      path: ".",
+      ...(managed ? { commit: "a".repeat(40) } : {}),
+    };
+    const manifest = {
+      id: "example.target",
+      name: "Target",
+      apiVersion: 1 as const,
+      updates: { defaultEnabled: true },
+    };
+    const plugin: PluginInfo = {
+      manifest,
+      source: "external",
+      enabled: true,
+      revision: "one",
+      previous: null,
+      reloadable: true,
+      error: null,
+      updateSource: {
+        repository: source.repository,
+        reference: source.reference,
+        path: source.path,
+      },
+    };
+    const preview: ImportPreview = {
+      token: "queued-preview",
+      source: source.repository,
+      commit: "a".repeat(40),
+      warnings: [],
+      candidates: [{ path: ".", manifest, revision: "two" }],
+    };
+    const catalog = { profile: "test", location: "test", plugins: [plugin] };
+    const imports = {
+      checkGit: vi.fn(async () => preview),
+      git: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Temporary acquisition failure"))
+        .mockResolvedValue(preview),
+      discard: vi.fn(async () => {}),
+    };
+    const manager = {
+      imports,
+      snapshot: () => ({
+        configuration: {
+          status: "ready",
+          externalPluginsPaused: false,
+          catalog,
+          ...(managed
+            ? {
+                managed: {
+                  status: "ready",
+                  path: "policy",
+                  source: "Example",
+                  plugins: [{ id: manifest.id, ...source, state: "outdated" }],
+                  problems: [],
+                },
+              }
+            : {}),
+        },
+        activation: {},
+      }),
+      subscribe: () => () => {},
+    } as unknown as PluginManager;
+    const updates = createPluginUpdates(manager, async () => null);
+    let view: ReturnType<typeof render> | undefined;
+    try {
+      const token = (await updates.capability.refresh()).candidates[0]?.token;
+      if (!token) throw new Error("Expected candidate");
+      const queue = updates.capability.queueUpdates([token]);
+      if (!queue || !startReview(updates))
+        throw new Error("Expected active review");
+      const element = (
+        <PluginImport
+          plugins={manager}
+          catalog={catalog}
+          busy={false}
+          updateId={manifest.id}
+          updateAction={{ source, candidateRevision: "two" }}
+          reviewRequested
+        />
+      );
+      view = render(element);
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Temporary acquisition failure",
+      );
+      expect(updates.isCurrentToken(token)).toBe(false);
+      expect(updates.capability.getSnapshot().status).toBe("error");
+      view.unmount();
+      view = render(element);
+      await screen.findByRole("dialog", { name: "Update Target" });
+      await waitFor(() => expect(updates.isCurrentToken(token)).toBe(true));
+      expect(updates.capability.getSnapshot().status).toBe("fresh");
+      const release = updates.beginOperation(queue.id, token);
+      expect(release).toBeDefined();
+      release?.();
+      expect(imports.git).toHaveBeenLastCalledWith(
+        source.repository,
+        source.reference,
+        undefined,
+        ...(managed ? [{ commit: source.commit }] : []),
+      );
+    } finally {
+      view?.unmount();
+      updates.dispose();
+    }
+  },
+);
+
 it("opens installed details instead of adding another source", async () => {
   const manifest = {
     id: "example.duplicate",

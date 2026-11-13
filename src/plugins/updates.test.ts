@@ -2487,12 +2487,39 @@ it.each(["candidate", "error"] as const)(
 
 it.each(
   (["same", "revision", "publisher"] as const).flatMap((change) =>
-    (["explicit", "background"] as const).map((via) => ({ change, via })),
+    (["explicit", "background"] as const).flatMap((via) =>
+      [false, true].map((managed) => ({ change, via, managed })),
+    ),
   ),
 )(
-  "reconciles a recovered active review only for the original candidate ($change, $via)",
-  async ({ change, via }) => {
+  "reconciles a recovered active review only for the original candidate ($change, $via, managed pin=$managed)",
+  async ({ change, via, managed }) => {
     const f = fixture();
+    const source = {
+      ...gitUpdateSource(f.plugin),
+      ...(managed ? { commit: "a".repeat(40) } : {}),
+    };
+    if (managed) {
+      const config = f.get();
+      if (config.status !== "ready") throw new Error("Expected catalog");
+      f.set({
+        ...config,
+        managed: {
+          status: "ready",
+          path: "policy",
+          source: "Example",
+          plugins: [
+            {
+              id: f.plugin.manifest.id,
+              ...source,
+              commit: "a".repeat(40),
+              state: "outdated",
+            },
+          ],
+          problems: [],
+        },
+      });
+    }
     const updates = createPluginUpdates(f.manager, f.authorize);
     try {
       const token = (await updates.capability.refresh()).candidates[0]?.token;
@@ -2501,7 +2528,10 @@ it.each(
       if (!queue || !startReview(updates))
         throw new Error("Expected active review");
       const checks = sharedPluginUpdateChecks(f.manager.imports);
-      checks.observe(f.plugin)(undefined, "Temporary acquisition failure");
+      checks.observe(f.plugin, source)(
+        undefined,
+        "Temporary acquisition failure",
+      );
       expect(updates.isCurrentToken(token)).toBe(false);
       const candidate = {
         ...f.candidate,
@@ -2509,7 +2539,7 @@ it.each(
         ...(change === "publisher" ? { publisher: "different" } : {}),
       };
       if (via === "explicit")
-        checks.observe(f.plugin)(candidate, null, candidate);
+        checks.observe(f.plugin, source)(candidate, null, candidate);
       else {
         f.checkGit.mockResolvedValueOnce({
           ...f.preview,
