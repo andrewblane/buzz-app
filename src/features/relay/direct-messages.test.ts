@@ -16,6 +16,7 @@ function setup(
     untrusted?: boolean;
     lagging?: boolean;
     human?: boolean;
+    hidden?: boolean;
   } = {},
 ) {
   const viewer = keypair(),
@@ -55,6 +56,20 @@ function setup(
               tags: [["auth", agentOwner.pubkey, "", "a".repeat(128)]],
             }),
       ];
+    if (filters.some((f) => f.kinds?.includes(30622)))
+      return options.hidden
+        ? [
+            signed(relay, {
+              kind: 30622,
+              content: "",
+              tags: [
+                ["d", viewer.pubkey],
+                ["p", viewer.pubkey],
+                ["h", id],
+              ],
+            }),
+          ]
+        : [];
     return options.lagging &&
       !filters.every((filter) => filter.consistency === "strong")
       ? []
@@ -142,6 +157,49 @@ it.each([
       const tags = t.publish.mock.calls[0]?.[0].tags ?? [];
       expect(tags.some(([name]) => name === "p")).toBe(tagged);
       if (tagged) expect(tags).toContainEqual(["p", t.other.pubkey]);
+    } finally {
+      t.owner.dispose();
+    }
+  },
+);
+it.each([
+  { status: "ready", hidden: false, waits: false },
+  { status: "ready", hidden: true, waits: true },
+  { status: "idle", hidden: false, waits: true },
+])(
+  "opens a listed DM before its relay command unless visibility hides it or is unread: %j",
+  async ({ status, hidden, waits }) => {
+    const t = setup({ hidden });
+    const opened = vi.fn();
+    t.dm.subscribeOpened(opened);
+    try {
+      const signal = new AbortController().signal;
+      await t.dm.open([t.other.pubkey], signal);
+      if (status === "ready")
+        await t.owner.session.channelLifecycle.refreshVisibility();
+      expect(t.owner.session.channelLifecycle.snapshot().status).toBe(status);
+      let answer = (_id: string) => {};
+      t.openDirectMessage.mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      let resolved = false;
+      const reopened = t.dm.open([t.other.pubkey], signal).then((value) => {
+        resolved = true;
+        return value;
+      });
+      await vi.waitFor(() =>
+        expect(t.openDirectMessage).toHaveBeenCalledTimes(2),
+      );
+      if (waits) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(resolved).toBe(false);
+      } else await vi.waitFor(() => expect(resolved).toBe(true));
+      answer(id);
+      await expect(reopened).resolves.toBe(id);
+      expect(opened).toHaveBeenCalledTimes(2);
     } finally {
       t.owner.dispose();
     }

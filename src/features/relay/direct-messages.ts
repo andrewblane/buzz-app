@@ -1,12 +1,14 @@
 import { validDirectMessageParticipants } from "./direct-message-policy";
 import { foldProfiles } from "./profiles";
-import type { ChannelQueries } from "./contracts";
+import type { ChannelQueries, ChannelSummary } from "./contracts";
+import type { DmVisibility } from "./channel-lifecycle";
 import type { ReadTransport } from "./transport";
 import type { RelayReader } from "./reader";
 import type { Outbox } from "./outbox";
 import type { ProfileSearch } from "./profile-search";
 import type { ProfileQueries } from "./profile-directory";
 import { newer, type RelayEvent } from "./events";
+import { yieldToHost } from "./yield";
 import { typedPublicKey } from "../../shared/identity/public-key";
 import {
   verifiedProfile,
@@ -33,6 +35,8 @@ export function createDirectMessages(
   /** The shared profile cache. A first message reads its 1:1 partner's
    * agent flag from it, and the people directory stays outside it. */
   profiles?: Pick<ProfileQueries, "ensure">,
+  /** The relay's per-viewer DM visibility; a hidden DM needs the open command. */
+  dmVisibility?: () => DmVisibility,
 ) {
   const available = !!transport?.openDirectMessage && !!outbox?.supports(9);
   const opened = new Set<(id: string) => void>();
@@ -152,33 +156,53 @@ export function createDirectMessages(
         throw new Error("Choose between one and eight other people.");
       const active = AbortSignal.any([lifetime, signal]);
       active.throwIfAborted();
-      const id = await transport.openDirectMessage(pubkeys, active);
-      active.throwIfAborted();
-      // Only signed discovery can admit the returned channel. Never trust a receipt as membership.
-      await reader.read(
-        [
-          {
-            kinds: [39000, 39002],
-            consistency: "strong",
-            authors: [transport.relayAuthor],
-            "#d": [id],
-            limit: 2,
-          },
-        ],
-        { signal: active, fresh: true },
-      );
-      active.throwIfAborted();
-      const channel = channels.list().channels.find((item) => item.id === id);
       const expected = new Set([transport.viewer, ...pubkeys]);
-      if (
-        channel?.channelType !== "dm" ||
-        channel.archived ||
-        channel.members?.length !== expected.size ||
-        !channel.members.every((key) => expected.has(key))
-      )
-        throw new Error(
-          "The conversation’s participants could not be confirmed. Try again.",
+      const exact = (channel: ChannelSummary | undefined) =>
+        channel?.channelType === "dm" &&
+        !channel.archived &&
+        channel.members?.length === expected.size &&
+        channel.members.every((key) => expected.has(key));
+      // Signed discovery already admitted a listed DM, so it opens at once.
+      // The command still unhides it on the relay, behind the navigation; one
+      // the relay is known to hide waits for it as a new DM does.
+      const visibility = dmVisibility?.();
+      let id =
+        visibility?.status === "ready"
+          ? channels
+              .list()
+              .channels.find(
+                (item) =>
+                  exact(item) &&
+                  !item.cached &&
+                  !visibility.hidden.includes(item.id),
+              )?.id
+          : undefined;
+      if (id) {
+        void transport.openDirectMessage(pubkeys, lifetime).catch(() => {});
+        // Let the press paint before the caller's navigation renders.
+        await yieldToHost();
+      } else {
+        id = await transport.openDirectMessage(pubkeys, active);
+        active.throwIfAborted();
+        // Only signed discovery can admit the returned channel. Never trust a receipt as membership.
+        await reader.read(
+          [
+            {
+              kinds: [39000, 39002],
+              consistency: "strong",
+              authors: [transport.relayAuthor],
+              "#d": [id],
+              limit: 2,
+            },
+          ],
+          { signal: active, fresh: true },
         );
+        active.throwIfAborted();
+        if (!exact(channels.list().channels.find((item) => item.id === id)))
+          throw new Error(
+            "The conversation’s participants could not be confirmed. Try again.",
+          );
+      }
       // A 1:1 DM's agent partner is woken only by a `p` tag, which `send`
       // adds from the shared profile cache. The people directory leaves that
       // cache empty, so load the partner before the first message is sent.
