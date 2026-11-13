@@ -1,4 +1,5 @@
 import { HeaderIcon } from "./HeaderIcon";
+import { ScrollEdgeMaterial } from "./ScrollEdgeMaterial";
 import { SquaresFourIcon } from "../icons";
 import type { ReactNode } from "react";
 
@@ -31,11 +32,18 @@ export function PanelHeader({
       data-divider={divider ? undefined : "hidden"}
       data-history-overlay={historyOverlay || undefined}
     >
+      {historyOverlay && (
+        <ScrollEdgeMaterial edge="top" className="panel-header-material" />
+      )}
       {navigation}
       <div className="panel-header-title">
         {icon}
         {typeof title === "string" ? (
-          <h2 className="text-label text-primary">{title}</h2>
+          <h2
+            className={`${variant === "conversation" && icon ? "text-label-sm" : "text-label"} text-primary`}
+          >
+            {title}
+          </h2>
         ) : (
           title
         )}

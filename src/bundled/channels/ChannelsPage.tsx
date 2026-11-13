@@ -1016,16 +1016,32 @@ function ChannelWorkspace({
   ]);
   // A live connection can still be confirming its restored membership. Keep
   // the pending intent; an exact reader cannot use display-only authority.
-  const exact =
-    cached || current?.cached
-      ? undefined
-      : navigation && requestedMessage && requestedThread === requestedMessage
-        ? { request: navigation, inTimeline: false }
-        : exactOpening?.request === navigation
-          ? exactOpening
-          : undefined;
+  const exact = useMemo(
+    () =>
+      cached || current?.cached
+        ? undefined
+        : navigation && requestedMessage && requestedThread === requestedMessage
+          ? { request: navigation, inTimeline: false }
+          : exactOpening?.request === navigation
+            ? exactOpening
+            : undefined,
+    [
+      cached,
+      current?.cached,
+      navigation,
+      requestedMessage,
+      requestedThread,
+      exactOpening,
+    ],
+  );
   // The route addresses a thread; its tab owns presentation, the route only
   // selects it and supplies the reveal request.
+  const detailSource =
+    !solo &&
+    navigation?.target.kind === "conversation" &&
+    !!navigation.target.detail &&
+    navigation.target.context === "channel";
+  const detailReply = detailSource && requestedMessage !== requestedThread;
   const routedThread = useMemo(
     () =>
       !cached &&
@@ -1038,7 +1054,7 @@ function ChannelWorkspace({
             channelId: current.id,
             messageId: requestedMessage,
             rootId: exact.rootId ?? requestedThread ?? requestedMessage,
-            pane: threadPane,
+            pane: detailReply ? ("main" as const) : threadPane,
             navigation,
           }
         : undefined,
@@ -1050,6 +1066,7 @@ function ChannelWorkspace({
       requestedThread,
       exact,
       threadPane,
+      detailReply,
     ],
   );
   // Open in channel also shows the thread's root in the timeline, reading
@@ -1560,7 +1577,7 @@ function ChannelWorkspace({
         pendingReturn.current = undefined;
       tabState.enterVisit(
         `${navigation.entryId}:${detail ? "detail" : routedThread ? "thread" : "channel"}`,
-        detail ? undefined : routedThread,
+        detail && !detailReply ? undefined : routedThread,
         !!detail,
         detail && currentId
           ? { channelId: currentId, target: detail.target }
@@ -1575,8 +1592,10 @@ function ChannelWorkspace({
           detail.target,
           detail.rootId,
         );
-        if (entry && historyPanel(entry)) open(entry);
-        else navigation.complete({ status: "failed", reason: "unavailable" });
+        if (entry && historyPanel(entry)) {
+          open(entry, false, detailSource ? "side" : undefined);
+          if (detailSource && !detailReply) tabState.selectMain(undefined);
+        } else navigation.complete({ status: "failed", reason: "unavailable" });
       }
       // Reselect it over the restored selection and give it its own visit.
       if (reopen) open(reopen);
@@ -1641,6 +1660,8 @@ function ChannelWorkspace({
     exact?.request,
     exact?.inTimeline,
     routedThread,
+    detailReply,
+    detailSource,
     tabState.enterVisit,
     tabState.select,
     tabState.selectMain,
@@ -1855,14 +1876,16 @@ function ChannelWorkspace({
         // Internal panel targets also use buzz:. Only routable links belong
         // to the navigator; registered panels handle the remaining targets.
         if (target) {
+          const opensAnotherChannel =
+            target.kind === "conversation" && target.channelId !== current?.id;
           if (target.kind === "conversation" && target.messageId) {
-            tabState.leaveVisit();
+            if (!opensAnotherChannel) tabState.leaveVisit();
             threadTrigger.current =
               document.activeElement instanceof HTMLElement
                 ? document.activeElement
                 : null;
           }
-          open(undefined);
+          if (!opensAnotherChannel) open(undefined);
           void navigator.open(target);
           return true;
         }
@@ -2106,7 +2129,14 @@ function ChannelWorkspace({
             cached={cached}
             // The composer below mounts TypingIndicator for members of a live channel.
             navigation={
-              !requestedMessage || exact?.inTimeline ? navigation : undefined
+              !requestedMessage ||
+              exact?.inTimeline ||
+              (contextTarget &&
+                !detailReply &&
+                navigation?.target.kind === "conversation" &&
+                navigation.target.detail)
+                ? navigation
+                : undefined
             }
             holding={contextHolding}
             inlineTarget={contextTarget}
@@ -2356,12 +2386,13 @@ function ChannelWorkspace({
                 draft.agent,
                 draft.linked,
                 draft.region,
+                draft.draft,
                 retiredSoloDraft.generation,
               ])}
               navigation={listToggle}
               linkedId={draft.linked}
               region={draft.region}
-              lead={draft.lead}
+              draft={draft.draft}
               source={linkedSource}
               visit={draftVisit}
               focusRequest={
@@ -2436,6 +2467,7 @@ function ChannelWorkspace({
                     !showingChannelPanel && (
                       <span className={panelStyles.paneToggle}>
                         <IconButton
+                          variant="glass"
                           hint="familiar"
                           ref={splitTrigger}
                           data-tab-pane-toggle=""
@@ -2566,6 +2598,7 @@ function ChannelWorkspace({
                         {current && hasChannelPanel && !showingChannelPanel && (
                           <span className={panelStyles.paneToggle}>
                             <IconButton
+                              variant="glass"
                               hint="familiar"
                               ref={splitTrigger}
                               data-tab-pane-toggle=""
@@ -2666,7 +2699,7 @@ function ChannelWorkspace({
                       hint="familiar"
                       data-tab-pane-toggle=""
                       data-highlight-expanded="false"
-                      variant="subtle"
+                      variant="glass"
                       size="toolbar"
                       aria-label="Toggle tab pane"
                       title="Close tab pane"

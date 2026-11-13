@@ -218,7 +218,7 @@ function setup(
     });
     return (
       <>
-        <ActivityFilters view={view} onChange={setView} />
+        <ActivityFilters view={view} onChange={setView} agentViews />
         <ActivitySidebar
           session={session}
           navigator={navigator}

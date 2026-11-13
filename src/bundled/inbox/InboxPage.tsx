@@ -39,17 +39,18 @@ import {
 import { selectProfiles } from "../../features/relay/profile-selection";
 import { useIdentityNames } from "../../features/identity-names/react";
 import {
+  shortTime,
   CollectionFilters,
   ConversationList,
 } from "../../features/conversation/ConversationList";
 import { useConversationPresentation } from "../../features/conversation/ConversationPresentation";
 import { useVisibleChannelPreviews } from "../../features/conversation/latest-previews";
-import { relativeTimestamp } from "../../shared/relative-timestamp";
 import { EmptyState } from "../../shared/design-system/ui/EmptyState";
 import { Button } from "../../shared/design-system/ui/Button";
 import {
   InboxFilters,
   InboxViewFilter,
+  offeredActivity,
   type ActivityFilter,
   type SenderFilter,
 } from "./InboxFilters";
@@ -333,7 +334,8 @@ const InboxList = memo(function InboxList({
   );
   const viewScope = session.scope;
   const [filters, setFilters] = useState(() => readFilters(viewScope));
-  const { activity, sender: senderFilter } = filters;
+  const { sender: senderFilter } = filters;
+  const activity = offeredActivity(filters.activity);
   const unreadOnly = filters.attention === "unread";
   const conversationView =
     activity === "direct" || activity === "working" || activity === "waiting"
@@ -426,7 +428,11 @@ const InboxList = memo(function InboxList({
   const [pending, setPending] = useState(false);
   const [refreshAfterRoster, setRefreshAfterRoster] = useState(false);
   const [error, setError] = useState<string>();
-  const [menu, setMenu] = useState<{ id: string; anchor?: HTMLElement }>();
+  const [menu, setMenu] = useState<{
+    id: string;
+    unread: boolean;
+    anchor?: HTMLElement;
+  }>();
   const active = useRef(false);
   const busy = useRef(false);
   const failedMutation = useRef<
@@ -1170,7 +1176,16 @@ const InboxList = memo(function InboxList({
           });
       },
       menu(id, anchor) {
-        setMenu(id ? { id, ...(anchor && { anchor }) } : undefined);
+        const item = items.find((item) => item.id === id);
+        setMenu(
+          item
+            ? {
+                id: item.id,
+                unread: hasUnread(item),
+                ...(anchor && { anchor }),
+              }
+            : undefined,
+        );
       },
       read: markRead,
       unread: (item) => mutate(item, true),
@@ -1374,7 +1389,7 @@ const InboxList = memo(function InboxList({
                         key={row.item.id}
                         {...common}
                         item={row.item}
-                        time={relativeTimestamp(row.item.createdAt)}
+                        time={shortTime(row.item.createdAt)}
                         channel={channel}
                         selected={selectedId === row.item.id}
                       />
@@ -1383,7 +1398,7 @@ const InboxList = memo(function InboxList({
                         key={row.item.id}
                         {...common}
                         item={row.item}
-                        time={relativeTimestamp(row.item.createdAt)}
+                        time={shortTime(row.item.createdAt)}
                         channel={channel}
                         feed={feed}
                         previewId={`${previewId}-${row.item.id}`}
@@ -1391,6 +1406,11 @@ const InboxList = memo(function InboxList({
                         canRead={canRead}
                         selected={selectedId === row.item.id}
                         menuOpen={menu?.id === row.item.id}
+                        menuUnread={
+                          menu?.id === row.item.id
+                            ? menu.unread
+                            : hasUnread(row.item)
+                        }
                         menuAnchor={
                           menu?.id === row.item.id ? menu.anchor : undefined
                         }

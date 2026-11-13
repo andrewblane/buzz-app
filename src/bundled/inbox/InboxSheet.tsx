@@ -24,6 +24,7 @@ import {
   type ConversationHostServices,
 } from "../../features/conversation/ConversationHost";
 import { useConversationPresentation } from "../../features/conversation/ConversationPresentation";
+import { NoConversationSelected } from "../../features/conversation/NoConversationSelected";
 import { PanelHeader } from "../../shared/design-system/ui/PanelHeader";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { PlusIcon, XIcon } from "../../shared/design-system/icons";
@@ -104,13 +105,7 @@ export function InboxSheet({
   const list = useChannelList(session.channels);
   const listVisibility = useContext(ConversationListVisibility);
   const controlledList = !!listVisibility;
-  const listIsOpen = listVisibility?.open ?? true;
-  const animateList = listVisibility?.animate ?? false;
   const reader = useRef<HTMLElement>(null);
-  const readerMotion = useRef<Animation | null>(null);
-  const priorListLayout = useRef<
-    { open: boolean; left: number; narrow: boolean } | undefined
-  >(undefined);
   const notify = useToastNotification();
   const [composer, setComposer] = useState<HTMLDivElement | null>(null);
   const presented = useConversationPresentation();
@@ -129,14 +124,13 @@ export function InboxSheet({
     if (!container) return;
     const measure = () => {
       if (!container.clientWidth) return;
-      if (
-        priorListLayout.current &&
-        reader.current &&
-        readerMotion.current?.playState !== "running" &&
-        readerMotion.current?.playState !== "paused"
-      )
-        priorListLayout.current.left =
-          reader.current.getBoundingClientRect().left;
+      const feed = container.querySelector<HTMLElement>(`.${styles.sheetFeed}`);
+      const panes = feed?.closest<HTMLElement>(`.${styles.collectionPanes}`);
+      if (feed && panes)
+        panes.style.setProperty(
+          "--collection-list-width",
+          `${feed.getBoundingClientRect().width}px`,
+        );
       setNarrow(
         container.clientWidth <
           48 * parseFloat(getComputedStyle(document.documentElement).fontSize),
@@ -145,52 +139,10 @@ export function InboxSheet({
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(container);
+    const feed = container.querySelector<HTMLElement>(`.${styles.sheetFeed}`);
+    if (feed) observer.observe(feed);
     return () => observer.disconnect();
   }, [container]);
-  // Reflow once, then move the reader from its previous visual position. Keeping
-  // its text unscaled avoids per-frame layout work and reverses from mid-flight.
-  useLayoutEffect(() => {
-    const element = reader.current;
-    if (!element || !controlledList) return;
-    const previous = priorListLayout.current;
-    const transform = getComputedStyle(element).transform;
-    const shift =
-      readerMotion.current && transform !== "none"
-        ? new DOMMatrixReadOnly(transform).m41
-        : 0;
-    readerMotion.current?.cancel();
-    readerMotion.current = null;
-    const left = element.getBoundingClientRect().left;
-    priorListLayout.current = { open: listIsOpen, left, narrow };
-    if (
-      !previous ||
-      previous.open === listIsOpen ||
-      !animateList ||
-      narrow ||
-      previous.narrow ||
-      document.documentElement.hasAttribute("data-keyboard-input") ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    )
-      return;
-    const offset = previous.left + shift - left;
-    if (!offset) return;
-    const tokens = getComputedStyle(element);
-    readerMotion.current = element.animate(
-      [
-        { transform: `translateX(${offset}px)` },
-        { transform: "translateX(0px)" },
-      ],
-      {
-        duration: parseFloat(
-          tokens.getPropertyValue(
-            listIsOpen ? "--time-panel-enter" : "--time-fast",
-          ),
-        ),
-        easing: tokens.getPropertyValue("--ease-enter").trim(),
-      },
-    );
-  }, [controlledList, listIsOpen, animateList, narrow]);
-  useLayoutEffect(() => () => readerMotion.current?.cancel(), []);
   const trigger = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
     if (!presented || shown || drafting || !trigger.current?.isConnected)
@@ -520,43 +472,46 @@ export function InboxSheet({
           data-list-open={listVisibility?.open ?? true}
           data-list-animate={listVisibility?.animate ? "" : undefined}
         >
-          <ResizableSidebar
-            scope={`${scope}:collection-list`}
-            defaultWidth={352}
-            className={styles.sheetFeed ?? ""}
-            id={listVisibility?.controls}
-            aria-hidden={listVisibility ? !listVisibility.open : undefined}
-            inert={listVisibility ? !listVisibility.open : undefined}
-          >
-            <ConversationPresentation
-              value={
-                presented &&
-                (listVisibility
-                  ? listVisibility.open
-                  : !narrow || (!selected && !drafting))
-              }
+          <div className={styles.listTrack}>
+            <ResizableSidebar
+              scope={`${scope}:collection-list`}
+              defaultWidth={352}
+              className={styles.sheetFeed ?? ""}
+              id={listVisibility?.controls}
+              aria-hidden={listVisibility ? !listVisibility.open : undefined}
+              inert={listVisibility ? !listVisibility.open : undefined}
             >
-              <CollectionCreationAction
+              <ConversationPresentation
                 value={
-                  <IconButton
-                    aria-label="New message"
-                    title="New message"
-                    onClick={expandDraft}
-                    icon={<PlusIcon size={20} aria-hidden="true" />}
-                  />
+                  presented &&
+                  (listVisibility
+                    ? listVisibility.open
+                    : !narrow || (!selected && !drafting))
                 }
               >
-                {children(open, close, isOpen)}
-              </CollectionCreationAction>
-            </ConversationPresentation>
-            {controlledList && (
-              <div
-                className={`${styles.collectionCreate} ${styles.listDismiss}`}
-              >
-                <ConversationListToggle inList />
-              </div>
-            )}
-          </ResizableSidebar>
+                <CollectionCreationAction
+                  value={
+                    <IconButton
+                      variant="glass"
+                      aria-label="New message"
+                      title="New message"
+                      onClick={expandDraft}
+                      icon={<PlusIcon size={20} aria-hidden="true" />}
+                    />
+                  }
+                >
+                  {children(open, close, isOpen)}
+                </CollectionCreationAction>
+              </ConversationPresentation>
+              {controlledList && (
+                <div
+                  className={`${styles.collectionCreate} ${styles.listDismiss}`}
+                >
+                  <ConversationListToggle inList />
+                </div>
+              )}
+            </ResizableSidebar>
+          </div>
           <section
             ref={reader}
             className={styles.collectionDetail}
@@ -595,108 +550,121 @@ export function InboxSheet({
               >
                 {(openDetail) => (
                   <>
-                    <div
-                      ref={setComposer}
-                      className={styles.draftContent}
-                      hidden={shown}
-                    >
-                      {draftKind !== "solo" && (
-                        <PanelHeader
-                          variant="conversation"
-                          title="New message"
-                          navigation={
-                            listVisibility ? (
-                              <ConversationListToggle />
-                            ) : (
-                              narrow && (
-                                <IconButton
-                                  size="sm"
-                                  variant="subtle"
-                                  aria-label="Close new message"
-                                  icon={<XIcon size={16} />}
-                                  onClick={dismiss}
-                                />
-                              )
-                            )
-                          }
-                        />
-                      )}
-                      <ConversationPresentation
-                        value={
-                          presented &&
-                          !shown &&
-                          (!narrow ||
-                            drafting ||
-                            listVisibility?.open === false)
-                        }
+                    {!draftKind && !drafting && !shown ? (
+                      <div className={styles.unselectedConversation}>
+                        <NoConversationSelected />
+                      </div>
+                    ) : (
+                      <div
+                        ref={setComposer}
+                        className={styles.draftContent}
+                        hidden={shown}
                       >
-                        {draftKind === "solo" ? (
-                          <SoloDraft
-                            navigation={<ConversationListToggle />}
-                            session={session}
-                            scope={scope}
-                            extensions={extensions}
-                            onStarted={showConversation}
-                            onFailed={(_id, message, retry) =>
-                              notify(
-                                message,
-                                "error",
-                                retry
-                                  ? {
-                                      label: "Retry restoring message",
-                                      onClick: () => {
-                                        void retry();
-                                      },
-                                      timeout: Infinity,
-                                    }
-                                  : undefined,
+                        {draftKind !== "solo" && (
+                          <PanelHeader
+                            variant="conversation"
+                            title="New message"
+                            navigation={
+                              listVisibility ? (
+                                <ConversationListToggle />
+                              ) : (
+                                narrow && (
+                                  <IconButton
+                                    size="sm"
+                                    variant="glass"
+                                    aria-label="Close new message"
+                                    icon={<XIcon size={16} />}
+                                    onClick={dismiss}
+                                  />
+                                )
                               )
-                            }
-                          />
-                        ) : (
-                          <NewMessage
-                            layout={draftKind === "team" ? "page" : "composer"}
-                            expanded
-                            onAddressed={expandDraft}
-                            allowChannels
-                            session={session}
-                            scope={scope}
-                            channels={list.channels}
-                            host={detailHost}
-                            extensions={extensions}
-                            onStarted={showConversation}
-                            onOpenThread={(channelId, messageId, threadId) => {
-                              openDetail(
-                                { channelId, messageId, threadId },
-                                { keep: true },
-                              );
-                            }}
-                            onOpenChat={showConversation}
-                            solo={
-                              draftKind === "team"
-                                ? undefined
-                                : {
-                                    onStarted: showConversation,
-                                    onFailed: (_id, message, retry) =>
-                                      notify(
-                                        message,
-                                        "error",
-                                        retry
-                                          ? {
-                                              label: "Retry restoring message",
-                                              onClick: () => {
-                                                void retry();
-                                              },
-                                              timeout: Infinity,
-                                            }
-                                          : undefined,
-                                      ),
-                                  }
                             }
                           />
                         )}
-                      </ConversationPresentation>
-                    </div>
+                        <ConversationPresentation
+                          value={
+                            presented &&
+                            !shown &&
+                            (!narrow ||
+                              drafting ||
+                              listVisibility?.open === false)
+                          }
+                        >
+                          {draftKind === "solo" ? (
+                            <SoloDraft
+                              navigation={<ConversationListToggle />}
+                              session={session}
+                              scope={scope}
+                              extensions={extensions}
+                              onStarted={showConversation}
+                              onFailed={(_id, message, retry) =>
+                                notify(
+                                  message,
+                                  "error",
+                                  retry
+                                    ? {
+                                        label: "Retry restoring message",
+                                        onClick: () => {
+                                          void retry();
+                                        },
+                                        timeout: Infinity,
+                                      }
+                                    : undefined,
+                                )
+                              }
+                            />
+                          ) : (
+                            <NewMessage
+                              layout={
+                                draftKind === "team" ? "page" : "composer"
+                              }
+                              expanded
+                              onAddressed={expandDraft}
+                              allowChannels
+                              session={session}
+                              scope={scope}
+                              channels={list.channels}
+                              host={detailHost}
+                              extensions={extensions}
+                              onStarted={showConversation}
+                              onOpenThread={(
+                                channelId,
+                                messageId,
+                                threadId,
+                              ) => {
+                                openDetail(
+                                  { channelId, messageId, threadId },
+                                  { keep: true },
+                                );
+                              }}
+                              onOpenChat={showConversation}
+                              solo={
+                                draftKind === "team"
+                                  ? undefined
+                                  : {
+                                      onStarted: showConversation,
+                                      onFailed: (_id, message, retry) =>
+                                        notify(
+                                          message,
+                                          "error",
+                                          retry
+                                            ? {
+                                                label:
+                                                  "Retry restoring message",
+                                                onClick: () => {
+                                                  void retry();
+                                                },
+                                                timeout: Infinity,
+                                              }
+                                            : undefined,
+                                        ),
+                                    }
+                              }
+                            />
+                          )}
+                        </ConversationPresentation>
+                      </div>
+                    )}
                     {available && channel && target && tab && (
                       <div
                         className={styles.draftContent}
@@ -744,7 +712,7 @@ export function InboxSheet({
                                     ) : (
                                       <IconButton
                                         size="sm"
-                                        variant="subtle"
+                                        variant="glass"
                                         aria-label="Close conversation"
                                         title="Close conversation"
                                         icon={<XIcon size={16} />}

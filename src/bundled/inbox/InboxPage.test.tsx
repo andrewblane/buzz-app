@@ -73,8 +73,7 @@ it.each([false, true])(
   async (dm) => {
     const h = fixture({ sheet: true, withWriter: true, withDm: dm });
     render(h.view);
-    if (dm) await chooseFilter("DMs");
-    await waitFor(() => expect(rows()).toHaveLength(dm ? 1 : 2));
+    await waitFor(() => expect(rows()).toHaveLength(dm ? 3 : 2));
     const opener = within(rows()[0] as HTMLElement).getByRole("button", {
       name: /^Open /,
     });
@@ -114,6 +113,18 @@ it.each([false, true])(
     expect(h.open).not.toHaveBeenCalled();
   },
 );
+
+it("Activity shows an unselected state until new message is requested", async () => {
+  const h = fixture({ sheet: true, withWriter: true });
+  render(h.view);
+  expect(await screen.findByText("No conversation selected")).toBeVisible();
+  expect(screen.queryByRole("textbox", { name: "New message" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "New message" }));
+  await waitFor(() =>
+    expect(screen.getByRole("textbox", { name: "New message" })).toBeVisible(),
+  );
+  expect(screen.queryByText("No conversation selected")).toBeNull();
+});
 
 it("a sheet host's local UI update does not recalculate the Activity feed", async () => {
   const h = fixture();
@@ -268,7 +279,7 @@ it.each(["data-base-ui-inert", "aria-hidden", "data-activity-covered"])(
   },
 );
 
-it("includes ordinary channel activity in All and isolates it in Channels", async () => {
+it("includes ordinary channel activity in All", async () => {
   const h = fixture({ sheet: true, withWriter: true, withDm: true });
   h.session.channels.ensureList();
   await waitFor(() => {
@@ -283,13 +294,11 @@ it("includes ordinary channel activity in All and isolates it in Channels", asyn
   ).toBeVisible();
   expect(await feed.findByText("An ordinary channel post")).toBeVisible();
   expect(await feed.findByText("A direct reply")).toBeVisible();
-  await userEvent.click(screen.getByRole("tab", { name: "Channels" }));
-  expect(
-    screen.getByRole("heading", { level: 2, name: "Activity" }),
-  ).toBeVisible();
-  expect(await feed.findByText("An ordinary channel post")).toBeVisible();
-  expect(feed.queryByText("A direct reply")).not.toBeInTheDocument();
-  await userEvent.click(feed.getByRole("button", { name: /Design/ }));
+  const post = rows().find((row) =>
+    row.textContent?.includes("An ordinary channel post"),
+  );
+  if (!post) throw new Error("Missing channel post row");
+  await userEvent.click(within(post).getByRole("button", { name: /Design/ }));
   const sheet = screen.getByRole("region", { name: "Conversation detail" });
   await within(sheet).findByRole("button", {
     name: "Manage members of Design",
@@ -552,7 +561,7 @@ it("the public page-tab host retains Activity scroll beside its reader across re
 });
 
 it.each([
-  ["DMs", "Activity views"],
+  ["Reactions", "Activity views"],
   ["Agents", "Sender"],
   ["Unread only", "Attention"],
 ] as const)(
@@ -566,13 +575,15 @@ it.each([
         await h.owner.session.unread.markChannelRead("room");
       });
       // Unread alone means caught up; with a type it is a filtered view.
-      await chooseFilter("DMs");
+      await chooseFilter("Threads");
     }
     await chooseFilter(label, control);
     await screen.findByText(
       control === "Attention"
         ? "No unread activity in this view"
-        : "No recent activity in this view",
+        : label === "Reactions"
+          ? "No reactions yet."
+          : "No recent activity in this view",
     );
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     await waitFor(() => expect(rows()).toHaveLength(2));
@@ -670,7 +681,6 @@ it.each([false, true])(
     const h = fixture({ withWriter: true, withDm: dm });
     render(h.view);
     await waitFor(() => expect(rows()).toHaveLength(dm ? 3 : 2));
-    if (dm) await chooseFilter("DMs");
     const row = rows().find((entry) =>
       entry.textContent?.includes(dm ? "A direct reply" : "A thread update"),
     );
@@ -682,7 +692,7 @@ it.each([false, true])(
     });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() => expect(editor).toHaveValue(""));
-    expect(rows()).toHaveLength(dm ? 1 : 2);
+    expect(rows()).toHaveLength(dm ? 3 : 2);
     expect(screen.getByRole("textbox")).toBe(editor);
   },
 );
@@ -1733,6 +1743,22 @@ const rows = () =>
   within(
     screen.getByRole("list", { name: "Activity", hidden: true }),
   ).queryAllByRole("listitem", { hidden: true });
+/** The fixture mention's row; All lists its channel's thread row beside it. */
+const mentionRow = () => {
+  const row = rows().find((item) =>
+    item.textContent?.includes("Please review"),
+  );
+  if (!row) throw new Error("Missing mention row");
+  return row;
+};
+/** The fixture thread's row, beside the mention under All. */
+const threadRow = () => {
+  const row = rows().find((item) =>
+    item.textContent?.includes("A thread update"),
+  );
+  if (!row) throw new Error("Missing thread row");
+  return row;
+};
 /** The element that scrolls the Activity list. */
 const scroller = () =>
   screen.getByRole("list", { name: "Activity", hidden: true }).parentElement;
@@ -1840,8 +1866,8 @@ async function unreadToggle() {
 it.each([
   [{ activity: "all", attention: "unread" }, "All", "true"],
   [{ activity: "threads" }, "Threads", "false"],
-  [{ activity: "mentions" }, "Mentions", "false"],
-  [{ activity: "dms" }, "DMs", "false"],
+  [{ activity: "mentions" }, "Direct", "false"],
+  [{ activity: "dms" }, "Direct", "false"],
 ] as const)(
   "a shortcut open with %j applies and saves its filters, leaving the others",
   async (params, label, unread) => {
@@ -1882,16 +1908,16 @@ it("re-applies a repeated shortcut open after the filters were changed by hand",
   const h = fixture({ withDm: true });
   const view = render(viewAt(h, visit({ activity: "threads" })));
   await waitFor(() => expect(activityType()).toBe("Threads"));
-  await chooseFilter("Mentions");
+  await chooseFilter("Direct");
   await chooseFilter("Unread only", "Attention");
-  expect(activityType()).toBe("Mentions");
+  expect(activityType()).toBe("Direct");
   // A rerender of the same presentation is not a new visit.
   const same = visit({ activity: "threads" });
   view.rerender(viewAt(h, same));
   await waitFor(() => expect(activityType()).toBe("Threads"));
-  await chooseFilter("DMs");
+  await chooseFilter("All");
   view.rerender(viewAt(h, same));
-  expect(activityType()).toBe("DMs");
+  expect(activityType()).toBe("All");
   // The host presents a repeated open of an identical address as a new object.
   view.rerender(viewAt(h, visit({ activity: "threads" })));
   await waitFor(() => expect(activityType()).toBe("Threads"));
@@ -1902,13 +1928,13 @@ it("Back/Forward to a shortcut visit keeps the filters chosen since", async () =
   const h = fixture({ withDm: true });
   const view = render(viewAt(h, visit({ activity: "threads" })));
   await waitFor(() => expect(activityType()).toBe("Threads"));
-  await chooseFilter("Mentions");
+  await chooseFilter("Direct");
   // Traversal presents the visit as a new object carrying the same address.
   view.rerender(
     viewAt(h, { ...visit({ activity: "threads" }), traversal: true }),
   );
-  expect(activityType()).toBe("Mentions");
-  expect(savedFilters(h)).toMatchObject({ activity: "mentions" });
+  expect(activityType()).toBe("Direct");
+  expect(savedFilters(h)).toMatchObject({ activity: "direct" });
 });
 
 it("a route open applies its sender, keeping the other saved filters", async () => {
@@ -1980,7 +2006,7 @@ it("a plain open leaves saved filters alone", async () => {
   view.rerender(viewAt(h, visit()));
   expect(savedFilters(h)).toEqual(saved);
   expect(fromTrigger()).toHaveAccessibleName("From people");
-  expect(activityType()).toBe("Mentions");
+  expect(activityType()).toBe("Direct");
 });
 
 async function chooseFilter(label: string, control = "Activity views") {
@@ -2017,121 +2043,20 @@ async function chooseFilter(label: string, control = "Activity views") {
   );
 }
 
-it.each([false, true])(
-  "Mentions excludes ordinary thread progress (selected=%s)",
-  async (selectProgress) => {
-    const h = fixture();
-    render(h.view);
-    await screen.findByText("Please review this");
-    await act(async () => {
-      await h.owner.session.unread.markThrough(
-        { kind: "message", channelId: "room", messageId: h.mention.id },
-        h.mention.id,
-      );
-    });
-    const response = message(h.viewer, "room", "My answer", 30, [
-      ["e", h.mention.id, "", "reply"],
-    ]);
-    const progress = message(h.alice, "room", "Ordinary progress", 31, [
-      ["e", h.mention.id, "", "reply"],
-    ]);
-    h.addEvent(response);
-    h.addEvent(progress);
-    act(() => h.emit([response, progress]));
-    if (selectProgress) {
-      const progressRow = await waitFor(() => {
-        const row = rows().find((candidate) =>
-          candidate.textContent?.includes("Ordinary progress"),
-        );
-        if (!row) throw new Error("Missing ordinary progress row");
-        return row;
-      });
-      fireEvent.click(
-        within(progressRow).getByRole("button", { name: /^Open / }),
-      );
-      await findReader();
-      await waitFor(() =>
-        expect(
-          within(progressRow).getByRole("button", {
-            name: /^Open /,
-            hidden: true,
-          }),
-        ).toBeEnabled(),
-      );
-    }
-    await chooseFilter("Mentions");
-    expect(rows()).toHaveLength(1);
-    expect(rows()[0]).toHaveTextContent("Please review this");
-    expect(rows()[0]).not.toHaveTextContent("Ordinary progress");
-    await chooseFilter("Unread only", "Attention");
-    await waitFor(() => expect(rows()).toHaveLength(0));
-    const fresh = message(h.alice, "room", "Another decision", 32, [
-      ["e", h.mention.id, "", "reply"],
-      ["p", h.viewer.pubkey],
-    ]);
-    act(() => h.emit([fresh]));
-    await waitFor(() => expect(rows()).toHaveLength(1));
-    expect(rows()[0]).toHaveTextContent("Another decision");
-  },
-);
-
-it("Mentions orders and classifies matching senders and reads only through matching messages", async () => {
-  const h = fixture();
-  render(h.view);
-  await screen.findByText("Please review this");
-  h.publishAgentProfile();
-  const root = h.root;
-  if (!root) throw new Error("Missing fixture root");
-  const mention = message(h.agent, "room", "Agent decision", 23, [
-    ["e", root.id, "", "reply"],
-    ["p", h.viewer.pubkey],
-  ]);
-  const progress = message(h.alice, "room", "Later human progress", 24, [
-    ["e", root.id, "", "reply"],
-  ]);
-  h.addEvent(mention);
-  h.addEvent(progress);
-  act(() => h.emit([mention, progress]));
-  await chooseFilter("Mentions");
-  expect(rows().map((row) => row.textContent)).toEqual([
-    expect.stringContaining("Agent decision"),
-    expect.stringContaining("Please review this"),
-  ]);
-  await chooseFilter("Humans", "Sender");
-  expect(rows()).toHaveLength(1);
-  expect(rows()[0]).toHaveTextContent("Please review this");
-  await chooseFilter("Agents", "Sender");
-  expect(rows()).toHaveLength(1);
-  expect(rows()[0]).toHaveTextContent("Agent decision");
-  const row = rows()[0];
-  if (!row) throw new Error("Missing agent mention row");
-  fireEvent.click(within(row).getByRole("button", { name: /^Open / }));
-  await findReader();
-  await waitFor(() =>
-    expect(h.readSteps.map((step) => step.id)).toEqual([mention.id]),
-  );
-  expect(
-    h.owner.session.unread
-      .inbox()
-      .items.find((item) => item.id.endsWith(root.id)),
-  ).toMatchObject({ messageId: progress.id, unreadCount: 1 });
-});
-
 it("lets a joined Guest read an Inbox item and change its personal unread state", async () => {
   const h = fixture({ guest: true });
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
   expect(h.session.channels.get?.("room")).toMatchObject({
     viewerRole: "guest",
     readOnly: true,
   });
   fireEvent.click(
-    screen.getByRole("button", { name: "Open Alice in #Design" }),
+    within(mentionRow()).getByRole("button", { name: "Open Alice in #Design" }),
   );
   await waitFor(() =>
     expect(
-      screen.queryByRole("img", { name: "Unread" }),
+      within(mentionRow()).queryByRole("img", { name: "Unread" }),
     ).not.toBeInTheDocument(),
   );
   expect(
@@ -2139,7 +2064,7 @@ it("lets a joined Guest read an Inbox item and change its personal unread state"
       "This action expired. Close and reopen the conversation.",
     ),
   ).not.toBeInTheDocument();
-  fireEvent.click(await openRowMenu());
+  fireEvent.click(await openRowMenu("context", "Mark unread", mentionRow));
   await waitFor(() =>
     expect(h.journal()?.localUnread[`msg:${h.mention.id}`]).toBeTypeOf(
       "number",
@@ -2148,11 +2073,15 @@ it("lets a joined Guest read an Inbox item and change its personal unread state"
   expect(h.session.channels.get?.("room")?.viewerRole).toBe("guest");
 });
 
+// Opens the first row's menu and returns its one read action, which follows
+// the row's state: a read row offers Mark unread, an unread row Mark as read.
 async function openRowMenu(
   method: "context" | "keyboard" | "contextKey" = "context",
+  name: "Mark as read" | "Mark unread" = "Mark unread",
+  pick: () => HTMLElement | undefined = () => rows()[0],
 ) {
   await dismissReader();
-  const row = rows()[0];
+  const row = pick();
   if (!row) throw new Error("Missing inbox row");
   if (method === "context")
     fireEvent.contextMenu(within(row).getByRole("button", { name: /^Open / }), {
@@ -2169,7 +2098,13 @@ async function openRowMenu(
         : { key: "ContextMenu" },
     );
   }
-  return screen.findByRole("menuitem", { name: "Mark unread" });
+  const action = await screen.findByRole("menuitem", { name });
+  expect(
+    screen.queryByRole("menuitem", {
+      name: name === "Mark unread" ? "Mark as read" : "Mark unread",
+    }),
+  ).not.toBeInTheDocument();
+  return action;
 }
 it("excludes archived-channel mentions and threads without hiding active DMs", async () => {
   const h = fixture({ archivedChannel: true, withDm: true });
@@ -2187,8 +2122,6 @@ it("excludes archived-channel mentions and threads without hiding active DMs", a
     "src",
     alicePicture.replace(/\.png$/, ".thumb.webp"),
   );
-  await chooseFilter("Mentions");
-  expect(rows()).toHaveLength(0);
   await chooseFilter("Threads");
   expect(rows()).toHaveLength(0);
 });
@@ -2276,14 +2209,15 @@ it.each([false, true])(
     await waitFor(() =>
       expect(h.owner.session.unread.inbox().status).toBe("ready"),
     );
-    await chooseFilter("Mentions");
     fireEvent.click(
-      screen.getByRole("button", { name: "Open Alice in #Design" }),
+      within(mentionRow()).getByRole("button", {
+        name: "Open Alice in #Design",
+      }),
     );
     await within(await findReader()).findByText(/Please review/);
     await waitFor(() =>
       expect(
-        screen.queryByRole("img", { name: "Unread" }),
+        within(mentionRow()).queryByRole("img", { name: "Unread" }),
       ).not.toBeInTheDocument(),
     );
     const journal = h.journal();
@@ -2296,15 +2230,15 @@ it.each([false, true])(
       await waitFor(() => expect(h.unreadStarted()).toBe(true));
       expect(h.owner.session.unread.inbox().status).toBe("loading");
       expect(reader()).toBeInTheDocument();
-      expect(rows()[0]).toHaveAttribute("data-selected");
+      expect(mentionRow()).toHaveAttribute("data-selected");
       if (archive) {
         act(() => h.archiveRoom(true, 100));
         await waitFor(() => expect(rows()).toHaveLength(0));
         expect(queryReader()).not.toBeInTheDocument();
         act(() => h.archiveRoom(false, 101));
-        await waitFor(() => expect(rows()).toHaveLength(1));
+        await waitFor(() => expect(rows()).toHaveLength(2));
         expect(h.owner.session.unread.inbox().status).toBe("loading");
-        expect(rows()[0]).not.toHaveAttribute("data-selected");
+        expect(mentionRow()).not.toHaveAttribute("data-selected");
         expect(h.journal()).toEqual(journal);
       }
     } finally {
@@ -2316,7 +2250,7 @@ it.each([false, true])(
     await waitFor(() =>
       expect(h.owner.session.unread.inbox().status).toBe("ready"),
     );
-    expect(rows()[0]?.hasAttribute("data-selected")).toBe(!archive);
+    expect(mentionRow().hasAttribute("data-selected")).toBe(!archive);
     expect(h.journal()).toEqual(journal);
   },
 );
@@ -2328,10 +2262,9 @@ it("retires a failed captured read on archive during a held unread refresh", asy
   await waitFor(() =>
     expect(h.owner.session.unread.inbox().status).toBe("ready"),
   );
-  await chooseFilter("Mentions");
   h.failSave();
   fireEvent.click(
-    screen.getByRole("button", { name: "Open Alice in #Design" }),
+    within(mentionRow()).getByRole("button", { name: "Open Alice in #Design" }),
   );
   expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
   const release = h.holdUnread();
@@ -2344,7 +2277,7 @@ it("retires a failed captured read on archive during a held unread refresh", asy
     act(() => h.archiveRoom(true, 100));
     await waitFor(() => expect(rows()).toHaveLength(0));
     act(() => h.archiveRoom(false, 101));
-    await waitFor(() => expect(rows()).toHaveLength(1));
+    await waitFor(() => expect(rows()).toHaveLength(2));
     expect(h.owner.session.unread.inbox().status).toBe("loading");
     expect(
       screen.queryByRole("button", { name: "Retry activity" }),
@@ -2358,9 +2291,11 @@ it("retires a failed captured read on archive during a held unread refresh", asy
   await waitFor(() =>
     expect(h.owner.session.unread.inbox().status).toBe("ready"),
   );
-  expect(rows()[0]).not.toHaveAttribute("data-selected");
+  expect(mentionRow()).not.toHaveAttribute("data-selected");
   expect(h.journal()?.state.frontiers[`msg:${h.mention.id}`]).toBeUndefined();
-  expect(screen.getByRole("img", { name: "Unread" })).toBeInTheDocument();
+  expect(
+    within(mentionRow()).getByRole("img", { name: "Unread" }),
+  ).toBeInTheDocument();
 });
 
 it("filters real session evidence, opens an exact message and marks it read, and shares durable local unread", async () => {
@@ -2373,10 +2308,8 @@ it("filters real session evidence, opens an exact message and marks it read, and
     ).not.toBeInTheDocument(),
   );
   expect(rows()).toHaveLength(2);
-  await chooseFilter("Mentions");
-  expect(rows()).toHaveLength(1);
   fireEvent.click(
-    await screen.findByRole("button", { name: "Open Alice in #Design" }),
+    within(mentionRow()).getByRole("button", { name: "Open Alice in #Design" }),
   );
   // The exact message opens in a tab beside Inbox, not by navigating away.
   expect(
@@ -2385,7 +2318,7 @@ it("filters real session evidence, opens an exact message and marks it read, and
   expect(h.open).not.toHaveBeenCalled();
   await waitFor(() =>
     expect(
-      screen.queryByRole("img", { name: "Unread" }),
+      within(mentionRow()).queryByRole("img", { name: "Unread" }),
     ).not.toBeInTheDocument(),
   );
   expect(h.journal()?.state.frontiers[`msg:${h.mention.id}`]).toBe(21);
@@ -2393,19 +2326,22 @@ it("filters real session evidence, opens an exact message and marks it read, and
     h.owner.session.unread.snapshot({ kind: "channel", channelId: "room" })
       .observedCount,
   ).toBe(1);
-  fireEvent.click(await openRowMenu("keyboard"));
+  fireEvent.click(await openRowMenu("keyboard", "Mark unread", mentionRow));
   await waitFor(() =>
-    expect(screen.getByRole("img", { name: "Unread" })).toBeInTheDocument(),
+    expect(
+      within(mentionRow()).getByRole("img", { name: "Unread" }),
+    ).toBeInTheDocument(),
   );
   // The manual unread intent survives filtering until a fresh explicit open.
   await chooseFilter("Unread only", "Attention");
-  expect(rows()).toHaveLength(1);
+  expect(rows()).toHaveLength(2);
+  expect(mentionRow()).toBeInTheDocument();
   await chooseFilter("Threads");
   expect(rows()).toHaveLength(1);
   expect(screen.getByText("A thread update")).toBeInTheDocument();
-  await chooseFilter("Mentions");
+  await chooseFilter("All");
   await userEvent.click(
-    screen.getByRole("button", { name: "Open Alice in #Design" }),
+    within(mentionRow()).getByRole("button", { name: "Open Alice in #Design" }),
   );
   await waitFor(() =>
     expect(
@@ -2462,14 +2398,6 @@ it("puts the actual channel or DM source below the sender without category tags"
   expect(
     within(dmRow).getByRole("button", { name: "Open Alice in DM · Alice" }),
   ).toBeInTheDocument();
-  await chooseFilter("DMs");
-  expect(rows()).toHaveLength(1);
-  expect(rows()[0]).toHaveTextContent("A direct reply");
-  await chooseFilter("Mentions");
-  expect(rows()).toHaveLength(1);
-  expect(rows()[0]).toHaveTextContent("Please review this");
-  await chooseFilter("All activity");
-  expect(rows()).toHaveLength(3);
 });
 
 it("distinguishes same-sender thread choices by their visible safe preview", async () => {
@@ -2536,30 +2464,36 @@ it("intersects activity and representative sender evidence without inferring mis
   render(h.view);
   await screen.findByText("Agent direct reply");
   expect(activityType()).toBe("All");
-  await chooseFilter("DMs");
   await chooseFilter("Agents", "Sender");
   // Inbox's idle-only ensure reads the shared choices; no filter-owned inventory.
-  expect(rows()).toHaveLength(1);
-  expect(rows()[0]).toHaveTextContent("Agent direct reply");
-  await chooseFilter("Mentions");
-  expect(rows()).toHaveLength(1);
-  expect(rows()[0]).toHaveTextContent("Agent mention");
+  expect(rows().map((row) => row.textContent)).toEqual([
+    expect.stringContaining("Agent mention"),
+    expect.stringContaining("Agent direct reply"),
+  ]);
+  // The only thread is a human's.
+  await chooseFilter("Threads");
+  expect(rows()).toHaveLength(0);
+  await chooseFilter("All");
   await chooseFilter("Humans", "Sender");
   expect(rows()).toHaveLength(0);
   try {
     await act(async () => h.releaseProfiles());
-    await waitFor(() => expect(rows()).toHaveLength(1));
-    expect(rows()[0]).toHaveTextContent("Please review this");
+    await waitFor(() => expect(rows()).toHaveLength(3));
+    expect(rows().map((row) => row.textContent)).toEqual([
+      expect.stringContaining("A direct reply"),
+      expect.stringContaining("A thread update"),
+      expect.stringContaining("Please review this"),
+    ]);
     await chooseFilter("Agents", "Sender");
     h.publishAgentProfile();
-    await waitFor(() => expect(rows()).toHaveLength(2));
+    await waitFor(() => expect(rows()).toHaveLength(3));
     expect(
       rows().some((row) => row.textContent?.includes("Public agent mention")),
     ).toBe(true);
     await chooseFilter("Humans", "Sender");
     h.publishMalformedProfile();
     h.publishLateProfile();
-    await waitFor(() => expect(rows()).toHaveLength(2));
+    await waitFor(() => expect(rows()).toHaveLength(4));
     expect(
       rows().some((row) => row.textContent?.includes("Late profile mention")),
     ).toBe(true);
@@ -2577,13 +2511,11 @@ it("intersects activity and representative sender evidence without inferring mis
   }
 });
 
-it("offers Open and Mark as read only on unread rows, and Mark as read and a disabled Mark unread via right-click", async () => {
+it("offers Open and Mark as read only on unread rows, and only Mark as read via right-click", async () => {
   const h = fixture();
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
-  const row = rows()[0];
-  if (!row) throw new Error("Missing inbox row");
+  const row = mentionRow();
   const buttons = () =>
     within(row)
       .getAllByRole("button")
@@ -2597,24 +2529,12 @@ it("offers Open and Mark as read only on unread rows, and Mark as read and a dis
   ).not.toBeInTheDocument();
   expect(row.querySelector("[data-inbox-row-overflow]")).toBeNull();
   expect(within(row).getByRole("img", { name: "Unread" })).toBeInTheDocument();
-  const action = await openRowMenu("context");
-  expect(action).toHaveAttribute("aria-disabled", "true");
-  const menu = action.closest<HTMLElement>('[role="menu"]');
-  if (!menu) throw new Error("Missing row menu");
-  expect(
-    within(menu)
-      .getAllByRole("menuitem")
-      .map((item) => [
-        item.textContent,
-        item.getAttribute("aria-disabled") === "true",
-      ]),
-  ).toEqual([
-    ["Mark as read", false],
-    ["Mark unread", true],
-  ]);
+  // An unread row has nothing to mark unread, so that action is not offered.
+  const action = await openRowMenu("context", "Mark as read", mentionRow);
+  expect(action).not.toHaveAttribute("aria-disabled");
   expect(queryReader()).not.toBeInTheDocument();
   expect(h.journal()?.state.frontiers).toEqual({});
-  fireEvent.click(within(menu).getByRole("menuitem", { name: "Mark as read" }));
+  fireEvent.click(action);
   await waitFor(() =>
     expect(h.journal()?.state.frontiers[`msg:${h.mention.id}`]).toBe(21),
   );
@@ -2627,14 +2547,12 @@ it("a failed Mark as read keeps the row unread until Retry reads it", async () =
   const h = fixture();
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
-  const row = rows()[0];
-  if (!row) throw new Error("Missing inbox row");
+  const row = mentionRow();
   expect(within(row).getByRole("img", { name: "Unread" })).toBeInTheDocument();
   h.failSave();
   fireEvent.click(within(row).getByRole("button", { name: /^Mark as read / }));
   expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
-  expect(rows()).toEqual([row]);
+  expect(rows()).toEqual([threadRow(), row]);
   expect(within(row).getByRole("img", { name: "Unread" })).toBeInTheDocument();
   expect(h.journal()?.state.frontiers[`msg:${h.mention.id}`]).toBeUndefined();
   fireEvent.click(screen.getByRole("button", { name: "Retry activity" }));
@@ -2644,7 +2562,7 @@ it("a failed Mark as read keeps the row unread until Retry reads it", async () =
   await waitFor(() =>
     expect(within(row).queryByRole("img", { name: "Unread" })).toBeNull(),
   );
-  expect(rows()).toEqual([row]);
+  expect(rows()).toEqual([threadRow(), row]);
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
@@ -2654,27 +2572,25 @@ it.each(["button", "menu"] as const)(
     const h = fixture();
     render(h.view, { wrapper: ToastProvider });
     await screen.findByText("Please review this");
-    await chooseFilter("Mentions");
     await chooseFilter("Unread only", "Attention");
-    const row = rows()[0];
-    if (!row) throw new Error("Missing inbox row");
-    if (action === "menu") {
-      await openRowMenu("context");
-      fireEvent.click(screen.getByRole("menuitem", { name: "Mark as read" }));
-    } else
+    const row = mentionRow();
+    const thread = threadRow();
+    if (action === "menu")
+      fireEvent.click(await openRowMenu("context", "Mark as read", mentionRow));
+    else
       fireEvent.click(
         within(row).getByRole("button", { name: /^Mark as read / }),
       );
     await screen.findByText("Marked as read");
-    await waitFor(() => expect(rows()).toHaveLength(0));
+    await waitFor(() => expect(rows()).toEqual([thread]));
     expect(h.journal()?.state.frontiers[`msg:${h.mention.id}`]).toBe(21);
     fireEvent.click(
       await screen.findByRole("button", { name: "Undo", hidden: true }),
     );
-    await waitFor(() => expect(rows()).toHaveLength(1));
+    await waitFor(() => expect(rows()).toHaveLength(2));
     await waitFor(() =>
       expect(
-        within(rows()[0] as HTMLElement).getByRole("img", { name: "Unread" }),
+        within(mentionRow()).getByRole("img", { name: "Unread" }),
       ).toBeInTheDocument(),
     );
   },
@@ -2684,9 +2600,7 @@ it("with Unread off, Mark as read offers no Undo and keeps focus on its row", as
   const h = fixture();
   render(h.view, { wrapper: ToastProvider });
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
-  const row = rows()[0];
-  if (!row) throw new Error("Missing inbox row");
+  const row = mentionRow();
   const check = within(row).getByRole("button", { name: /^Mark as read / });
   check.focus();
   fireEvent.click(check);
@@ -2696,7 +2610,7 @@ it("with Unread off, Mark as read offers no Undo and keeps focus on its row", as
   await waitFor(() =>
     expect(within(row).queryByRole("img", { name: "Unread" })).toBeNull(),
   );
-  expect(rows()).toEqual([row]);
+  expect(rows()).toEqual([threadRow(), row]);
   // The ✓ leaves with the unread mark; its focus moves to the row itself.
   expect(
     within(row).queryByRole("button", { name: /^Mark as read / }),
@@ -2773,28 +2687,23 @@ it("Mark as read reads an unselected row without opening or clearing it", async 
   const h = fixture();
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
-  const row = rows()[0];
-  if (!row) throw new Error("Missing inbox row");
-  await openRowMenu("context");
-  fireEvent.click(
-    await screen.findByRole("menuitem", { name: "Mark as read" }),
-  );
+  const row = mentionRow();
+  fireEvent.click(await openRowMenu("context", "Mark as read", mentionRow));
   await waitFor(() =>
     expect(h.journal()?.state.frontiers[`msg:${h.mention.id}`]).toBe(21),
   );
   await waitFor(() =>
     expect(within(row).queryByRole("img", { name: "Unread" })).toBeNull(),
   );
-  expect(rows()).toEqual([row]);
+  expect(rows()).toEqual([threadRow(), row]);
   expect(row).not.toHaveAttribute("data-selected");
   expect(queryReader()).not.toBeInTheDocument();
-  // Once read, Mark as read is unavailable and Mark unread returns.
-  const unread = await openRowMenu("context");
+  // Once read, Mark unread takes the place of Mark as read.
+  const unread = await openRowMenu("context", "Mark unread", mentionRow);
   expect(unread).not.toHaveAttribute("aria-disabled");
   expect(
-    screen.getByRole("menuitem", { name: "Mark as read" }),
-  ).toHaveAttribute("aria-disabled", "true");
+    screen.queryByRole("menuitem", { name: "Mark as read" }),
+  ).not.toBeInTheDocument();
 });
 
 it("Mark as read under Unread moves focus to the next row as its row leaves", async () => {
@@ -2808,8 +2717,7 @@ it("Mark as read under Unread moves focus to the next row as its row leaves", as
   within(first)
     .getByRole("button", { name: /^Open / })
     .focus();
-  await openRowMenu("keyboard");
-  fireEvent.click(screen.getByRole("menuitem", { name: "Mark as read" }));
+  fireEvent.click(await openRowMenu("keyboard", "Mark as read"));
   await waitFor(() => expect(rows()).toEqual([second]));
   await waitFor(() =>
     expect(
@@ -2818,17 +2726,101 @@ it("Mark as read under Unread moves focus to the next row as its row leaves", as
   );
 });
 
+it("a saving read leaves an unread row's one action in its menu, disabled", async () => {
+  const h = fixture();
+  render(h.view);
+  await waitFor(() => expect(rows()).toHaveLength(2));
+  const [first, second] = rows();
+  if (!first || !second) throw new Error("Missing inbox rows");
+  const release = h.holdSave();
+  try {
+    fireEvent.click(
+      within(second).getByRole("button", { name: /^Mark as read / }),
+    );
+    await waitFor(() => expect(h.saveStarted()).toBe(true));
+    expect(
+      within(first).getByRole("img", { name: "Unread" }),
+    ).toBeInTheDocument();
+    const action = await openRowMenu("context", "Mark as read");
+    expect(action).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getAllByRole("menuitem")).toEqual([action]);
+  } finally {
+    await act(async () => release());
+  }
+});
+
+// The menu's action is the one that applied when it opened. A row that changes
+// state under the open menu keeps that item, disabled, rather than reversing
+// it under the pointer.
+it.each(["context", "keyboard"] as const)(
+  "a reply arriving under a read row's open menu (%s) leaves Mark unread in place, disabled",
+  async (method) => {
+    const h = fixture();
+    render(h.view);
+    await screen.findByText("Please review this");
+    await chooseFilter("Threads");
+    const row = rows()[0];
+    if (!row) throw new Error("Missing inbox row");
+    fireEvent.click(
+      within(row).getByRole("button", { name: /^Mark as read / }),
+    );
+    await waitFor(() =>
+      expect(within(row).queryByRole("img", { name: "Unread" })).toBeNull(),
+    );
+    const action = await openRowMenu(method);
+    expect(action).not.toHaveAttribute("aria-disabled");
+    const late = message(
+      h.alice,
+      "room",
+      "A late reply",
+      40,
+      h.reply.tags.filter(([key]) => key === "e"),
+    );
+    h.addEvent(late);
+    act(() => h.emit([late]));
+    // The open menu hides the page from role queries, so read the row's state.
+    await waitFor(() => expect(row).toHaveAttribute("data-unread"));
+    expect(row).toBeInTheDocument();
+    expect(screen.getAllByRole("menuitem")).toEqual([action]);
+    expect(action).toHaveTextContent("Mark unread");
+    expect(action).toHaveAttribute("aria-disabled", "true");
+    const before = h.journal();
+    fireEvent.click(action);
+    await act(async () => {});
+    expect(h.journal()).toEqual(before);
+    expect(row).toHaveAttribute("data-unread");
+  },
+);
+
+it("a row read elsewhere under its open menu leaves Mark as read in place, disabled", async () => {
+  const h = fixture();
+  render(h.view);
+  await screen.findByText("Please review this");
+  const row = mentionRow();
+  const action = await openRowMenu("context", "Mark as read", mentionRow);
+  expect(action).not.toHaveAttribute("aria-disabled");
+  await markRead(h, "room");
+  await waitFor(() => expect(row).not.toHaveAttribute("data-unread"));
+  expect(row).toBeInTheDocument();
+  expect(screen.getAllByRole("menuitem")).toEqual([action]);
+  expect(action).toHaveTextContent("Mark as read");
+  expect(action).toHaveAttribute("aria-disabled", "true");
+  const before = h.journal();
+  fireEvent.click(action);
+  await act(async () => {});
+  expect(h.journal()).toEqual(before);
+});
+
 it("opens local unread actions with the ContextMenu key without changing selection", async () => {
   const h = fixture();
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
   fireEvent.click(
-    screen.getByRole("button", { name: "Open Alice in #Design" }),
+    within(mentionRow()).getByRole("button", { name: "Open Alice in #Design" }),
   );
   await waitFor(() =>
     expect(
-      screen.queryByRole("img", { name: "Unread" }),
+      within(mentionRow()).queryByRole("img", { name: "Unread" }),
     ).not.toBeInTheDocument(),
   );
   fireEvent.click(
@@ -2839,7 +2831,7 @@ it("opens local unread actions with the ContextMenu key without changing selecti
     }),
   );
   expect(queryReader()).not.toBeInTheDocument();
-  const action = await openRowMenu("contextKey");
+  const action = await openRowMenu("contextKey", "Mark unread", mentionRow);
   expect(action).toHaveTextContent("Mark unread");
   expect(h.journal()?.state.frontiers[`msg:${h.mention.id}`]).toBe(21);
   expect(queryReader()).not.toBeInTheDocument();
@@ -2851,12 +2843,13 @@ it("holds read actions pending, surfaces storage failure, and retries without lo
   const h = fixture();
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
   const release = h.holdSave();
   h.failSave();
   try {
     fireEvent.click(
-      screen.getByRole("button", { name: "Open Alice in #Design" }),
+      within(mentionRow()).getByRole("button", {
+        name: "Open Alice in #Design",
+      }),
     );
     await findReader();
   } finally {
@@ -2868,7 +2861,7 @@ it("holds read actions pending, surfaces storage failure, and retries without lo
   fireEvent.click(screen.getByRole("button", { name: "Retry activity" }));
   await waitFor(() =>
     expect(
-      screen.queryByRole("img", { name: "Unread" }),
+      within(mentionRow()).queryByRole("img", { name: "Unread" }),
     ).not.toBeInTheDocument(),
   );
   expect(h.journal()?.state.frontiers[`msg:${h.mention.id}`]).toBe(21);
@@ -3005,10 +2998,11 @@ it.each(["retry", "other", "blur"] as const)(
     const user = userEvent.setup();
     render(h.view);
     await screen.findByText("Please review this");
-    await chooseFilter("Mentions");
     h.failSave();
     await user.click(
-      screen.getByRole("button", { name: "Open Alice in #Design" }),
+      within(mentionRow()).getByRole("button", {
+        name: "Open Alice in #Design",
+      }),
     );
     expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
     const detail = reader();
@@ -3055,10 +3049,9 @@ it("a second rejected Retry retains its focused control until a successful recov
   const user = userEvent.setup();
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
   h.failSave();
   await user.click(
-    screen.getByRole("button", { name: "Open Alice in #Design" }),
+    within(mentionRow()).getByRole("button", { name: "Open Alice in #Design" }),
   );
   expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
   const detail = reader();
@@ -3172,30 +3165,30 @@ it("Mark as read keeps the type, From and Unread choices", async () => {
     screen.queryByRole("button", { name: "About Inbox archive" }),
   ).toBeNull();
 
-  await chooseFilter("Mentions");
-  await chooseFilter("Agents", "Sender");
-  await waitFor(() => expect(rows()).toHaveLength(2));
-  const agentRow = rows().find((row) =>
-    row.textContent?.includes("Agent mention"),
+  await chooseFilter("Threads");
+  await chooseFilter("Humans", "Sender");
+  await waitFor(() => expect(rows()).toHaveLength(1));
+  const humanRow = rows().find((row) =>
+    row.textContent?.includes("A thread update"),
   );
-  if (!agentRow) throw new Error("Missing agent-authored mention");
+  if (!humanRow) throw new Error("Missing human-authored thread");
   await chooseFilter("Unread only", "Attention");
-  const agentOpen = within(agentRow).getByRole("button", { name: /^Open / });
-  agentOpen.focus();
-  fireEvent.keyDown(agentOpen, { key: "F10", shiftKey: true });
+  const humanOpen = within(humanRow).getByRole("button", { name: /^Open / });
+  humanOpen.focus();
+  fireEvent.keyDown(humanOpen, { key: "F10", shiftKey: true });
   fireEvent.click(
     await screen.findByRole("menuitem", { name: "Mark as read" }),
   );
-  await waitFor(() => expect(rows()).toHaveLength(1));
+  await waitFor(() => expect(rows()).toHaveLength(0));
 
   const expectKept = async (unread = "true") => {
-    expect(activityType()).toBe("Mentions");
-    expect(fromTrigger()).toHaveAccessibleName("From agents");
+    expect(activityType()).toBe("Threads");
+    expect(fromTrigger()).toHaveAccessibleName("From people");
     expect(await unreadToggle()).toHaveAttribute("aria-checked", unread);
   };
   await expectKept();
   await chooseFilter("All messages", "Attention");
-  await waitFor(() => expect(rows()).toHaveLength(2));
+  await waitFor(() => expect(rows()).toHaveLength(1));
   await expectKept("false");
 });
 
@@ -3279,11 +3272,6 @@ it("combines the existing filter choices without placeholder actions", async () 
     "All",
     "Threads",
     "Direct",
-    "Working",
-    "Waiting",
-    "Channels",
-    "Mentions",
-    "DMs",
     "Reactions",
   ]);
   expect(activityType()).toBe("All");
@@ -3440,10 +3428,9 @@ it("a failed captured read cannot retry after access retirement", async () => {
   const h = fixture();
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
   h.failSave();
   fireEvent.click(
-    screen.getByRole("button", { name: "Open Alice in #Design" }),
+    within(mentionRow()).getByRole("button", { name: "Open Alice in #Design" }),
   );
   expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
   act(() => h.revokeRoom());
@@ -3520,10 +3507,9 @@ it("a newer manual intent invalidates retry of an earlier rejected read", async 
   const h = fixture();
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
   h.failSave();
   fireEvent.click(
-    screen.getByRole("button", { name: "Open Alice in #Design" }),
+    within(mentionRow()).getByRole("button", { name: "Open Alice in #Design" }),
   );
   expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
   await act(async () =>
@@ -3545,17 +3531,16 @@ it("same-value manual writes after a failed mark-unread supersede retry even wit
   const h = fixture();
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
   fireEvent.click(
-    screen.getByRole("button", { name: "Open Alice in #Design" }),
+    within(mentionRow()).getByRole("button", { name: "Open Alice in #Design" }),
   );
   await waitFor(() =>
     expect(
-      screen.queryByRole("img", { name: "Unread" }),
+      within(mentionRow()).queryByRole("img", { name: "Unread" }),
     ).not.toBeInTheDocument(),
   );
   h.failSave();
-  fireEvent.click(await openRowMenu());
+  fireEvent.click(await openRowMenu("context", "Mark unread", mentionRow));
   expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
   // An explicit newer read at the same saved frontier has the same visual snapshot.
   await act(async () =>
@@ -3575,10 +3560,9 @@ it("routine delayed publication does not cancel Retry for a failed mark-unread s
   const h = fixture();
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   fireEvent.click(
-    screen.getByRole("button", { name: "Open Alice in #Design" }),
+    within(mentionRow()).getByRole("button", { name: "Open Alice in #Design" }),
   );
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
@@ -3587,7 +3571,7 @@ it("routine delayed publication does not cancel Retry for a failed mark-unread s
   const revision = h.owner.session.unread.revision();
   dismissReaderSync();
   fireEvent.contextMenu(
-    within(rows()[0] as HTMLElement).getByRole("button", { name: /^Open / }),
+    within(mentionRow()).getByRole("button", { name: /^Open / }),
     {
       clientX: 20,
       clientY: 20,
@@ -3632,9 +3616,8 @@ it.each([true, false])(
       });
     render(h.view);
     await screen.findByText("Please review this");
-    await chooseFilter("Mentions");
     fireEvent.click(
-      screen.getByRole("button", {
+      within(mentionRow()).getByRole("button", {
         name: soloChannel ? "Open Alice in Design" : "Open Alice in #Design",
       }),
     );
@@ -3684,8 +3667,9 @@ it("Inbox Solo chat activity shared with a person sends without a tag", async ()
   });
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
-  fireEvent.click(screen.getByRole("button", { name: "Open Alice in Design" }));
+  fireEvent.click(
+    within(mentionRow()).getByRole("button", { name: "Open Alice in Design" }),
+  );
   const editor = await screen.findByRole("textbox", {
     name: "Message this conversation",
   });
@@ -3699,7 +3683,7 @@ it("Inbox Solo chat activity shared with a person sends without a tag", async ()
   expect(h.published[0]?.tags.filter(([name]) => name === "p")).toEqual([]);
 });
 
-it("a Solo chat row includes ordinary agent responses under All, not DMs, keeping threads separate", async () => {
+it("a Solo chat row includes ordinary agent responses under All, keeping threads separate", async () => {
   const h = fixture({ soloChannel: true, memberAgents: 1 });
   const progress = message(h.agent, "room", "Agent progress", 30);
   h.addEvent(progress);
@@ -3725,9 +3709,6 @@ it("a Solo chat row includes ordinary agent responses under All, not DMs, keepin
       hidden: true,
     }),
   ).toBeInTheDocument();
-  // The sidebar keeps Solo chats apart from direct messages; so does Inbox.
-  await chooseFilter("DMs");
-  expect(screen.queryByText("Agent progress")).not.toBeInTheDocument();
 });
 
 it("Inbox keeps an open Solo chat timeline when a late reply regroups its mention", async () => {
@@ -3738,8 +3719,9 @@ it("Inbox keeps an open Solo chat timeline when a late reply regroups its mentio
   });
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
-  fireEvent.click(screen.getByRole("button", { name: "Open Alice in Design" }));
+  fireEvent.click(
+    within(mentionRow()).getByRole("button", { name: "Open Alice in Design" }),
+  );
   const editor = await screen.findByRole("textbox", {
     name: "Message this conversation",
   });
@@ -3780,13 +3762,14 @@ it.each(["preview", "name", "history"])(
     const h = fixture();
     render(h.view);
     await screen.findByText("Please review this");
-    await chooseFilter("Mentions");
     fireEvent.click(
-      screen.getByRole("button", { name: "Open Alice in #Design" }),
+      within(mentionRow()).getByRole("button", {
+        name: "Open Alice in #Design",
+      }),
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("img", { name: "Unread" }),
+        within(mentionRow()).queryByRole("img", { name: "Unread" }),
       ).not.toBeInTheDocument(),
     );
     const before = h.owner.session.channels
@@ -3798,7 +3781,7 @@ it.each(["preview", "name", "history"])(
       .items.find((row) => row.messageId === h.mention.id);
     if (!before || !row) throw Error("Missing ready evidence");
     h.failSave();
-    fireEvent.click(await openRowMenu());
+    fireEvent.click(await openRowMenu("context", "Mark unread", mentionRow));
     expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
     if (change === "name") act(() => h.renameRoom());
     else if (change === "preview")
@@ -3833,17 +3816,16 @@ it("revoke and regrant cannot revive a captured failed Inbox mutation", async ()
   const h = fixture();
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
   h.failSave();
   fireEvent.click(
-    screen.getByRole("button", { name: "Open Alice in #Design" }),
+    within(mentionRow()).getByRole("button", { name: "Open Alice in #Design" }),
   );
   expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
   act(() => {
     h.revokeRoom();
     h.restoreRoom();
   });
-  await waitFor(() => expect(rows()).toHaveLength(1));
+  await waitFor(() => expect(rows()).toHaveLength(2));
   fireEvent.click(screen.getByRole("button", { name: "Retry activity" }));
   expect(
     await screen.findByText(
@@ -3859,24 +3841,25 @@ it.each(["read-only", "unsupported"] as const)(
     const h = fixture({ readCapability });
     render(h.view);
     await screen.findByText("Please review this");
-    await chooseFilter("Mentions");
     await waitFor(() =>
       expect(
         screen.queryByText("Checking recent activity…"),
       ).not.toBeInTheDocument(),
     );
     expect(h.owner.session.unread.sync().capability).toBe(readCapability);
-    expect(rows()).toHaveLength(1);
+    expect(rows()).toHaveLength(2);
     expect(
-      within(rows()[0] as HTMLElement).queryByRole("img", { name: "Unread" }),
+      within(mentionRow()).queryByRole("img", { name: "Unread" }),
     ).not.toBeInTheDocument();
     const before = h.journal();
     if (!before) throw Error("Missing saved read state");
     fireEvent.click(
-      screen.getByRole("button", { name: "Open Alice in #Design" }),
+      within(mentionRow()).getByRole("button", {
+        name: "Open Alice in #Design",
+      }),
     );
     await screen.findByRole("region", { name: "Thread messages" });
-    const action = await openRowMenu();
+    const action = await openRowMenu("context", "Mark unread", mentionRow);
     expect(action).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(action);
     await act(async () => {});
@@ -3888,16 +3871,15 @@ it("retiring a session removes its open unread menu without another write", asyn
   const h = fixture();
   render(h.view);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
   fireEvent.click(
-    screen.getByRole("button", { name: "Open Alice in #Design" }),
+    within(mentionRow()).getByRole("button", { name: "Open Alice in #Design" }),
   );
   await waitFor(() =>
     expect(
-      screen.queryByRole("img", { name: "Unread" }),
+      within(mentionRow()).queryByRole("img", { name: "Unread" }),
     ).not.toBeInTheDocument(),
   );
-  const action = await openRowMenu();
+  const action = await openRowMenu("context", "Mark unread", mentionRow);
   const before = h.journal();
   act(() => h.disconnect());
   expect(action).not.toBeInTheDocument();
@@ -4898,16 +4880,15 @@ it("Undo returns the row unread even after Activity has closed", async () => {
   const h = fixture();
   const view = render(<ToastProvider>{h.view}</ToastProvider>);
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
   await chooseFilter("Unread only", "Attention");
-  const row = rows()[0];
-  if (!row) throw new Error("Missing inbox row");
+  const row = mentionRow();
+  const thread = threadRow();
   fireEvent.click(within(row).getByRole("button", { name: /^Mark as read / }));
   const undo = await screen.findByRole("button", {
     name: "Undo",
     hidden: true,
   });
-  await waitFor(() => expect(rows()).toHaveLength(0));
+  await waitFor(() => expect(rows()).toEqual([thread]));
   const unread = vi.spyOn(h.session.unread, "markUnreadLocal");
   view.rerender(<ToastProvider>{null}</ToastProvider>);
   expect(screen.queryByRole("list", { name: "Activity" })).toBeNull();
@@ -4918,9 +4899,9 @@ it("Undo returns the row unread even after Activity has closed", async () => {
   });
   expect(screen.queryByText("Couldn't mark unread")).toBeNull();
   view.rerender(<ToastProvider>{h.view}</ToastProvider>);
-  await waitFor(() => expect(rows()).toHaveLength(1));
+  await waitFor(() => expect(rows()).toHaveLength(2));
   expect(
-    within(rows()[0] as HTMLElement).getByRole("img", { name: "Unread" }),
+    within(mentionRow()).getByRole("img", { name: "Unread" }),
   ).toBeInTheDocument();
 });
 
@@ -4967,10 +4948,9 @@ it("a failed Undo says it couldn't mark the row unread", async () => {
   const h = fixture();
   render(h.view, { wrapper: ToastProvider });
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
   await chooseFilter("Unread only", "Attention");
-  const row = rows()[0];
-  if (!row) throw new Error("Missing inbox row");
+  const row = mentionRow();
+  const thread = threadRow();
   fireEvent.click(within(row).getByRole("button", { name: /^Mark as read / }));
   const undo = await screen.findByRole("button", {
     name: "Undo",
@@ -4981,17 +4961,15 @@ it("a failed Undo says it couldn't mark the row unread", async () => {
   );
   fireEvent.click(undo);
   expect(await screen.findByText("Couldn't mark unread")).toBeInTheDocument();
-  expect(rows()).toHaveLength(0);
+  expect(rows()).toEqual([thread]);
 });
 
 it("decides on Undo when the read lands, so turning Unread off first shows no toast", async () => {
   const h = fixture();
   render(h.view, { wrapper: ToastProvider });
   await screen.findByText("Please review this");
-  await chooseFilter("Mentions");
   await chooseFilter("Unread only", "Attention");
-  const row = rows()[0];
-  if (!row) throw new Error("Missing inbox row");
+  const row = mentionRow();
   const release = h.holdSave();
   try {
     fireEvent.click(
@@ -5008,7 +4986,7 @@ it("decides on Undo when the read lands, so turning Unread off first shows no to
   await waitFor(() =>
     expect(within(row).queryByRole("img", { name: "Unread" })).toBeNull(),
   );
-  expect(rows()).toEqual([row]);
+  expect(rows()).toEqual([threadRow(), row]);
   expect(screen.queryByText("Marked as read")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("button", { name: "Undo", hidden: true }),
@@ -5159,8 +5137,13 @@ it.each([
       row.textContent?.includes("Please review"),
     );
     if (!mention) throw new Error("Missing fixture rows");
-    // The floating Activity composer stays available while a row read saves.
-    const editor = await screen.findByRole("textbox");
+    // Explicitly open the Activity composer before moving focus into it.
+    fireEvent.click(screen.getByRole("button", { name: "New message" }));
+    const editor = await waitFor(() => {
+      const input = screen.getByRole("textbox");
+      expect(input).not.toHaveAttribute("aria-disabled", "true");
+      return input;
+    });
     const list = screen.getByRole("list", { name: "Activity", hidden: true });
     await waitFor(() => expect(list).toHaveAttribute("aria-busy", "false"));
     if (outcome === "fails") h.failSave();
@@ -5474,6 +5457,29 @@ it("retries failed reaction settlement from the hover card", async () => {
   await waitFor(() =>
     expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
   );
+});
+
+it("never shows an emoji shortcode as text in a reaction row", async () => {
+  const h = fixture();
+  const root = h.root;
+  if (!root) throw new Error("Missing root");
+  h.addEvent(
+    signed(h.alice, {
+      kind: 7,
+      content: ":approve:",
+      created_at: 30,
+      tags: [
+        ["e", root.id],
+        ["p", h.viewer.pubkey],
+      ],
+    }),
+  );
+  render(h.view);
+  const row = await screen.findByRole("button", {
+    name: /Alice reacted with :?approve:?/,
+  });
+  expect(row.querySelector("svg")).not.toBeNull();
+  expect(row.textContent).not.toContain(":approve:");
 });
 
 it("moves solo emoji into a shared row and back after a live removal", async () => {

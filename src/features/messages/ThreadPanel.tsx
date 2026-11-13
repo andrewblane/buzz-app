@@ -66,6 +66,7 @@ import { JumpToLatestButton } from "./JumpToLatestButton";
 import { correctScrollTop } from "./scroll-correction";
 
 export type ThreadPanelProps = {
+  intro?: ReactNode;
   extensions?: ConversationExtensions | undefined;
   session: RelaySession;
   scope: string;
@@ -405,6 +406,7 @@ function RetainedThreadPanel(props: ThreadPanelProps) {
   );
 }
 function OwnedThreadPanel({
+  intro,
   session,
   extensions,
   scope,
@@ -481,6 +483,7 @@ function OwnedThreadPanel({
     </div>
   ) : view ? (
     <ThreadMessages
+      intro={intro}
       soloConversation={soloConversation}
       disabled={disabled}
       extensions={extensions}
@@ -509,6 +512,7 @@ function OwnedThreadPanel({
   );
 }
 function ThreadMessages({
+  intro,
   session,
   extensions,
   scope,
@@ -536,6 +540,7 @@ function ThreadMessages({
   onResolvedRoot,
   routePending,
 }: {
+  intro?: ReactNode;
   onResolvedRoot?: ThreadPanelProps["onResolvedRoot"];
   /** A route to this reader is on its way: until it lands, a reader not yet
    * shown stays hidden and unread rather than showing a place the route
@@ -1954,6 +1959,7 @@ function ThreadMessages({
           data-activity-history-scope=""
           inert={positioning}
         >
+          {snapshot.root && intro}
           {snapshot.root ? (
             <MessageRow
               viewer={session.viewer}

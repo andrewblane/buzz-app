@@ -63,6 +63,7 @@ export function PanelCard({
                 }
                 actions={
                   <IconButton
+                    variant="glass"
                     size="toolbar"
                     aria-label={`Close ${panel.title} panel`}
                     onClick={props.close}

@@ -538,7 +538,7 @@ test("collection list resizing preserves the conversation and saved width", asyn
   page,
   app,
 }) => {
-  await page.setViewportSize({ width: 1600, height: 950 });
+  await page.setViewportSize({ width: 1600, height: 650 });
   await page.goto(app.origin);
   const rail = page.getByRole("navigation", { name: "Apps", exact: true });
   await rail.getByRole("button", { name: "Open Team", exact: true }).click();
@@ -547,6 +547,10 @@ test("collection list resizing preserves the conversation and saved width", asyn
     .locator('[data-activity-row="alpha"] [data-conversation-row]')
     .click();
   const editor = team.getByRole("textbox", { name: /^Message/ });
+  const composer = editor.locator(
+    "xpath=ancestor::*[@data-composer-surface][1]",
+  );
+  await expect(composer).toBeInViewport({ ratio: 1 });
   await editor.fill("Keep this draft while resizing");
   const divider = team.getByRole("separator", {
     name: "Resize sidebar",
@@ -567,10 +571,12 @@ test("collection list resizing preserves the conversation and saved width", asyn
     .getByRole("button", { name: "Hide Team list", exact: true })
     .click();
   await expect(divider).toBeHidden();
+  await expect(composer).toBeInViewport({ ratio: 1 });
   await team
     .getByRole("button", { name: "Show Team list", exact: true })
     .click();
   await expect(divider).toHaveAttribute("aria-valuenow", String(initial + 80));
+  await expect(composer).toBeInViewport({ ratio: 1 });
   await divider.focus();
   await page.keyboard.press("ArrowLeft");
   await expect(divider).toHaveAttribute("aria-valuenow", String(initial + 64));

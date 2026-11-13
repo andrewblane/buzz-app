@@ -23,13 +23,8 @@ it("opens the Activity page with filters from four chords, including from the co
       { activity: "all", attention: "unread" },
     ],
     ["open-threads", "Open threads in Activity", "t", { activity: "threads" }],
-    [
-      "open-mentions",
-      "Open mentions in Activity",
-      "m",
-      { activity: "mentions" },
-    ],
-    ["open-dms", "Open DMs in Activity", "k", { activity: "dms" }],
+    ["open-mentions", "Open mentions in Activity", "m", { activity: "direct" }],
+    ["open-dms", "Open DMs in Activity", "k", { activity: "direct" }],
   ] as const;
   // No other Activity shortcut: Archive was removed with the Archived view.
   expect(registered.map((item) => item.id)).toEqual(cases.map(([id]) => id));

@@ -49,6 +49,17 @@ export function ConversationHeaderTools({
           finalFocus.current = undefined;
         }
         if (
+          !open &&
+          details.reason === "trigger-hover" &&
+          document.activeElement?.closest(
+            '[role="dialog"][aria-modal="true"], [role="alertdialog"]',
+          ) &&
+          !popup.current?.contains(document.activeElement)
+        ) {
+          details.cancel();
+          return;
+        }
+        if (
           open ||
           (details.reason !== "focus-out" &&
             details.reason !== "outside-press" &&
@@ -79,11 +90,12 @@ export function ConversationHeaderTools({
       }}
     >
       <PopoverTrigger
+        openOnHover="control"
         render={
           <IconButton
             ref={trigger}
             size="sm"
-            variant="subtle"
+            variant="glass"
             aria-label={label}
             title={label}
             icon={<DotsThreeIcon size="1rem" />}

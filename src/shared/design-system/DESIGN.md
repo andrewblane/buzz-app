@@ -576,20 +576,22 @@ Features keep unread cues, branded headers, drag targets and composite
 row/scrollbar geometry; their existing layout rules remain in charge.
 
 A scrolling list under sticky chrome with no material behind it, such as the
-sidebar below its tabs or message history below its header, feathers its edges
-with the scroll fade instead of cutting rows at a hard line. Set
-`data-scroll-fade` on the scroller. `always` feathers both edges, as message
-history does. `scrolled` feathers only an edge with content past it, marked by
-`useScrollEdges("block")`, so a list at rest keeps its first row crisp; the
-sidebar uses it. A host whose scroller cannot carry the attribute applies
-`--scroll-fade-always`. ConversationTimeline wraps history in `conversation-history-viewport`: a
-96px opacity falloff with three transparent, progressively blurred layers at the
-top edge. Conversation identity headers float above the history, which scrolls behind
-the avatars and name. A 104px initial history inset scrolls away with the content.
-The header and composer stay sharp; blur increases from 4px to 16px toward the
-top. The layers intercept no pointer input and add no surface fill.
-Conversation headers use a 12px bottom inset. Reduced transparency and forced
-colors remove the fade.
+sidebar below its tabs, feathers its edges with the scroll fade instead of
+cutting rows at a hard line. Set `data-scroll-fade` on the scroller. `always`
+feathers both edges. `scrolled` feathers only an edge with content past it,
+marked by `useScrollEdges("block")`, so a list at rest keeps its first row
+crisp; the sidebar uses it. A host whose scroller cannot carry the attribute
+applies `--scroll-fade-always`. Reduced transparency and forced colors remove
+the fade.
+
+ConversationTimeline wraps history in `conversation-history-viewport` for layout
+only: messages retain their full opacity and sharpness outside the header.
+Conversation identity headers float above history with `ScrollEdgeMaterial`
+softening messages underneath the avatars and name. The material fades below
+the header, passes pointer input through, and uses an opaque surface for reduced
+transparency or forced colors. A 104px initial history inset and 64px
+leading space scroll away with the content. Conversation headers use a 12px
+bottom inset.
 Tab strips keep their own wider horizontal fade.
 
 Every sidebar heading row, including collapsible channel groups and Solo
@@ -850,7 +852,7 @@ opaque panel fill with a boundary.
 ### Match controls to their surface
 
 The shell uses a vertical `Tabs variant="dock"` rail on the left, ordered
-Bestie, Team, Reminders, then the normal app order. Wide search stays centered in the top
+Bestie, Activity, then the normal app order. Wide search stays centered in the top
 bar and fills the available space between controls at compact widths. Creation
 sits beside the sidebar scope filters; Cmd/Ctrl+N opens it only where the app
 has a creation sidebar. The sidebar and detail pane share one joined surface; the
@@ -1847,13 +1849,16 @@ Values scale with the host interface-size preference.
   and heading roles use unitless 1.1 leading so wrapped headings have breathing room.
 - Regular (400) is for reading and form labels; Medium (500) is for actions and
   structure. Existing `font-semibold` consumers resolve to Medium.
+  Unread sidebar conversation labels, including Open Team/Solo, use the dedicated
+  `--type-weight-navigation-unread` (600) to distinguish unread rows at a glance.
+  Message sender names use `--type-weight-message-sender` (600).
 - Mono uses `detail/body-xsmall` at 12/16 with 0.03em tracking.
   `--type-xsmall-size` points to the existing 12px step, keeping the semantic
   independent from caption even though their sizes currently match. `text-mono-lg` and
   `text-mono-sm` are compatibility aliases for this same setting, not extra sizes.
 - Caption uses 12/16 and 0.0133em tracking. Buzz’s `text-body` uses 14/20; `text-label` uses 16/24 and `text-body-lg` uses 20/28.
 - Message prose and composer text use `text-message`: 14px with 21.5/14 leading
-  (21.5px at default), Regular (400) weight and -0.01em tracking, keeping the
+  (21.5px at default), Regular (400) weight and zero tracking, keeping the
   same compact reading rhythm while writing and reading messages. The message
   renderer uses `space-4` between prose blocks, with
   `space-2` between an introductory paragraph and its following list. Labels,
@@ -2425,9 +2430,9 @@ The current shell combines navigation and discovery in one left
 plugin-contributed sections. Messages and Solo use a full-width master/detail
 workspace with collection headings and view strips in the list pane; readers
 retain the shared conversation measure within the detail pane.
-Unread and sort choices remain with the collection they filter. While a
-section's list and a side panel are both open, the sidebar collapses to its
-icon dock and returns when either closes. At narrow widths,
+Unread and sort choices remain with the collection they filter. The sidebar
+never collapses by itself: a section's list and a side panel can show beside
+it as four columns. At narrow widths,
 navigation opens as a drawer from **Show navigation** rather than reducing the
 content to two cramped columns. Shared rows, menus, headers and panels own
 appearance; the shell owns column geometry. The titlebar retains window/history

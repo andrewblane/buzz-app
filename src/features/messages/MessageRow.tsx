@@ -796,8 +796,9 @@ function MessageRowContent({
       />
     </span>
   );
-  const messageActions = (target?: ReactElement) => (
+  const messageActions = (target?: ReactElement, withToolbar?: boolean) => (
     <MessageActionBar
+      withToolbar={withToolbar}
       rowRef={rowRef}
       menuTriggerRef={menuTrigger}
       messageId={row.id}
@@ -1698,8 +1699,10 @@ function MessageRowContent({
       {messageActions(renderMessage(message, menuTrigger))}
       {overlays}
     </>
-  ) : (
+  ) : row.membership || row.huddle ? (
     message
+  ) : (
+    messageActions(message, true)
   );
 }
 /** Coordination between agents reads as one quiet line in time order: who

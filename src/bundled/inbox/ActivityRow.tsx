@@ -58,6 +58,7 @@ export const ActivityMessageRow = memo(function ActivityMessageRow({
   pending,
   canRead,
   menuOpen,
+  menuUnread,
   menuAnchor,
 }: Common & {
   item: InboxItem;
@@ -67,6 +68,7 @@ export const ActivityMessageRow = memo(function ActivityMessageRow({
   pending: boolean;
   canRead: boolean;
   menuOpen: boolean;
+  menuUnread: boolean;
   menuAnchor: HTMLElement | undefined;
 }) {
   const identity = rowIdentity(item, channel, profiles, name);
@@ -115,7 +117,7 @@ export const ActivityMessageRow = memo(function ActivityMessageRow({
           {readable && (
             <span className={styles.rowAction}>
               <IconButton
-                size="sm"
+                size="xs"
                 variant="ghost"
                 disabled={pending}
                 aria-label={`Mark as read ${sender} in ${context}`}
@@ -132,16 +134,14 @@ export const ActivityMessageRow = memo(function ActivityMessageRow({
           anchor={menuAnchor}
         >
           <MenuItem
-            disabled={pending || !unread || !canRead}
-            onClick={() => actions.current?.read(item)}
+            disabled={pending || !canRead || menuUnread !== unread}
+            onClick={() =>
+              menuUnread
+                ? actions.current?.read(item)
+                : actions.current?.unread(item)
+            }
           >
-            Mark as read
-          </MenuItem>
-          <MenuItem
-            disabled={pending || unread || !canRead}
-            onClick={() => actions.current?.unread(item)}
-          >
-            Mark unread
+            {menuUnread ? "Mark as read" : "Mark unread"}
           </MenuItem>
         </MenuPopup>
       </ContextMenuRoot>

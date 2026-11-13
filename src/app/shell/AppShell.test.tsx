@@ -165,6 +165,19 @@ it("hides and shows a contributed sidebar without re-rendering its content", asy
   expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeVisible();
   rerender(shell("buzz.channels/channels"));
   expect(screen.getByRole("complementary", { name: "Sidebar" })).toBeVisible();
+
+  const resize = screen.getByRole("separator", { name: "Resize app sidebar" });
+  fireEvent.keyDown(resize, { key: "Home" });
+  expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeVisible();
+  expect(resize.closest(".shell-workspace")).toHaveStyle({
+    "--shell-rail-width": "240px",
+  });
+  fireEvent.keyDown(resize, { key: "End" });
+  expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeVisible();
+  fireEvent.doubleClick(resize);
+  expect(resize.closest(".shell-workspace")).toHaveStyle({
+    "--shell-rail-width": "304px",
+  });
 });
 
 it.each([true, false])(
@@ -394,7 +407,8 @@ it("keeps the narrow rail in the Escape-dismissed navigation drawer", async () =
   const toggle = screen.getByRole("button", { name: "Show navigation" });
   expect(toggle).toHaveAttribute("aria-expanded", "false");
   await userEvent.click(toggle);
-  expect(nav).not.toHaveAttribute("hidden");
+  expect(nav).toHaveAttribute("aria-hidden", "false");
+  expect(nav).not.toHaveAttribute("inert");
   const action = screen.getByRole("button", { name: "Beacon" });
   action.focus();
   // Closing the drawer consumes Escape, so a window-level Escape shortcut
@@ -404,14 +418,16 @@ it("keeps the narrow rail in the Escape-dismissed navigation drawer", async () =
   await userEvent.keyboard("{Escape}");
   window.removeEventListener("keydown", reachedWindow);
   expect(reachedWindow).toHaveReturnedWith(true);
-  expect(nav).toHaveAttribute("hidden");
+  expect(nav).toHaveAttribute("aria-hidden", "true");
+  expect(nav).toHaveAttribute("inert");
   expect(screen.getByRole("button", { name: "Show navigation" })).toHaveFocus();
 
   await userEvent.click(
     screen.getByRole("button", { name: "Show navigation" }),
   );
   rerender(shell("second"));
-  expect(nav).toHaveAttribute("hidden");
+  expect(nav).toHaveAttribute("aria-hidden", "true");
+  expect(nav).toHaveAttribute("inert");
   expect(screen.getByRole("button", { name: "Show navigation" })).toBeVisible();
 });
 
@@ -768,9 +784,11 @@ it("opens the narrow navigation drawer from Drafts & sent", async () => {
   const navigation = document.getElementById("shell-rail");
   const toggle = screen.getByRole("button", { name: "Show navigation" });
   expect(toggle).toHaveAttribute("aria-expanded", "false");
-  expect(navigation).toHaveAttribute("hidden");
+  expect(navigation).toHaveAttribute("aria-hidden", "true");
+  expect(navigation).toHaveAttribute("inert");
   await userEvent.click(toggle);
-  expect(navigation).not.toHaveAttribute("hidden");
+  expect(navigation).toHaveAttribute("aria-hidden", "false");
+  expect(navigation).not.toHaveAttribute("inert");
   expect(navigation).toContainElement(
     screen.getByRole("button", { name: "Drafts & sent" }),
   );

@@ -169,7 +169,6 @@ it("holding a message in an Inbox conversation targets a thread reply", async ()
   render(h.view);
   await screen.findByText("Please review this");
   const user = userEvent.setup();
-  await user.click(screen.getByRole("tab", { name: "Mentions" }));
   fireEvent.click(screen.getByRole("button", { name: "Open Alice in Design" }));
   const editor = await screen.findByRole("textbox", {
     name: "Message this conversation",

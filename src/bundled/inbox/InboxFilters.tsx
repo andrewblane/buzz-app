@@ -13,14 +13,9 @@ import {
 import {
   BellIcon,
   MessageReplyIcon,
-  AtIcon,
-  ChatCircleIcon,
   SmileyIcon,
   Filter2Icon,
   UsersIcon,
-  CircleNotchIcon,
-  ClockIcon,
-  HashIcon,
 } from "../../shared/design-system/icons";
 
 export type ActivityFilter =
@@ -34,17 +29,20 @@ export type ActivityFilter =
   | "working"
   | "waiting";
 export type SenderFilter = "everyone" | "humans" | "agents";
+/** The views Activity offers: the same ones as Team's list, for now. */
 export const activityViews = [
   { value: "all", label: "All", icon: <BellIcon size={20} /> },
   { value: "threads", label: "Threads", icon: <MessageReplyIcon size={20} /> },
   { value: "direct", label: "Direct", icon: <UsersIcon size={20} /> },
-  { value: "working", label: "Working", icon: <CircleNotchIcon size={20} /> },
-  { value: "waiting", label: "Waiting", icon: <ClockIcon size={20} /> },
-  { value: "channels", label: "Channels", icon: <HashIcon size={20} /> },
-  { value: "mentions", label: "Mentions", icon: <AtIcon size={20} /> },
-  { value: "dms", label: "DMs", icon: <ChatCircleIcon size={20} /> },
   { value: "reactions", label: "Reactions", icon: <SmileyIcon size={20} /> },
 ] as const;
+/** Saved filters and old links may name a view that is no longer offered. */
+export const offeredActivity = (view: ActivityFilter): ActivityFilter =>
+  view === "mentions" || view === "dms"
+    ? "direct"
+    : view === "channels" || view === "working" || view === "waiting"
+      ? "all"
+      : view;
 
 const senders = [
   { value: "everyone", label: "Anyone" },
@@ -96,7 +94,7 @@ export function InboxFilters({
         render={
           <IconButton
             size="sm"
-            variant="inset"
+            variant="glass"
             shape="round"
             aria-label={fromLabel}
             title={`${fromLabel}${unreadOnly ? ", unread only" : ""}`}

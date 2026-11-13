@@ -2,6 +2,7 @@ import type { RelaySession } from "../../features/relay/session";
 import type { ChannelSummary } from "../../features/relay/contracts";
 import type { RailEntry } from "./rail-pins";
 import type { useIdentityNames } from "../../features/identity-names/react";
+import { usePresenceStatus } from "../../features/presence/react";
 import { AvatarStack } from "../../shared/design-system/ui/AvatarStack";
 import { Avatar } from "../../shared/design-system/ui/Avatar";
 import { ChannelAvatar } from "../../features/channels/ChannelAvatar";
@@ -16,6 +17,7 @@ import styles from "./RailNavigation.module.css";
 export function RailEntryArtwork({
   entry,
   avatarOnly = false,
+  size = "compact",
   selected,
   session,
   channelsById,
@@ -26,6 +28,7 @@ export function RailEntryArtwork({
 }: {
   entry: RailEntry;
   avatarOnly?: boolean;
+  size?: "compact" | "fill";
   selected: boolean;
   session: RelaySession;
   channelsById: ReadonlyMap<string, ChannelSummary>;
@@ -36,16 +39,27 @@ export function RailEntryArtwork({
   >["identities"];
   agentEntries: readonly RailEntry[];
 }) {
+  const channelId =
+    entry.target.kind === "conversation" ? entry.target.channelId : undefined;
+  const channel = channelId ? channelsById.get(channelId) : undefined;
+  const participants =
+    channel?.channelType === "dm"
+      ? [...new Set(channel.participants ?? [])].filter(
+          (person) => person !== session.viewer,
+        )
+      : [];
+  const person =
+    entry.target.kind === "person"
+      ? entry.target.pubkey
+      : participants.length === 1
+        ? participants[0]
+        : undefined;
+  const presence = usePresenceStatus(
+    person ? session.presence : undefined,
+    person,
+  );
+  const statusBadge = presence === "unknown" ? undefined : presence;
   const avatarArtwork = () => {
-    const channelId =
-      entry.target.kind === "conversation" ? entry.target.channelId : undefined;
-    const channel = channelId ? channelsById.get(channelId) : undefined;
-    const participants =
-      channel?.channelType === "dm"
-        ? [...new Set(channel.participants ?? [])].filter(
-            (person) => person !== session.viewer,
-          )
-        : [];
     if (avatarOnly && participants.length > 1)
       return (
         <AvatarStack
@@ -61,11 +75,13 @@ export function RailEntryArtwork({
     if (entry.kind === "person" || entry.kind === "agent")
       return (
         <Avatar
-          size={avatarOnly ? "fill" : "compact"}
+          size={avatarOnly ? "fill" : size}
           shape={entry.kind === "agent" ? "squircle" : "circle"}
           src={avatarMedia(entry.picture, session.media)}
           alt=""
           fallback={entry.label}
+          statusBadge={statusBadge}
+          statusBadgeSize={avatarOnly ? "small" : "default"}
         />
       );
     if (entry.kind === "chat" && !avatarOnly) {
@@ -74,7 +90,7 @@ export function RailEntryArtwork({
       );
       return (
         <Avatar
-          size="compact"
+          size={size}
           shape="squircle"
           src={avatarMedia(
             agent?.avatar ?? (agent && profiles.get(agent.pubkey)?.picture),
@@ -87,11 +103,8 @@ export function RailEntryArtwork({
     }
     const Icon = entry.kind === "chat" ? ChatCircleIcon : StorefrontIcon;
     return entry.kind === "channel" ? (
-      <ChannelAvatar
-        size={avatarOnly ? "fill" : "compact"}
-        name={entry.label}
-      />
-    ) : avatarOnly ? (
+      <ChannelAvatar size={avatarOnly ? "fill" : size} name={entry.label} />
+    ) : avatarOnly || size === "fill" ? (
       <Avatar
         size="fill"
         alt=""
@@ -111,7 +124,12 @@ export function RailEntryArtwork({
       <Icon size={18} />
     );
   };
-  const avatar = avatarArtwork();
+  const avatar = (
+    <>
+      {avatarArtwork()}
+      {statusBadge && <span className="sr-only">Presence: {statusBadge}</span>}
+    </>
+  );
   if (!avatarOnly) return avatar;
   return (
     <span className={styles.pinArtwork}>

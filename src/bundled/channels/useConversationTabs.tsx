@@ -40,6 +40,7 @@ import { focusDock } from "./useCoveredByDock";
 import {
   entryPane,
   panelContentTarget,
+  profileContentPanel,
   panelTabId,
   rootOfTab,
   selectedTabId,
@@ -54,7 +55,8 @@ import tabStyles from "./ChannelTabs.module.css";
 /** The content-tab families whose visits follow explicit dismissal. */
 export const historyPanel = (entry: PanelOpening) =>
   !entry.channelContext &&
-  (entry.panel.key === "buzz.profiles/profile" ||
+  (entry.panel.addressable === true ||
+    profileContentPanel(entry) ||
     entry.panel.key === "buzz.github/object");
 
 /** Shared secondary workspace. Pages retain their main reader and route semantics. */
@@ -250,8 +252,8 @@ export function useConversationTabs({
     opening.current = opened;
   }
   const selectOpening = useCallback(
-    (next: Opening | undefined) => {
-      if (next && inMain(next)) {
+    (next: Opening | undefined, pane?: TabPane) => {
+      if (next && (pane ? pane === "main" : inMain(next))) {
         tabState.selectMain(panelTabId(next));
         return;
       }
@@ -261,7 +263,7 @@ export function useConversationTabs({
     [inMain, tabState.select, tabState.selectMain],
   );
   const open = useCallback(
-    (next: Opening | undefined, append = false) => {
+    (next: Opening | undefined, append = false, pane?: TabPane) => {
       const found = next
         ? entryList.current.find(
             (entry) =>
@@ -311,9 +313,10 @@ export function useConversationTabs({
       if (selected && historyPanel(selected))
         panelHistory.current.onVisitPanel?.(selected);
       setEntries(updated);
-      selectOpening(selected);
+      if (selected && pane) tabState.moveEntry(panelTabId(selected), pane);
+      selectOpening(selected, pane);
     },
-    [selectOpening, setEntries],
+    [selectOpening, setEntries, tabState.moveEntry],
   );
   const panelTabs = entries.filter(
     (entry) =>

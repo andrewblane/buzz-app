@@ -119,6 +119,16 @@ export const conversationViews = [
     icon: <SmileyIcon size={20} aria-hidden="true" />,
   },
 ] as const;
+/** Working and Waiting describe agents' chats, so only Solo offers them. */
+const agentView = (filter: View["filter"]) =>
+  filter === "working" || filter === "waiting";
+const viewsFor = (agentViews: boolean) =>
+  agentViews
+    ? conversationViews
+    : conversationViews.filter((item) => !agentView(item.value));
+/** The view a list without the agent views shows for a saved one. */
+export const withoutAgentViews = (view: ActivityView): ActivityView =>
+  agentView(view.filter) ? { ...view, filter: "all" } : view;
 const viewKey = "activity-sidebar:view:v5";
 
 function readSavedView(scope: string): View {
@@ -234,13 +244,17 @@ export function ConversationFiltersMenu({
   onChange,
   sort = false,
   views = false,
+  agentViews = false,
   label,
+  variant = "glass",
 }: {
   view: View;
   onChange(view: View): void;
   sort?: boolean;
   views?: boolean;
+  agentViews?: boolean;
   label?: string;
+  variant?: "glass" | "ghost";
 }) {
   const showLabel =
     label ??
@@ -255,7 +269,7 @@ export function ConversationFiltersMenu({
         render={
           <IconButton
             size="sm"
-            variant="inset"
+            variant={variant}
             shape="round"
             aria-label={showLabel}
             title={showLabel}
@@ -280,7 +294,7 @@ export function ConversationFiltersMenu({
               }}
             >
               <MenuGroupLabel>View</MenuGroupLabel>
-              {conversationViews.map(({ value, label }) => (
+              {viewsFor(agentViews).map(({ value, label }) => (
                 <MenuRadioItem key={value} value={value} closeOnClick>
                   {label}
                 </MenuRadioItem>
@@ -337,12 +351,14 @@ export function ActivityFilters({
   creationAction,
   layout = "sidebar",
   title,
+  agentViews = false,
 }: {
   view: View;
   onChange(view: View): void;
   creationAction?: ReactNode;
   layout?: "sidebar" | "collection";
   title?: string;
+  agentViews?: boolean;
 }) {
   const tabs = (
     <Tabs
@@ -361,7 +377,7 @@ export function ActivityFilters({
         ) : undefined
       }
       value={view.filter}
-      items={conversationViews}
+      items={viewsFor(agentViews)}
       onValueChange={(filter) => onChange({ ...view, filter })}
     />
   );

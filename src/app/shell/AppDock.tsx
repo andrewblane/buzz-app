@@ -36,7 +36,9 @@ export function AppDock({
       className={styles.frame}
       aria-label="Apps"
       id="shell-rail"
-      hidden={!open}
+      data-open={open || undefined}
+      inert={!open}
+      aria-hidden={!open}
       data-compact={compact || undefined}
       onKeyDown={(event) => {
         if (
@@ -60,7 +62,9 @@ export function AppDock({
       data-search-external={!search || undefined}
     >
       {header && (
-        <div className={`${sectionStyles.group} ${styles.heading}`}>
+        <div
+          className={`${sectionStyles.group} ${styles.heading} ${compact ? "buzz-dock-controls" : ""}`}
+        >
           {header}
         </div>
       )}

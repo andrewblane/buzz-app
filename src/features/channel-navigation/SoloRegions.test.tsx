@@ -808,7 +808,7 @@ it("replaces personal filing with a reveal chip and rejects a move selected just
     screen.getByRole("button", { name: "Start a huddle" }),
   ).toBeInTheDocument();
   const items = screen.getAllByRole("button").map((item) => item.textContent);
-  expect(items.indexOf("Start a huddle")).toBeGreaterThan(
+  expect(items.indexOf("Start a huddle")).toBeLessThan(
     items.indexOf("Chat settings"),
   );
   expect(items.indexOf("Start a huddle")).toBeLessThan(
@@ -2220,4 +2220,35 @@ it("keeps a visible priority cue on a muted Solo recovery destination", () => {
   mount(h);
   const row = screen.getByRole("button", { name: /^Owned/ });
   expect(row.querySelector("[data-channel-priority]")).toBeInTheDocument();
+});
+
+it("keeps native rename and selection with a source-owned destination", async () => {
+  const h = fixture();
+  Object.assign(h.session, {
+    channelDetails: {
+      ...h.session.channelDetails,
+      available: true,
+      load: async () => {
+        throw new Error("Offline");
+      },
+    },
+  });
+  const open = vi.fn();
+  await h.register({
+    component: ({ ui }) => (
+      <ui.Conversation channelId="owned" selected onOpen={open}>
+        {(c) => <c.Link label={c.name} />}
+      </ui.Conversation>
+    ),
+  });
+  const view = mount(h);
+  const row = screen.getByRole("button", { name: "Owned" });
+  expect(row).toHaveAttribute("aria-current", "page");
+  fireEvent.click(row);
+  expect(open).toHaveBeenCalledOnce();
+  expect(view.open).not.toHaveBeenCalled();
+  fireEvent.doubleClick(row);
+  expect(
+    await screen.findByRole("textbox", { name: "Chat name" }),
+  ).toBeInTheDocument();
 });

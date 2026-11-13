@@ -1,6 +1,8 @@
 import { ActivityNavigationProvider } from "./ActivityNavigation";
 import { PageNavigation } from "./PageNavigation";
 import { AppDock } from "./AppDock";
+import styles from "./AppShell.module.css";
+import { ResizeHandle } from "../../features/panels/ResizeHandle";
 import { RailNavigation } from "./RailNavigation";
 import { ListColumn } from "./ListColumn";
 import { SidePanelPresence } from "../../features/panels/side-panel-presence";
@@ -10,10 +12,10 @@ import { navigationOwner, orderPages, pagePlacement } from "./presentation";
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ComponentProps,
   type ReactNode,
   type Ref,
@@ -44,6 +46,7 @@ import { CommunityShortcuts } from "./CommunityShortcuts";
 import { MarkAllReadShortcut } from "./MarkAllReadShortcut";
 import type { Appearance } from "../../shared/theme/service";
 import { PageSearch, type SearchServices } from "./PageSearch";
+import { FindInPage } from "./FindInPage";
 import { BestieNavigationProvider } from "./BestieNavigation";
 import type {
   Navigation as AppNavigation,
@@ -205,22 +208,6 @@ function AppShellContent({
     }),
     [],
   );
-  // Four columns do not fit comfortably: while the list and a side panel are
-  // both open the sidebar collapses to its rail, and returns when either closes.
-  const fourColumns = !!listSection && listColumn.list.open && sidePanels > 0;
-  const collapsedForPanel = useRef(false);
-  // Before paint, so the reader changes width once, not twice.
-  useLayoutEffect(() => {
-    if (fourColumns) {
-      setSidebarOpen((open) => {
-        if (open) collapsedForPanel.current = true;
-        return false;
-      });
-    } else if (collapsedForPanel.current) {
-      collapsedForPanel.current = false;
-      setSidebarOpen(true);
-    }
-  }, [fourColumns]);
   const hostNavigation = searchServices?.navigation;
   // The sidebar opens destinations directly; only a section address lists.
   const railNavigator = useMemo(
@@ -267,6 +254,11 @@ function AppShellContent({
         : undefined,
     [connection.viewer, connection.scope],
   );
+  const [railWidth, setRailWidth] = useState(304);
+  const railWorkspace = useRef<HTMLDivElement>(null);
+  const resizeRail = (width: number) => {
+    setRailWidth(Math.min(440, Math.max(240, width)));
+  };
   const [navigationOpen, setNavigationOpen] = useState(false);
   const navigationToggle = useRef<HTMLButtonElement>(null);
   const visibleSidebar =
@@ -504,18 +496,17 @@ function AppShellContent({
               title={toggleLabel}
               onClick={() => {
                 if (narrow) setNavigationOpen((open) => !open);
-                else {
-                  // A person's choice outlasts the panel that collapsed it.
-                  collapsedForPanel.current = false;
-                  setSidebarOpen((open) => !open);
-                }
+                else setSidebarOpen((open) => !open);
               }}
               icon={<SidebarIcon aria-hidden="true" size={16} />}
             />
           }
           {navigationControls}
         </div>
-        <div className="shell-search">{search}</div>
+        <div className="shell-search">
+          {search}
+          <FindInPage shortcuts={searchServices?.shortcuts} />
+        </div>
         <div
           className="shell-actions"
           data-tauri-drag-region={macDesktop ? undefined : true}
@@ -530,7 +521,15 @@ function AppShellContent({
       </header>
 
       <div
+        ref={railWorkspace}
         className="shell-workspace"
+        style={
+          {
+            "--shell-rail-width": compactRail
+              ? "calc(var(--size-control-lg) + 2 * var(--space-1))"
+              : `${railWidth}px`,
+          } as CSSProperties
+        }
         data-detail-container=""
         data-feed-layout={activityPage || undefined}
         data-rail-open={visibleRail || undefined}
@@ -541,6 +540,22 @@ function AppShellContent({
         }
       >
         {dock}
+        {!narrow && !compactRail && (
+          <ResizeHandle
+            label="Resize app sidebar"
+            width={railWidth}
+            min={240}
+            max={440}
+            target={railWorkspace}
+            property="--shell-rail-width"
+            className={styles.railResize}
+            setWidth={resizeRail}
+            reset={() => {
+              setRailWidth(304);
+              setSidebarOpen(true);
+            }}
+          />
+        )}
         <div
           ref={workspaceRef}
           className="shell-dialog-frame"

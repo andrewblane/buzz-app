@@ -23,7 +23,7 @@ export function ConversationListToggle({
     <span className="flex min-w-0 items-center gap-2">
       <IconButton
         size="sm"
-        variant="subtle"
+        variant="glass"
         data-highlight-expanded="false"
         aria-label={label}
         title={label}
@@ -33,7 +33,9 @@ export function ConversationListToggle({
         onClick={(event) => {
           list.setOpen(!list.open, event.detail > 0);
           if (inList && list.open) {
-            const panel = document.getElementById(list.controls)?.parentElement;
+            const panel = document
+              .getElementById(list.controls)
+              ?.closest("[data-list-controlled]");
             const reader = panel?.querySelector(
               '[aria-label="Conversation detail"]',
             );

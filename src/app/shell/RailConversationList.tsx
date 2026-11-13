@@ -10,6 +10,7 @@ import {
   ConversationList,
   includeMessagesChannel,
   useActivityView,
+  withoutAgentViews,
   type ActivityView,
   type ConversationListEntry,
 } from "../../features/conversation/ConversationList";
@@ -40,11 +41,13 @@ export function RailConversationList({
   target: OpenTarget;
   renderOther(entry: RailEntry): ReactNode;
 }) {
-  const [view, setView] = useActivityView(
+  const [saved, setView] = useActivityView(
     section === "messages"
       ? `${scope.communityOrigin}:${scope.viewer}`
       : `${scope.communityOrigin}:${scope.viewer}:rail-page:${section}`,
   );
+  const agentViews = section === "solo";
+  const view = agentViews ? saved : withoutAgentViews(saved);
   // Whole conversations use the shared feed. Exact message/thread destinations
   // remain individual entries, preserving their original opening targets.
   const conversations = new Map<string, RailEntry>();
@@ -104,6 +107,7 @@ export function RailConversationList({
           view={view}
           onChange={setView}
           layout="collection"
+          agentViews={agentViews}
         />
       )}
       <div className={feedStyles.scroll}>

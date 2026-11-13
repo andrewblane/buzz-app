@@ -68,7 +68,6 @@ export function ChannelHeaderIdentity({
     <SurfaceButton
       {...props}
       aria-label={`${access.label(name)}${detail ? `, ${detail}` : ""}`}
-      title={detail ?? access.title}
       aria-haspopup="dialog"
       className={styles.identity}
     >

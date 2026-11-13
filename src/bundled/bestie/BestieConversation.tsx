@@ -477,7 +477,7 @@ export function BestieConversation({
     <IconButton
       ref={secondary.splitTrigger}
       size="sm"
-      variant="ghost"
+      variant="glass"
       aria-label="Toggle tab pane"
       title={expanded ? "Close tab pane" : "Open tab pane"}
       aria-expanded={expanded}

@@ -12,6 +12,7 @@ import {
   channelUnread,
   useConfirmedMute,
 } from "../../bundled/channels/UnreadBadge";
+import { ArrowRightIcon } from "../../shared/design-system/icons";
 import type { RailEntry } from "./rail-pins";
 
 /** Exact destinations read their own evidence; only channel rows aggregate threads. */
@@ -72,12 +73,16 @@ export function RailConversationItem({
   channel,
   destination,
   avatarOnly = false,
+  layout = "navigation",
+  preview = null,
   ...props
 }: {
   session: RelaySession;
-  channel: ChannelSummary;
+  channel?: ChannelSummary | undefined;
   destination: RailEntry["target"];
   avatarOnly?: boolean;
+  layout?: "navigation" | "feed";
+  preview?: ComponentProps<typeof ConversationRow>["preview"];
 } & Omit<
   ComponentProps<typeof ConversationRow>,
   "layout" | "state" | "time" | "preview"
@@ -86,11 +91,97 @@ export function RailConversationItem({
   return (
     <ConversationRow
       {...props}
-      layout={avatarOnly ? "avatar" : "navigation"}
+      layout={avatarOnly ? "avatar" : layout}
+      time={null}
+      preview={preview}
+      state={unread ? "unread" : "read"}
+      aria-description={unread ? "Unread messages" : undefined}
+    />
+  );
+}
+
+/** Summarize only destinations omitted by the card's current preview. */
+export function RailOpenConversations({
+  session,
+  channels,
+  hidden,
+  label,
+  onClick,
+}: {
+  session: RelaySession;
+  channels: readonly ChannelSummary[];
+  hidden: readonly RailEntry[];
+  label: string;
+  onClick: () => void;
+}) {
+  const targets = useMemo(
+    () =>
+      hidden.flatMap(({ target }) => {
+        if (target.kind !== "conversation") return [];
+        const channel = channels.find((item) => item.id === target.channelId);
+        const read: ReadTarget = target.threadRootId
+          ? {
+              kind: "thread",
+              channelId: target.channelId,
+              rootId: target.threadRootId,
+            }
+          : target.messageId
+            ? {
+                kind: "message",
+                channelId: target.channelId,
+                messageId: target.messageId,
+              }
+            : { kind: "channel", channelId: target.channelId };
+        return [{ read, channel }];
+      }),
+    [hidden, channels],
+  );
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const stops = targets.flatMap(({ read }) => [
+        session.unread.subscribe(read, listener),
+        ...(read.kind === "channel"
+          ? [session.unread.subscribeActivity(read.channelId, listener)]
+          : []),
+      ]);
+      stops.push(session.sidebarPreferences.subscribe(listener));
+      return () =>
+        stops.forEach((stop) => {
+          stop();
+        });
+    },
+    [session, targets],
+  );
+  const get = useCallback(() => {
+    const preferences = session.sidebarPreferences.snapshot();
+    return targets.some(({ read, channel }) => {
+      const snapshot = session.unread.snapshot(read);
+      if (read.kind !== "channel")
+        return snapshot.manual !== "none" || (snapshot.observedCount ?? 0) > 0;
+      const muted =
+        !preferences.cached &&
+        !!preferences.data?.muted.includes(read.channelId);
+      return (
+        channelUnread(snapshot, channel?.channelType === "dm", muted) ||
+        !!session.unread
+          .activity(read.channelId)
+          .items?.some((item) => item.unreadCount > 0)
+      );
+    });
+  }, [session, targets]);
+  const unread = useSyncExternalStore(subscribe, get, get);
+  return (
+    <ConversationRow
+      layout="navigation"
+      avatar={<ArrowRightIcon size={18} />}
+      place={label}
       time={null}
       preview={null}
       state={unread ? "unread" : "read"}
+      aria-label={label}
       aria-description={unread ? "Unread messages" : undefined}
+      data-rail-view-more=""
+      onClick={onClick}
     />
   );
 }

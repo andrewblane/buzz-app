@@ -1,7 +1,9 @@
 import { useState } from "react";
 import type { InboxReaction } from "../../features/relay/inbox-reactions";
 import { groupReactions } from "../../features/relay/fold";
+import { useReactionEmoji } from "../../features/messages/reaction-emoji";
 import { useReactionName } from "../../features/messages/use-reaction-name";
+import { isReactionShortcode } from "../../features/relay/emoji";
 import { relativeTimestamp } from "../../shared/relative-timestamp";
 import type { ComponentProps, ReactNode } from "react";
 import { channelText } from "../../features/channels/channel-icon";
@@ -12,14 +14,14 @@ import type { RelaySession } from "../../features/relay/session";
 import { workflowLabel } from "../../features/relay/workflow-attribution";
 import { messagePreview } from "../../features/notifications/content";
 import { avatarMedia } from "../../shared/avatar-source";
-import { LightningIcon } from "../../shared/design-system/icons";
+import { LightningIcon, SmileyIcon } from "../../shared/design-system/icons";
 import { Avatar } from "../../shared/design-system/ui/Avatar";
-import { NavigationItem } from "../../shared/design-system/ui/NavigationItem";
+import type { NavigationItem } from "../../shared/design-system/ui/NavigationItem";
 import { formatPublicKey } from "../../shared/identity/public-key";
 import { dmLabel } from "../../features/conversation/dm-label";
 import styles from "./Inbox.module.css";
 import rowStyles from "../../features/messages/MessageListRow.module.css";
-import { MessageListRow } from "../../features/messages/MessageListRow";
+import { ConversationRow } from "../../features/messages/ConversationRow";
 
 type ResolveName = (
   key: string,
@@ -99,7 +101,8 @@ export function InboxRowButton({
 >) {
   const unread = hasUnread(item);
   return (
-    <MessageListRow
+    <ConversationRow
+      layout="feed"
       {...props}
       aria-label={`Open ${sender} in ${context}`}
       aria-describedby={previewId}
@@ -121,18 +124,33 @@ export function InboxRowButton({
           }
         />
       }
-      sender={sender}
-      source={context}
+      place={
+        <span className={styles.rowIdentity}>
+          <strong className="text-label-sm">{sender}</strong>
+          <span
+            className={`text-caption ${rowStyles.source}`}
+            data-inbox-source=""
+          >
+            {context}
+          </span>
+        </span>
+      }
       time={
-        <time dateTime={new Date(item.createdAt * 1000).toISOString()}>
+        <time
+          data-inbox-date=""
+          dateTime={new Date(item.createdAt * 1000).toISOString()}
+        >
           {time}
         </time>
       }
-      unread={unread}
-      previewId={previewId}
+      state={unread ? "unread" : "read"}
       preview={
-        incompletePreview(feed, [item.previewMessageId, ...item.messageIds]) ??
-        messagePreview(item.preview)
+        <span id={previewId}>
+          {incompletePreview(feed, [
+            item.previewMessageId,
+            ...item.messageIds,
+          ]) ?? messagePreview(item.preview)}
+        </span>
       }
     />
   );
@@ -191,61 +209,50 @@ export function ReactionRowButton({
     )
     .join(", ");
   return (
-    <NavigationItem
+    <ConversationRow
       {...props}
+      layout="feed"
       aria-label={`${sender} reacted with ${emojiNames} to your message: ${preview}`}
-      icon={
+      avatar={
         <Avatar
-          size="default"
+          size="fill"
           alt=""
           fallback={sender}
           src={avatarMedia(profile?.picture, session.media)}
           shape={profile?.isAgent ? "squircle" : "circle"}
         />
       }
-      trailing={<span className={rowStyles.unreadSlot} aria-hidden="true" />}
-      label={
-        <span className={rowStyles.content}>
-          <span className={rowStyles.heading}>
-            <span className={rowStyles.identity}>
-              <span className={styles.reactionHeading}>
-                <strong
-                  className={`text-label-sm text-standard ${rowStyles.sender}`}
-                >
-                  {sender}
-                </strong>
-                <span
-                  className={`text-body-sm text-standard ${styles.reactionTail}`}
-                >
-                  {"\u00a0reacted "}
-                  {reactions.map((reaction) => (
-                    <ActivityReactionGlyph
-                      key={JSON.stringify([
-                        reaction.content,
-                        reaction.emoji?.url,
-                      ])}
-                      reaction={reaction}
-                      session={session}
-                    />
-                  ))}
-                </span>
-              </span>
-            </span>
-            <time
-              data-inbox-date=""
-              className={`text-caption text-subtle ${rowStyles.rowDate}`}
-              dateTime={new Date(item.createdAt * 1000).toISOString()}
-            >
-              {time}
-            </time>
+      place={
+        <span className={styles.rowIdentity}>
+          <strong className="text-label-sm">{sender}</strong>
+          <span className={styles.reactionTail}>
+            {" reacted "}
+            {reactions.map((reaction) => (
+              <ActivityReactionGlyph
+                key={JSON.stringify([reaction.content, reaction.emoji?.url])}
+                reaction={reaction}
+                session={session}
+              />
+            ))}
           </span>
-          <span className={`text-body text-subtle ${styles.reactionPreview}`}>
-            {preview}
-          </span>
+        </span>
+      }
+      time={
+        <time
+          data-inbox-date=""
+          dateTime={new Date(item.createdAt * 1000).toISOString()}
+        >
+          {time}
+        </time>
+      }
+      preview={
+        <>
+          <span>{preview}</span>
+          {" · "}
           <span className={`text-caption ${rowStyles.source}`}>
             in {context}
           </span>
-        </span>
+        </>
       }
     />
   );
@@ -257,18 +264,25 @@ function ActivityReactionGlyph({
   reaction: ReturnType<typeof groupReactions>[number];
   session: RelaySession;
 }) {
-  const source = reaction.emoji ? session.media(reaction.emoji.url) : undefined;
+  const emoji = useReactionEmoji(reaction, session);
+  const source = emoji ? session.media(emoji.url) : undefined;
   const [failed, setFailed] = useState<string>();
-  return source && source !== failed ? (
-    <img
-      src={source}
-      className={styles.reactionEmoji}
-      alt=""
-      aria-hidden="true"
-      draggable={false}
-      onError={() => setFailed(source)}
-    />
-  ) : (
-    <span aria-hidden="true">{reaction.content} </span>
-  );
+  if (source && source !== failed)
+    return (
+      <img
+        src={source}
+        className={styles.reactionEmoji}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        onError={() => setFailed(source)}
+      />
+    );
+  if (isReactionShortcode(reaction.content))
+    return (
+      <SmileyIcon
+        className={`${styles.reactionEmoji} ${styles.reactionPlaceholder}`}
+      />
+    );
+  return <span aria-hidden="true">{reaction.content} </span>;
 }

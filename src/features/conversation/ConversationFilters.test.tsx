@@ -18,7 +18,14 @@ function Filters({
   layout?: "sidebar" | "collection";
 }) {
   const [view, setView] = useActivityView(scope);
-  return <ActivityFilters view={view} onChange={setView} layout={layout} />;
+  return (
+    <ActivityFilters
+      view={view}
+      onChange={setView}
+      layout={layout}
+      agentViews
+    />
+  );
 }
 
 test("Messages controls in the card and page share live filters within their account and community", async () => {
