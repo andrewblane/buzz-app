@@ -318,9 +318,11 @@ that agent in Buzz; they do not notify the external app through this connection.
 
 ## Pair a command-line tool
 
-Run `buzz --relay <community address> auth desktop pair` in a terminal while
-Buzz is open, using the **Community address** shown in that community's
-**Settings → Local settings**. Buzz asks whether to let that tool use Buzz as
+Run `buzz auth desktop pair` in a terminal while Buzz is open. It pairs for
+the community open in Buzz; to pick another, add `--relay <community address>`
+(before or after the subcommand), using the **Community address** shown in that
+community's **Settings → Local settings**. A bare host means `https://`. The
+tool skips copies of Buzz that aren't running. Buzz asks whether to let that tool use Buzz as
 you; select **Allow** only when you ran the command. Buzz pairs only for a
 community you've joined in Buzz, and otherwise tells the tool so without
 asking. Until you've finished signing in or setting up Buzz, it refuses
@@ -330,7 +332,8 @@ edit your profile, delete, or manage members, agents or moderation: do those
 in Buzz.
 **Settings → Security** lists paired tools. **Revoke** asks first, then stops one
 until you pair it again. Signing out revokes all of them, and a pairing unused
-for 30 days expires.
+for 30 days expires. If your sign-in expires, paired tools keep their pairing
+and are asked to sign in again in Buzz.
 
 ## Conversations and communities
 
@@ -427,9 +430,17 @@ for 30 days expires.
   to address a channel member. A full name typed after **@** and followed by
   Space or closing punctuation, such as `,`, `.` or `'`, selects that person or
   agent unless a namesake or a longer name that begins the same way could be
-  meant; then pick from the list. Typing a name alone does not guarantee a
-  notification. Selecting someone outside the channel does not grant access;
-  inviting them requires an explicit decision from someone with permission.
+  meant; then pick from the list. A longer name of someone outside the channel,
+  including one of your own agents, does not stop a channel member's name from
+  selecting, so pick such a person or agent from the list: with a member named
+  `Wes`, typing `@Wes Smith` mentions Wes, not `Wes Smith` from outside the
+  channel. Likewise, with the agent `Claude` in the channel or Solo chat and
+  your agent `Claude Code` outside it, `@Claude Code` mentions Claude. Pick
+  `Claude Code` from the list to mention it: in a channel, sending then asks
+  whether to add it; in a Solo chat, sending adds it without asking. Typing a
+  name alone does not guarantee a notification. Selecting someone outside the
+  channel does not grant access; inviting them requires an explicit decision
+  from someone with permission.
 - **Workspaces** group Solo chats and provide starting folders and instructions.
   With Nexus enabled, each workspace also contains its tasks and can have a Lead
   task. Nexus saves and chooses Leads, so they exist only while Nexus is enabled.
@@ -936,6 +947,9 @@ available rather than silently discarding it.
   its type. Where offered, **Create agent** also lets people choose Thinking
   before the first config is saved; **Default** follows the provider's setting.
   Do not assume someone can edit another person's agent.
+- In the agent avatar picker, drag the avatar strip with a mouse or scroll it
+  to browse more choices. Click an avatar to select it; keyboard users can Tab
+  through the choices and press Enter or Space.
 - A desktop plugin can run native Codex or Claude on another computer. The plugin manages the target, workspace, credentials, and expiry. A saved
   remote choice stays remote after an app restart. If the target cannot be
   restored, Buzz shows an error and requires a new session.
@@ -1072,6 +1086,19 @@ available rather than silently discarding it.
   Bestie whose provider holds its instructions (Builderlab does) shows a
   **Bestie** tab where **Remembers you** edits them through the provider;
   check-ins stay unavailable for hosted agents.
+- **Delete** on an agent's page stops it, takes it out of its channels, archives
+  it in its community so nothing offers it again (pickers, mentions, New
+  message, Forward, Search, member search, templates), then deletes it. Its key
+  stays until the archive is confirmed. If its profile doesn't name you as its
+  owner, Buzz republishes its profile naming you as its owner first. If any step fails,
+  Delete says it didn't finish: the agent stays stopped and keeps its key, and
+  **Delete** again finishes it. For a hosted agent, Buzz archives it before its
+  provider removes it; if the archive fails, nothing changes. If the provider
+  then fails, the agent may still be running: delete it again. A hosted agent
+  whose profile doesn't name you as its owner can't be archived, so Delete says
+  why and stops. In a community that advertises no archive authority, Delete
+  skips the archive. **Forget** drops an agent that can't reach its community
+  from this device only; it may stay in that community's channels.
 - **Settings → Agent setup → Harness defaults** is where supported agent types
   offer installation, sign-in, and default-model controls. Available controls
   depend on the type. Do not assume a provider is configured or signed in.
