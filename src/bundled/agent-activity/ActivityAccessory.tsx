@@ -210,8 +210,8 @@ function MessageActivity(
           work.messageId === messageId,
       );
       if (local.length) {
-        // Solo follow-ups steer one conversation. Its newest working request
-        // owns the bubble; waiting follow-ups and older requests add no copy.
+        // Solo follow-ups steer one conversation. Keep the first working
+        // request visible until it settles; queued follow-ups add no copy.
         if (
           (entry.state === "working" || entry.state === "waiting") &&
           local.some((work) => work.soloChat && !work.thread)

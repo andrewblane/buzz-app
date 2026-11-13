@@ -55,7 +55,10 @@ test("Solo follow-ups share one agent Activity row", async ({
   const first = await page.evaluate(
     () => window.localAgentFixture.pending()[0],
   );
-  await page.evaluate((id) => window.localAgentFixture.handover(id), first);
+  await page.evaluate((id) => {
+    window.localAgentFixture.handover(id);
+    window.localAgentFixture.step(id, "Read", "notes.txt");
+  }, first);
   await editor.fill("Also check the schedule");
   await editor.press("Enter");
   await expect
@@ -76,7 +79,7 @@ test("Solo follow-ups share one agent Activity row", async ({
   }, second);
   await expect(
     page.getByRole("button", {
-      name: "View agent activity: Local tester, Reading follow-up.txt",
+      name: "View agent activity: Local tester, Reading notes.txt",
       exact: true,
     }),
   ).toHaveCount(1);
@@ -93,7 +96,7 @@ test("Solo follow-ups share one agent Activity row", async ({
   await setPluginEnabled(page, "Agent Activity", false);
   await closeSettings(page);
   await activity
-    .getByRole("button", { name: "Reading follow-up.txt", exact: true })
+    .getByRole("button", { name: "Reading notes.txt", exact: true })
     .click();
   const stop = page.getByRole("button", {
     name: "Stop Local tester",
@@ -124,6 +127,12 @@ test("Solo follow-ups share one agent Activity row", async ({
   await page.keyboard.press("Enter");
   await expect
     .poll(() => page.evaluate(() => window.localAgentFixture.stopped()))
-    .toEqual([second]);
+    .toEqual([first]);
   await expect(stop).toHaveCount(1);
+  await expect(
+    activity.getByRole("button", {
+      name: "Reading follow-up.txt",
+      exact: true,
+    }),
+  ).toBeVisible();
 });

@@ -85,7 +85,6 @@ export function conversationWorkStops(
         (work) =>
           work.soloChat &&
           !work.thread &&
-          work.stoppable &&
           (work.state === "working" || work.state === "waiting"),
       ),
     },

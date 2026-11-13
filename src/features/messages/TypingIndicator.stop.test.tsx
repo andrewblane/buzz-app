@@ -240,7 +240,7 @@ it("identifies each hosted thread and stops only the selected work", async () =>
   }
 });
 
-it("uses the newest working Solo request for its one row and Stop target", async () => {
+it("keeps the running Solo request controllable while another working request is queued", async () => {
   const f = fixture();
   const user = userEvent.setup();
   const interrupt = vi.fn(async () => undefined);
@@ -276,9 +276,7 @@ it("uses the newest working Solo request for its one row and Stop target", async
   ];
   f.update([], { local });
   render(<TypingIndicator session={session} channelId="channel" />);
-  await user.click(
-    screen.getByRole("button", { name: "Reading follow-up.txt" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Reading first.txt" }));
   expect(screen.getAllByRole("button", { name: /^Stop Agent/ })).toHaveLength(
     1,
   );
@@ -290,14 +288,10 @@ it("uses the newest working Solo request for its one row and Stop target", async
   );
   f.update([], { local });
   await user.click(screen.getByRole("button", { name: "Stop Agent" }));
-  expect(interrupt).toHaveBeenCalledExactlyOnceWith(
-    agent,
-    "channel",
-    "follow-up",
-  );
+  expect(interrupt).toHaveBeenCalledExactlyOnceWith(agent, "channel", "first");
 });
 
-it("keeps Stop for a stoppable Solo follow-up when older work cannot stop", async () => {
+it("does not borrow a queued Solo request's Stop capability", async () => {
   const f = fixture();
   const user = userEvent.setup();
   const interrupt = vi.fn(async () => undefined);
@@ -337,15 +331,9 @@ it("keeps Stop for a stoppable Solo follow-up when older work cannot stop", asyn
       channelId="channel"
     />,
   );
-  await user.click(
-    screen.getByRole("button", { name: "Reading follow-up.txt" }),
-  );
-  await user.click(screen.getByRole("button", { name: "Stop Agent" }));
-  expect(interrupt).toHaveBeenCalledExactlyOnceWith(
-    agent,
-    "channel",
-    "stoppable",
-  );
+  await user.click(screen.getByRole("button", { name: "Reading first.txt" }));
+  expect(screen.queryByRole("button", { name: "Stop Agent" })).toBeNull();
+  expect(interrupt).not.toHaveBeenCalled();
 });
 
 it.each([
@@ -574,7 +562,10 @@ it("keeps a grouped Solo Stop pending when its request owner changes", async () 
   try {
     await user.click(screen.getByRole("button", { name: "Stop Agent" }));
     f.update([], {
-      local: local.map((work) => ({ ...work, state: "working" as const })),
+      local: local.map((work, index) => ({
+        ...work,
+        state: index ? ("working" as const) : ("done" as const),
+      })),
     });
     const stop = screen.getByRole("button", { name: "Stop Agent" });
     expect(stop).toHaveAttribute("aria-disabled", "true");

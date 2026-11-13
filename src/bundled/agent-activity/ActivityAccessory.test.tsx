@@ -2702,7 +2702,7 @@ it.each([
   },
 );
 
-it("keeps one Solo bubble on the newest working request, preserving other agents and outcomes", () => {
+it("keeps one Solo bubble on the running request while another working request is queued", () => {
   const local = createLocalAgentActivity();
   const f = fixture(local);
   const begin = (agent: string, messageId: string) =>
@@ -2742,19 +2742,15 @@ it("keeps one Solo bubble on the newest working request, preserving other agents
     // A queued follow-up does not duplicate the current worker.
     expect(screen.getByTestId("second")).toBeEmptyDOMElement();
     act(() => second.started());
+    const bubble = within(screen.getByTestId("first")).getByRole("button", {
+      name: /^View agent activity:/,
+    });
+    expect(bubble).toHaveAccessibleName(/Blossom/);
+    expect(bubble).toHaveAccessibleName(/Bubbles/);
     expect(
-      within(screen.getByTestId("first")).getByRole("button", {
-        name: /^View agent activity: Bubbles/,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      within(screen.getByTestId("second")).getByRole("button", {
-        name: /^View agent activity: Blossom/,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getAllByRole("button", { name: /^View agent activity: Blossom/ }),
+      screen.getAllByRole("button", { name: /^View agent activity:/ }),
     ).toHaveLength(1);
+    expect(screen.getByTestId("second")).toBeEmptyDOMElement();
     // The earlier request still has an independent outcome, not a fake success.
     act(() =>
       first.finish({
@@ -2763,6 +2759,11 @@ it("keeps one Solo bubble on the newest working request, preserving other agents
       }),
     );
     expect(screen.getByTestId("first")).toHaveTextContent("Couldn’t finish");
+    expect(
+      within(screen.getByTestId("second")).getByRole("button", {
+        name: /^View agent activity: Blossom/,
+      }),
+    ).toBeVisible();
     act(() => second.finish({ ok: true }));
     expect(screen.getByTestId("second")).toBeEmptyDOMElement();
   } finally {
