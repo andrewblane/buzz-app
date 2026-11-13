@@ -1,14 +1,19 @@
 import { expect, it } from "vitest";
+import { validateObject } from "../../features/agents/attention";
 import {
-  checkinHourly,
+  dream,
+  FEATURES,
   featureState,
   hasFeature,
+  LEGACY,
   memory,
+  notes,
   restoredFeature,
   withFeature,
 } from "./features";
+import { v1CheckIn } from "./test-helpers";
 
-const OPEN = "<!-- buzz:bestie/memory v1 -->";
+const OPEN = `<!-- buzz:bestie/memory v${memory.version} -->`;
 const CLOSE = "<!-- /buzz:bestie/memory -->";
 
 it("adds memory once, at the end, and removes only what it added", () => {
@@ -93,9 +98,7 @@ it("shows a section whose markers were edited, and adds no second one", () => {
   }
   expect(featureState("Be brief.", memory)).toBe("off");
   // Another feature's markers are not this one's.
-  expect(featureState(withFeature("", checkinHourly, true), memory)).toBe(
-    "off",
-  );
+  expect(featureState(withFeature("", v1CheckIn, true), memory)).toBe("off");
 });
 
 it("restores an edited section only where its markers show it was", () => {
@@ -126,7 +129,7 @@ it("restores an edited section only where its markers show it was", () => {
       memory,
     ),
   ).toBeUndefined();
-  const other = withFeature("", checkinHourly, true);
+  const other = withFeature("", v1CheckIn, true);
   expect(
     restoredFeature(
       `${OPEN.replace(" v1", "")}\nrules\n\n${other}\n${CLOSE.replace(" -->", "-->")}`,
@@ -176,10 +179,87 @@ it("keeps the owner's line ending, or its absence, through on and off", () => {
   ).toBe("Be brief.\n");
 });
 
-it("has the check-in read the private channels Bestie was added to", () => {
-  const load = checkinHourly.text
-    .split("\n")
-    .find((line) => line.startsWith("1. LOAD."));
-  expect(load).toContain("each private channel you have been added to");
-  expect(load).toContain("you are a guest there and can't post");
+it("keeps the steps of Hourly notes and Nightly review out of the instructions every turn carries", () => {
+  // Only memory has a section; the other two are a timer and an Interest.
+  expect(FEATURES.filter(({ text }) => text).map(({ id }) => id)).toEqual([
+    "memory",
+  ]);
+  for (const feature of [notes, dream]) {
+    const owner = "Be brief.\n";
+    expect(withFeature(owner, feature, true)).toBe(owner);
+    expect(featureState(owner, feature)).toBe("off");
+    // Each wakes the agent with its steps, and needs memory, no other check-in.
+    expect(feature.requires).toBe("memory");
+    expect(feature.timer?.interest.length).toBeGreaterThan(1_000);
+    expect(
+      validateObject(`interest/${feature.timer?.id}`, {
+        type: "interest",
+        instructions: feature.timer?.interest,
+      }),
+    ).toBeUndefined();
+  }
+  // What every turn carries is small and has no wake's steps.
+  expect(memory.text?.length).toBeLessThan(4_000);
+  expect(memory.text).not.toMatch(/1\. LOOK|1\. READ/);
+});
+
+it("gives each check-in its own timer, and the nightly review a daily one at 03:00", () => {
+  const timers = FEATURES.flatMap(({ timer }) => (timer ? [timer] : []));
+  expect(timers.map(({ id }) => id)).toEqual(["bestie-notes", "bestie-dream"]);
+  expect(notes.timer).toMatchObject({ everySecs: 3600, id: "bestie-notes" });
+  expect(notes.timer?.atHour).toBeUndefined();
+  expect(dream.timer).toMatchObject({ everySecs: 86_400, atHour: 3 });
+  // The old hourly check-in is one to remove, not one to turn on.
+  expect(FEATURES.map(({ id }) => id)).not.toContain(LEGACY[0]?.id);
+  expect(timers.map(({ id }) => id)).not.toContain(LEGACY[0]?.timer?.id);
+});
+
+it("has no step that adds Bestie to a channel it was added to", () => {
+  const all = [memory.text, notes.timer?.interest, dream.timer?.interest].join(
+    "\n",
+  );
+  expect(all).not.toMatch(/added to|add .*to channels|you are a guest/i);
+  // Notes read the channels it is in, and say not to join others.
+  expect(notes.timer?.interest).toContain(
+    "Call channel_list: the channels you are in.",
+  );
+  expect(notes.timer?.interest).toContain(
+    "Never join a channel, add yourself to one or read one you are not in.",
+  );
+});
+
+it("has Hourly notes stop with no write when nothing is new, and message only for a due follow-up", () => {
+  const steps = notes.timer?.interest ?? "";
+  expect(steps).toContain("no memory write, no receipt, no message");
+  expect(steps).toContain("STOP, writing nothing and sending nothing");
+  expect(steps).toContain("Only if a follow-up the owner asked for is due now");
+  // The receipt is a step after the notes, which a stopped pass never reaches.
+  expect(steps.indexOf("STOP")).toBeLessThan(steps.indexOf("receipt (time"));
+});
+
+it("has Nightly review silent, strict about promotion and bounded in what it changes", () => {
+  const steps = dream.timer?.interest ?? "";
+  expect(steps).toContain("you never send a message");
+  expect(steps).toContain("Send no message.");
+  expect(steps).toContain(
+    "3 or more observations on 3 or more different days and none against",
+  );
+  expect(steps).toContain("read its source event");
+  expect(steps).toContain("at most 4 KB");
+  expect(steps).toContain("MOVED TO [[slug]]");
+  expect(steps).toContain('Append a "Dream" section');
+});
+
+it("takes the old hourly check-in's section away, as it was saved", () => {
+  const on = withFeature(
+    withFeature("Be brief.\n", memory, true),
+    v1CheckIn,
+    true,
+  );
+  expect(on).toContain("each private channel you have been added to");
+  const [old] = LEGACY;
+  expect(old && featureState(on, old)).toBe("on");
+  const off = old ? withFeature(on, old, false) : on;
+  expect(off).toBe(withFeature("Be brief.\n", memory, true));
+  expect(off).not.toContain("Hourly upkeep");
 });
