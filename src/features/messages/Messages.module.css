@@ -280,17 +280,7 @@ html[data-keyboard-navigation] .authorLink:focus-visible {
   overflow-wrap: anywhere;
 }
 .text {
-  composes: document message from "../markdown/Markdown.module.css";
   white-space: pre-wrap;
-}
-.codeBlock {
-  composes: codeFrame from "../markdown/Markdown.module.css";
-}
-.codeActions {
-  composes: codeActions from "../markdown/Markdown.module.css";
-}
-.imageAlt {
-  composes: imageAlt from "../markdown/Markdown.module.css";
 }
 .text[data-single-emoji] {
   --inline-emoji-size: var(--size-emoji-display);

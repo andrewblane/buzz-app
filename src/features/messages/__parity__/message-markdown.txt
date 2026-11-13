@@ -1,5 +1,5 @@
 ## headings
-<div class="_text_7a7508">
+<div class="_text_7a7508 _document_76def9 _message_76def9">
   <h1>
     "One"
   <h2>
@@ -14,7 +14,7 @@
     "Six"
 
 ## lists
-<div class="_text_7a7508">
+<div class="_text_7a7508 _document_76def9 _message_76def9">
   <ul>
     <li>
       "a"
@@ -42,7 +42,7 @@
       "done"
 
 ## inline
-<div class="_text_7a7508">
+<div class="_text_7a7508 _document_76def9 _message_76def9">
   <p>
     <strong>
       "bold"
@@ -63,7 +63,7 @@
       "https://example.org"
 
 ## blocks
-<div class="_text_7a7508">
+<div class="_text_7a7508 _document_76def9 _message_76def9">
   <blockquote>
     <p>
       "quote"
@@ -85,11 +85,11 @@
           "2"
 
 ## code
-<div class="_text_7a7508">
+<div class="_text_7a7508 _document_76def9 _message_76def9">
   <pre>
     <code>
       "plain\n"
-    <span class="_codeActions_7a7508">
+    <span class="_codeActions_76def9">
       <button aria-disabled="false" aria-label="Copy code block" class="buzz-button" data-base-ui-tooltip-trigger="" data-button-shape="capsule" data-buzz-ui="" data-icon-shape="control" data-icon-size="sm" data-icon-variant="ghost" data-size="sm" data-variant="ghost" id=<react id> tabindex="0" type="button">
         <span class="buzz-button-label">
           <svg aria-hidden="true" class="tabler-icon tabler-icon-copy " fill="none" height="1em" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg">
@@ -98,7 +98,7 @@
   <pre>
     <code class="language-ts">
       "const x = 1\n"
-    <span class="_codeActions_7a7508">
+    <span class="_codeActions_76def9">
       <button aria-disabled="false" aria-label="Copy code block" class="buzz-button" data-base-ui-tooltip-trigger="" data-button-shape="capsule" data-buzz-ui="" data-icon-shape="control" data-icon-size="sm" data-icon-variant="ghost" data-size="sm" data-variant="ghost" id=<react id> tabindex="0" type="button">
         <span class="buzz-button-label">
           <svg aria-hidden="true" class="tabler-icon tabler-icon-copy " fill="none" height="1em" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg">
@@ -106,11 +106,11 @@
             <path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1">
 
 ## plugin
-<div class="_text_7a7508">
-  <div class="_codeBlock_7a7508" data-copy-code="flowchart LR" data-copy-language="Mermaid">
+<div class="_text_7a7508 _document_76def9 _message_76def9">
+  <div class="_codeBlock_7a7508 _codeFrame_76def9" data-copy-code="flowchart LR" data-copy-language="Mermaid">
     <figure>
       "flowchart LR"
-    <span class="_codeActions_7a7508">
+    <span class="_codeActions_76def9">
       <button aria-disabled="false" aria-label="Copy code block" class="buzz-button" data-base-ui-tooltip-trigger="" data-button-shape="capsule" data-buzz-ui="" data-icon-shape="control" data-icon-size="sm" data-icon-variant="ghost" data-size="sm" data-variant="ghost" id=<react id> tabindex="0" type="button">
         <span class="buzz-button-label">
           <svg aria-hidden="true" class="tabler-icon tabler-icon-copy " fill="none" height="1em" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg">
@@ -118,11 +118,11 @@
             <path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1">
 
 ## throwing
-<div class="_text_7a7508">
+<div class="_text_7a7508 _document_76def9 _message_76def9">
   <pre>
     <code class="language-Broken">
       "boom\n"
-    <span class="_codeActions_7a7508">
+    <span class="_codeActions_76def9">
       <button aria-disabled="false" aria-label="Copy code block" class="buzz-button" data-base-ui-tooltip-trigger="" data-button-shape="capsule" data-buzz-ui="" data-icon-shape="control" data-icon-size="sm" data-icon-variant="ghost" data-size="sm" data-variant="ghost" id=<react id> tabindex="0" type="button">
         <span class="buzz-button-label">
           <svg aria-hidden="true" class="tabler-icon tabler-icon-copy " fill="none" height="1em" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg">
@@ -130,7 +130,7 @@
             <path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1">
 
 ## html
-<div class="_text_7a7508">
+<div class="_text_7a7508 _document_76def9 _message_76def9">
   <p>
     "<mark>"
     "x"
@@ -142,7 +142,7 @@
     "</script>"
 
 ## spoiler
-<div class="_text_7a7508">
+<div class="_text_7a7508 _document_76def9 _message_76def9">
   <p>
     "Before "
     <span class="_spoiler_7a7508" data-revealed="false" data-spoiler="">
@@ -153,20 +153,20 @@
     " after"
 
 ## breaks
-<div class="_text_7a7508">
+<div class="_text_7a7508 _document_76def9 _message_76def9">
   <p>
     "first"
     <br>
     "second"
 
 ## image
-<div class="_text_7a7508">
+<div class="_text_7a7508 _document_76def9 _message_76def9">
   <p>
-    <span class="_imageAlt_7a7508">
+    <span class="_imageAlt_76def9">
       "alt text"
 
 ## mention
-<div class="_text_7a7508">
+<div class="_text_7a7508 _document_76def9 _message_76def9">
   <p>
     "hi "
     <button aria-label="View Mic profile" class="_link_594017" data-mention-kind="person" data-mention-name="Mic" data-profile-target="nostr:npub1hwamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwasxw04hu" type="button">
@@ -178,12 +178,12 @@
       "ic"
 
 ## edited
-<div class="_text_7a7508">
+<div class="_text_7a7508 _document_76def9 _message_76def9">
   <p>
     "changed"
     <span class="_edited_7a7508 select-none">
       " (edited)"
 
 ## largeEmoji
-<p class="_text_7a7508" data-single-emoji="true">
+<p class="_text_7a7508 _document_76def9 _message_76def9" data-single-emoji="true">
   "😀"

@@ -25,6 +25,7 @@ import { CustomEmoji } from "../../bundled/emoji/CustomEmoji";
 import { emojiMatches } from "../relay/emoji";
 import { profileKey, profileTarget } from "../profiles/target";
 import { parseBuzzLink } from "../navigation/buzz-links";
+import markdownStyles from "../markdown/Markdown.module.css";
 import styles from "./Messages.module.css";
 import { LinkLabel } from "../../bundled/links/InlineLink";
 import { MessageMarkdown } from "./MessageMarkdown";
@@ -41,6 +42,7 @@ import {
 } from "../relay/message-content";
 import type { ChannelMessage, Profile } from "../relay/contracts";
 
+const textClass = `${styles.text} ${markdownStyles.document} ${markdownStyles.message}`;
 const markdownRenders = vi.hoisted(() => vi.fn());
 vi.mock("react-markdown", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-markdown")>();
@@ -215,7 +217,7 @@ second
       "hello       -   3\nnext  line\n\n- a\n  - b\n- c\n\n1. x\n\n2. y\n\n> quote   here\n\n| a     b |\n| - |\n| c   d |\n\n`a    b`\n\n```\none\n  two\n```",
     );
     expect(html).toContain(
-      `<div class="${styles.text}"><p>hello       -   3<br/>next  line</p>` +
+      `<div class="${textClass}"><p>hello       -   3<br/>next  line</p>` +
         "<ul><li>a<ul><li>b</li></ul></li><li>c</li></ul>" +
         "<ol><li><p>x</p></li><li><p>y</p></li></ol>" +
         "<blockquote><p>quote   here</p></blockquote>" +
@@ -958,7 +960,7 @@ describe("Markdown inline extensions", () => {
       media: () => "https://media.test/emoji.png",
     });
     expect(html).toContain(
-      `class="${styles.text}" data-single-emoji="true"><img`,
+      `class="${textClass}" data-single-emoji="true"><img`,
     );
     expect(html).not.toContain("<div");
     expect(render(":party_parrot:", options)).toContain(

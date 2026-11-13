@@ -35,6 +35,7 @@ import { InlineText } from "../conversation/InlineText";
 import type { ChannelMessage, Profile } from "../relay/contracts";
 import { emojiMatches, linkPart, messageParts } from "../relay/emoji";
 import { safeLinkUrl, visibleHtmlSource } from "../relay/message-content";
+import markdownStyles from "../markdown/Markdown.module.css";
 import styles from "./Messages.module.css";
 import { profileMentionNames, profileMentionParts } from "./profile-mentions";
 import {
@@ -456,9 +457,12 @@ type MessageComponents = {
     props: ComponentPropsWithoutRef<Tag> & ExtraProps,
   ) => ReactNode;
 };
+// Apply shared Markdown classes here: a cross-file CSS `composes` bundles
+// Markdown.module.css a second time, doubling its selector matching.
+const TEXT_CLASS = `${styles.text} ${markdownStyles.document} ${markdownStyles.message}`;
 const MESSAGE_CODE_CLASSES = {
-  frame: styles.codeBlock,
-  actions: styles.codeActions,
+  frame: `${styles.codeBlock} ${markdownStyles.codeFrame}`,
+  actions: markdownStyles.codeActions,
 };
 const MessageComponentsContext = createContext<MessageComponents | null>(null);
 function useMessageComponents() {
@@ -705,7 +709,7 @@ function PreparedMessageMarkdown({
     p: ({ node: _node, ...props }) => (
       <p
         {...props}
-        className={largeEmoji ? styles.text : undefined}
+        className={largeEmoji ? TEXT_CLASS : undefined}
         data-single-emoji={largeEmoji || undefined}
       />
     ),
@@ -734,7 +738,7 @@ function PreparedMessageMarkdown({
       );
     },
     img: ({ node: _node, alt }) =>
-      alt ? <span className={styles.imageAlt}>{alt}</span> : null,
+      alt ? <span className={markdownStyles.imageAlt}>{alt}</span> : null,
     span: ({ node: _node, children, ...props }) => {
       if ("data-edited-slot" in props) return edited ? <EditedMarker /> : null;
       if ((props as Record<string, unknown>)["data-spoiler"] === "true")
@@ -780,7 +784,7 @@ function PreparedMessageMarkdown({
       <MarkdownBody protectedContent={protectedContent} />
     </MessageComponentsContext>
   );
-  return largeEmoji ? markdown : <div className={styles.text}>{markdown}</div>;
+  return largeEmoji ? markdown : <div className={TEXT_CLASS}>{markdown}</div>;
 }
 
 /** Switching channels remounts every row. Keep recent results so a revisit
