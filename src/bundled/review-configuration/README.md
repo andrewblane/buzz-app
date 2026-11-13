@@ -21,7 +21,7 @@ threads. It resets each lane to Needs review. Incomplete original submissions re
 the original browser profile instead. Existing review notifications run only on Submit.
 Agent admission continues automatically as described below.
 
-All three pages use the shell's page navigation. Review Configuration stays in the sidebar; the Pull requests icon in the dock opens the existing PR list directly. Its Submit PR button opens the submission form. Existing configuration actions and Back buttons remain available. Repository and lane editing
+All three pages use the shell's page navigation. Review Configuration and Pull requests each have their own dock icon. The first opens repository and lane setup; the second opens the PR list directly. Its Submit PR button opens the submission form. Existing configuration actions and Back buttons remain available. Repository and lane editing
 remain local sections; reloading returns Configuration to its repository list.
 Restarted submissions use a versioned delivery generation; older plugin versions cannot read or resume them.
 The channel selection is remembered per identity/community; one eligible channel
@@ -31,7 +31,7 @@ following reload; navigation never replays Submit automatically.
 ## Getting started
 
 Enable this plugin in **Settings → Plugins → Manage plugins**, then open its
-sidebar entry. Choose a channel and register a repository. For each lane, select
+Review Configuration dock icon. Choose a channel and register a repository. For each lane, select
 reviewer agents, enter instructions, and configure at least one routing rule, then save. Open the repository to edit settings.
 These selections do not start reviews or grant agents access to the channel.
 

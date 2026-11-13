@@ -1279,7 +1279,7 @@ tab, asks **Discard changes?** first; **Keep editing** keeps them.
   when no choice was saved. Enable or disable them in **Manage plugins**; saved
   choices persist. A deliberate plugin-settings reset uses the current defaults.
 - **Review Configuration** is optional and starts off. Enable it in **Manage
-  plugins** to add its own Messages sidebar entry. Choose a review channel,
+  plugins** to add separate **Review Configuration** and **Pull requests** dock icons. Choose a review channel,
   register a GitHub repository, and save named lanes with reviewer agents and
   instructions. Each lane supports multiple reviewers. Saved
   repositories appear in a list; open one to manage its lanes. **Reload**

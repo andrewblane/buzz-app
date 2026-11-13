@@ -126,7 +126,7 @@ test("the app runtime exposes ready bundled pages and removes them on disable", 
       .find((page) => page.pluginId === "buzz.review-configuration");
     assert.equal(reviewConfiguration.title, "Review Configuration");
     assert.equal(reviewConfiguration.primary, true);
-    assert.equal(reviewConfiguration.placement, "sidebar");
+    assert.equal(reviewConfiguration.placement, "dock");
     assert.match(
       renderToStaticMarkup(createElement(reviewConfiguration.component)),
       /Connect to a community to configure reviews/,
