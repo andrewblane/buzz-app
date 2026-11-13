@@ -23,20 +23,41 @@ function Item({ children, index, ref, style }: CustomItemComponentProps) {
 
 /** Window whole reply branches, retaining the reader's single scrollport. */
 export function ThreadReplyWindow({
-  children,
+  children: branches,
   scroller,
-  keepMounted,
-  initialIndex,
+  keepMounted: keptBranches,
+  initialIndex: initialBranch,
   onReady,
   follow,
 }: {
+  /** One entry per top-level reply; null where a collapsed row renders nothing. */
   children: ReactNode[];
   scroller: RefObject<HTMLElement | null>;
+  /** Indices into children, including rows that render nothing. */
   keepMounted: readonly number[];
   initialIndex: number | undefined;
   onReady(): void;
   follow: RefObject<boolean>;
 }) {
+  // Virtua windows only the rows that render, so every index it sees must
+  // come from that same compact list. A row inside a collapsed group maps to
+  // the group's visible summary before it.
+  const children: ReactNode[] = [];
+  const itemOf: number[] = [];
+  for (const branch of branches) {
+    if (branch !== null && branch !== undefined && typeof branch !== "boolean")
+      children.push(branch);
+    itemOf.push(Math.max(children.length - 1, 0));
+  }
+  const initialIndex =
+    initialBranch === undefined || children.length === 0
+      ? undefined
+      : itemOf[initialBranch];
+  const keepMounted = [
+    ...new Set(keptBranches.map((index) => itemOf[index])),
+  ].filter(
+    (index): index is number => index !== undefined && index < children.length,
+  );
   const wrapper = useRef<HTMLDivElement>(null);
   const list = useRef<VirtualizerHandle>(null);
   const [startMargin, setStartMargin] = useState(0);

@@ -661,6 +661,56 @@ test("long thread sheet windows replies while preserving reading, branches, and 
   ).toHaveText("Windowed thread draft");
 });
 
+// Collapsed activity renders nothing for every grouped update after the
+// first, so the window must position against the rows it actually renders.
+test("long thread sheet settles when it ends in collapsed activity", async ({
+  page,
+  app,
+}) => {
+  await open(page, app);
+  const root = app.append("primary", "alpha", "Collapsed thread root", true);
+  const post = (content, tags) =>
+    app.append(
+      "primary",
+      "alpha",
+      content,
+      false,
+      false,
+      root.id,
+      undefined,
+      tags,
+    );
+  const replies = Array.from({ length: 19 }, (_, i) =>
+    post(`Collapsed thread reply ${i}`),
+  );
+  const agents = [["audience", "agents"]];
+  post("Agents update one", agents);
+  const last = post("Agents update two", agents);
+  const row = page.locator(
+    `[data-channel-timeline] [data-message-id="${root.id}"]`,
+  );
+  await expect(row).toBeVisible();
+  await hoverMessage(row);
+  await row.getByRole("button", { name: "Reply", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Thread", exact: true });
+  const history = sheet.getByRole("region", {
+    name: "Thread messages",
+    exact: true,
+  });
+  await expect(history.locator("[data-thread-window]")).toBeVisible();
+  await expect(history).not.toHaveAttribute("data-positioning");
+  const toggle = history.getByRole("button", {
+    name: /^Show activity history:/,
+  });
+  await expect(toggle).toBeInViewport();
+  await expect(history.locator(`[data-message-id="${last.id}"]`)).toHaveCount(
+    0,
+  );
+  await expect(
+    history.locator(`[data-message-id="${replies.at(-1).id}"]`),
+  ).toBeInViewport();
+});
+
 // Only real layout bounds a panel's scrollport; jsdom reports no overflow.
 test("a long GitHub panel over the composer scrolls under the wheel", async ({
   page,
