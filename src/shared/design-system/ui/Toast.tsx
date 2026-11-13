@@ -112,6 +112,8 @@ export function ToastProvider({
 type ToastCardProps = {
   title: string;
   description?: string | undefined;
+  /** Optional supporting detail between the message and its actions. */
+  details?: ReactNode;
   children?: ReactNode;
   tone: Tone;
   closeLabel?: string;
@@ -122,6 +124,7 @@ type ToastCardProps = {
 function ToastCard({
   title,
   description,
+  details,
   children,
   tone,
   closeLabel = "Dismiss notification",
@@ -173,6 +176,7 @@ function ToastCard({
           </div>
         )}
       </div>
+      {details}
       {children && <div className="buzz-toast-actions">{children}</div>}
     </div>
   );
@@ -212,6 +216,7 @@ function NoticeContent({
 export function ToastNotice({
   title,
   description,
+  details,
   children,
   onDismiss,
   closeLabel = "Dismiss notification",
@@ -221,6 +226,7 @@ export function ToastNotice({
 }: {
   title: string;
   description?: string;
+  details?: ReactNode;
   children?: ReactNode;
   onDismiss?: () => void;
   closeLabel?: string;
@@ -232,7 +238,7 @@ export function ToastNotice({
   const id = useId();
   const toasterId = useContext(ToastHost);
   const [source] = useState(() =>
-    noticeContent({ title, description, tone, children }),
+    noticeContent({ title, description, details, tone, children }),
   );
   const dismissed = useEffectEvent(() => onDismiss?.());
   const dismissible = timeout > 0 || !!onDismiss;
@@ -270,6 +276,7 @@ export function ToastNotice({
     source.update({
       title,
       description,
+      details,
       tone,
       children,
       closeLabel,
@@ -285,6 +292,7 @@ export function ToastNotice({
     id,
     title,
     description,
+    details,
     tone,
     children,
     closeLabel,
