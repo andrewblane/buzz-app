@@ -802,16 +802,19 @@ function MessageRowContent({
       menuTriggerRef={menuTrigger}
       messageId={row.id}
       onForward={forward ? () => forward(row) : undefined}
+      // The Reply button opens the thread; holding the message is the quick
+      // reply. A reader with no thread view falls back to the quick reply.
       onReply={
-        (onReply ? () => onReply(row.id) : undefined) ??
-        (onOpenThread && startsThreads
+        onOpenThread && startsThreads
           ? () =>
               onOpenThread(
                 row.threadRootId ?? row.id,
                 row.threadRootId ?? row.id,
                 "reply",
               )
-          : undefined)
+          : onReply
+            ? () => onReply(row.id)
+            : undefined
       }
       replyDisabled={replyDisabled}
       onSendToChannel={

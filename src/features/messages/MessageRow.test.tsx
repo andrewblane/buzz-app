@@ -3335,8 +3335,10 @@ it.each(["", "Please review this.\n\n"])(
       expect(open).toHaveBeenCalledWith("buzz://channel/session-id", {
         rootId: "root",
       });
+      // Reply opens the thread; the quick reply is the hold, not this button.
       fireEvent.click(screen.getByRole("button", { name: "Reply" }));
-      expect(reply).toHaveBeenCalledWith("root");
+      expect(thread).toHaveBeenCalledWith("root", "root", "reply");
+      expect(reply).not.toHaveBeenCalled();
       fireEvent.click(screen.getByRole("button", { name: "React" }));
       expect(react).toHaveBeenCalledOnce();
       expect(
