@@ -2614,3 +2614,52 @@ it("rechecks plugin add policy while its confirmation is open", async () => {
   expect(change).not.toHaveBeenCalled();
   expect(t.publish).not.toHaveBeenCalled();
 });
+
+it.each(["failed", "settled"] as const)(
+  "keeps plugin member-change scrolling scoped to its own completion (%s)",
+  async (outcome) => {
+    const t = await setup();
+    const gate = deferred();
+    const change = vi.fn(async () => {
+      await gate.promise;
+      if (outcome === "failed") throw new Error("Record access unavailable");
+    });
+    pluginPicker(t, {
+      memberActions: { canAdd: false, pending: false, change },
+      accessSettings: null,
+    });
+    const scrolls = vi.mocked(HTMLElement.prototype.scrollIntoView);
+    memberData().scrollTop = 24;
+    const dialog = await t.choose("Set to viewing only");
+    await settledStep();
+    try {
+      await t.user.click(
+        within(dialog).getByRole("button", { name: "Set to viewing only" }),
+      );
+      expect(change).toHaveBeenCalledOnce();
+      expect(memberData().scrollTop).toBe(24);
+      expect(actionsFor("Morgan")).toHaveFocus();
+    } finally {
+      await act(async () => gate.resolve());
+    }
+    if (outcome === "settled") {
+      await vi.waitFor(() =>
+        expect(screen.getByRole("button", { name: "Done" })).toBeEnabled(),
+      );
+      t.query.mockRejectedValue(new Error("Read failed"));
+      await act(async () => t.session.memberAdministration.refresh(id));
+    }
+    await screen.findAllByText(
+      outcome === "failed" ? "Record access unavailable" : "Read failed",
+    );
+    const actions = actionsFor("Morgan");
+    expect(actions).toHaveFocus();
+    expect(memberData().scrollTop).toBe(24);
+    expect(
+      scrolls.mock.calls.filter(
+        (_, call) => scrolls.mock.contexts[call] === actions,
+      ),
+    ).toEqual(outcome === "failed" ? [[{ block: "nearest" }]] : []);
+    expect(t.publish).not.toHaveBeenCalled();
+  },
+);

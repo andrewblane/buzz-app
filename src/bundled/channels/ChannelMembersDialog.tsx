@@ -1550,7 +1550,9 @@ export function ChannelMembersDialog({
   // A confirmed change's own error appears above the list and shortens it.
   // When the change settles, keep its member's Actions in view, unless focus
   // or the list has moved since the return.
-  const operationStatus = administration.operation?.status;
+  const operationStatus = memberPending
+    ? "pending"
+    : administration.operation?.status;
   useLayoutEffect(() => {
     const kept = keepInView.current;
     if (!kept || operationStatus === "pending") return;
