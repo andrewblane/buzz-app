@@ -88,7 +88,13 @@ export function useActivityIndicator(
     );
   });
   const liveAgents = liveDetails
-    .filter(([, value]) => value.roots.every(matches))
+    .filter(
+      ([agent, value]) =>
+        value.roots.every(matches) &&
+        workingRequests(activity, agent, row.channelId, row.threadRootId).every(
+          (ids) => !ids.length || ids.some((id) => requestIds.has(id)),
+        ),
+    )
     .map(([agent]) => agent);
   const live = liveDetails.length > 0;
   useActivityTypingReplacement(

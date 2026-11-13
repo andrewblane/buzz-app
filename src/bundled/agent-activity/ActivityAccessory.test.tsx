@@ -2873,3 +2873,98 @@ it("keeps the Solo follow-up bubble when older work belongs to an observed threa
     f.dispose();
   }
 });
+
+it("keeps an observed Solo thread busy when another request has live recorded history", () => {
+  const local = createLocalAgentActivity();
+  const f = fixture(local);
+  const t = threadParts(f);
+  const choices = t.session.agentChoices;
+  const library = {
+    ...choices.snapshot(),
+    identities: [
+      {
+        pubkey: A,
+        name: "Blossom",
+        managed: false,
+        execution: "remote" as const,
+        runtime: "other/provider",
+      },
+    ],
+  };
+  Object.assign(t.session, {
+    agentChoices: { ...choices, snapshot: () => library },
+  });
+  const first = local.begin({
+    scope: "test",
+    agent: A,
+    channelId: "c",
+    messageId: root,
+    threadRootId: root,
+    soloChat: true,
+  });
+  first.started();
+  first.reply("update");
+
+  const second = local.begin({
+    scope: "test",
+    agent: A,
+    channelId: "c",
+    messageId: next,
+    threadRootId: next,
+    soloChat: true,
+  });
+  second.step("Read", "thread.txt");
+  const rows = [
+    {
+      ...f.props.message,
+      id: "update",
+      authorId: A,
+      request: root,
+      audience: "agents" as const,
+      content: "Checking the first request",
+    },
+  ];
+  const agents = new Set([A]);
+  function Flow() {
+    const presentation = useActivityPresentation(
+      rows,
+      t.session.agentActivity,
+      agents,
+    );
+    const group = presentation.groups[0];
+    if (!group) throw new Error("Missing first request history");
+    expect(group.requestId).toBe(root);
+    expect(group.liveParticipants).toContain(A);
+    return (
+      <>
+        {t.group(group, false)}
+        <MessageRow
+          row={{ ...f.props.message, id: next, replyCount: 1 }}
+          session={t.session}
+          profile={undefined}
+          media={() => undefined}
+          onOpenLink={f.props.open}
+          onOpenThread={() => {}}
+          day={false}
+          retry={undefined}
+        />
+      </>
+    );
+  }
+  const view = render(
+    <ActivityIndicatorPresentation>
+      <Flow />
+    </ActivityIndicatorPresentation>,
+  );
+  try {
+    expect(
+      screen.getByRole("button", {
+        name: /View thread: 1 reply.*Blossom working/,
+      }),
+    ).toBeVisible();
+    expect(document.querySelector("[data-thread-working]")).not.toBeNull();
+  } finally {
+    view.unmount();
+    t.dispose();
+  }
+});
