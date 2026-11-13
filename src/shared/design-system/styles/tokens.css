@@ -800,7 +800,7 @@
   --neutral-2: #f5f5f6; /* quiet compact controls, callouts, and grouping */
   --neutral-3: #e8e8e8; /* chrome track in light; bg-panel in dark */
   --neutral-4: #dadada; /* border-primary in light mode            */
-  --neutral-5: #cccccc; /* unused in light; float + selected, dark */
+  --neutral-5: #cccccc; /* floating control pressed, light; float + selected, dark */
   --neutral-6: #b3b3b3; /* border-primary in dark mode             */
   --neutral-7: #959595; /* no readers                              */
   --neutral-8: #808080; /* text-disabled                           */
@@ -1109,6 +1109,10 @@
   --text-on-selection: var(--neutral-1);
   --surface-text-selection-own: var(--neutral-12);
   --text-on-selection-own: var(--neutral-1);
+  /* Find on screen paints matches like a browser's find bar, dark text in both modes. */
+  --surface-find-match: var(--amber-5);
+  --surface-find-match-active: var(--orange-7);
+  --text-on-find-match: var(--neutral-12);
   --surface-message: var(--bubble-received);
   --surface-message-own: var(--bubble-neutral);
   --surface-message-hover: var(--bubble-hover);
@@ -1224,9 +1228,12 @@
   --affordance-panel-hover: var(--neutral-2);
   --affordance-floating-hover: var(--neutral-2);
   --affordance-popover-selected: var(--neutral-2);
-  --affordance-floating-control: var(--affordance-subtle);
-  --affordance-floating-control-hover: var(--affordance-subtle-hover);
-  --affordance-floating-control-pressed: var(--affordance-subtle-pressed);
+  /* A control floating over a white panel needs one step more than the
+     panel's subtle fill (neutral-2), which nearly disappears on white. Each
+     state steps once more so hover and press stay distinct. */
+  --affordance-floating-control: var(--neutral-3);
+  --affordance-floating-control-hover: var(--neutral-4);
+  --affordance-floating-control-pressed: var(--neutral-5);
   --affordance-floating-selected: var(--affordance-subtle-pressed);
   --border-floating-control: var(--border-prominent);
   --affordance-selected: var(--neutral-3);
@@ -1286,6 +1293,9 @@
   --text-on-selection: var(--neutral-1);
   --surface-text-selection-own: var(--neutral-12);
   --text-on-selection-own: var(--neutral-1);
+  --surface-find-match: var(--amber-9);
+  --surface-find-match-active: var(--orange-11);
+  --text-on-find-match: var(--neutral-1);
   --text-navigation: var(--neutral-11);
   --text-navigation-unread: var(--neutral-12);
   --text-standard: var(--neutral-12);
@@ -1632,6 +1642,9 @@
   --text-message-link: var(--accent-link);
   --surface-sidebar-selected: var(--accent-9);
   --text-sidebar-selected: var(--accent-contrast);
+  /* Corner counts keep a dark fill and readable accent ink in both modes. */
+  --surface-dock-count: var(--mono-2-dark);
+  --text-dock-count: var(--accent-link-dark);
   --text-sidebar-hover: var(--accent-12);
   --affordance-sidebar-hover: var(--accent-2);
   --affordance-accent-prominent: var(--accent-9);
@@ -1678,6 +1691,9 @@
   --text-message-link: var(--accent-link);
   --surface-sidebar-selected: var(--accent-9);
   --text-sidebar-selected: var(--accent-contrast);
+  /* Corner counts keep a dark fill and readable accent ink in both modes. */
+  --surface-dock-count: var(--mono-2-dark);
+  --text-dock-count: var(--accent-link-dark);
   --text-sidebar-hover: var(--accent-12);
   --affordance-sidebar-hover: var(--accent-3);
   --affordance-accent-prominent: var(--accent-9);
@@ -2059,6 +2075,8 @@
   --text-color-sidebar-selected: var(--text-sidebar-selected);
   --text-color-sidebar-hover: var(--text-sidebar-hover);
   --color-surface-sidebar-selected: var(--surface-sidebar-selected);
+  --color-surface-dock-count: var(--surface-dock-count);
+  --text-color-dock-count: var(--text-dock-count);
   --color-affordance-sidebar-hover: var(--affordance-sidebar-hover);
   --text-color-message-own: var(--text-message-own);
   --text-color-message-link-own: var(--text-message-link-own);
@@ -2106,6 +2124,7 @@
   --text-color-on-selection: var(--text-on-selection);
   --color-surface-text-selection-own: var(--surface-text-selection-own);
   --text-color-on-selection-own: var(--text-on-selection-own);
+  --text-color-on-find-match: var(--text-on-find-match);
   --color-affordance-prominent: var(--affordance-prominent);
   --color-affordance-prominent-hover: var(--affordance-prominent-hover);
   --color-affordance-prominent-pressed: var(--affordance-prominent-pressed);

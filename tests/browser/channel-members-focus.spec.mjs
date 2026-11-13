@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { watchPageErrors } from "./page-errors.mjs";
+import { animationsSettled } from "./animations.mjs";
 
 let server;
 let directory;
@@ -92,11 +93,7 @@ test("identity menus preserve modal focus and addition returns focus only to its
       name: /Open profile for Morgan/,
     });
     if (!moved) {
-      await dialog.evaluate(async (element) => {
-        await Promise.all(
-          element.getAnimations({ subtree: true }).map((a) => a.finished),
-        );
-      });
+      await animationsSettled(dialog, { subtree: true });
       await expect(add).not.toBeFocused();
       const before = await add.boundingBox();
       await identity.hover({ position: { x: 20, y: 20 } });
@@ -245,11 +242,7 @@ test("multiword candidate Add actions stay clickable", async ({ page }) => {
         name: new RegExp(`Add ${name} `),
       });
       await expect(add).toBeEnabled();
-      await dialog.evaluate(async (element) => {
-        await Promise.all(
-          element.getAnimations({ subtree: true }).map((a) => a.finished),
-        );
-      });
+      await animationsSettled(dialog, { subtree: true });
       const identity = dialog.getByRole("button", {
         name: new RegExp(`Open profile for ${name} `),
       });
@@ -471,17 +464,7 @@ for (const [width, reducedMotion] of [
         list.getByRole("button", { name: /^Open profile for/ }),
       ).toHaveCount(0);
       // Only wait for finite dialog entrance animations, never the loading spin.
-      await dialog.evaluate(async (element) => {
-        await Promise.all(
-          element
-            .getAnimations({ subtree: true })
-            .filter(
-              (animation) =>
-                animation.effect?.getComputedTiming().iterations !== Infinity,
-            )
-            .map((animation) => animation.finished),
-        );
-      });
+      await animationsSettled(dialog, { subtree: true });
       const before = {
         list: await list.boundingBox(),
         search: await search.boundingBox(),
@@ -887,7 +870,7 @@ test("member identity filter sits inside search and preserves modal focus", asyn
     });
     const search = dialog.getByRole("searchbox");
     const filter = dialog.getByRole("button", {
-      name: /^Filter people and agents:/,
+      name: /^Filter members:/,
     });
     await expect(filter).toBeVisible();
     expect(
@@ -907,9 +890,7 @@ test("member identity filter sits inside search and preserves modal focus", asyn
     const agents = page.getByRole("menuitemradio", { name: "Agents · 60" });
     await expect(all).toBeVisible();
     const popup = page.locator(".buzz-menu-popup");
-    await popup.evaluate(async (element) => {
-      await Promise.all(element.getAnimations().map((a) => a.finished));
-    });
+    await animationsSettled(popup);
     const popupBounds = await popup.boundingBox();
     const minimumWidth = await page.evaluate(
       () =>
@@ -928,9 +909,7 @@ test("member identity filter sits inside search and preserves modal focus", asyn
       await expect(popup).toHaveCount(0);
       await filter.click();
       await expect(popup).toBeVisible();
-      await popup.evaluate(async (element) => {
-        await Promise.all(element.getAnimations().map((a) => a.finished));
-      });
+      await animationsSettled(popup);
       const bounds = await popup.boundingBox();
       expect(bounds.width).toBe(popupBounds.width);
       expect(bounds.x + bounds.width).toBeCloseTo(
@@ -940,9 +919,7 @@ test("member identity filter sits inside search and preserves modal focus", asyn
     }
     await agents.click();
     await expect(filter).toBeFocused();
-    await expect(filter).toHaveAccessibleName(
-      "Filter people and agents: Agents",
-    );
+    await expect(filter).toHaveAccessibleName("Filter members: Agents");
     await expect(
       dialog.getByRole("region", { name: "People", exact: true }),
     ).toHaveCount(0);
@@ -957,7 +934,7 @@ test("member identity filter sits inside search and preserves modal focus", asyn
     await expect(search).toBeFocused();
     await search.fill("");
     await expect(filter).toBeVisible();
-    await expect(filter).toHaveAccessibleName("Filter people and agents: All");
+    await expect(filter).toHaveAccessibleName("Filter members: All");
     await expect(dialog.getByRole("listitem")).toHaveCount(51);
     await filter.click();
     await expect(all).toHaveAttribute("aria-checked", "true");
@@ -1005,10 +982,10 @@ test("member identity filter sits inside search and preserves modal focus", asyn
         element.scrollIntoView({ block: "center" }),
       );
       await profile.hover({ position: { x: 20, y: 20 } });
-      const profileFill = await profile.evaluate(async (element) => {
-        await Promise.all(element.getAnimations().map((a) => a.finished));
-        return getComputedStyle(element).backgroundColor;
-      });
+      await animationsSettled(profile);
+      const profileFill = await profile.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      );
       await action.hover();
       await expect(action).toHaveCSS("background-color", profileFill);
     }
@@ -1465,17 +1442,7 @@ test("member helper aligns with content and Owner stays beside a person's name",
           0,
         );
         // Measure the settled layout, not the dialog's open transition.
-        await dialog.evaluate(async (element) => {
-          await Promise.all(
-            element
-              .getAnimations({ subtree: true })
-              .filter(
-                (animation) =>
-                  animation.effect?.getComputedTiming().iterations !== Infinity,
-              )
-              .map((animation) => animation.finished),
-          );
-        });
+        await animationsSettled(dialog, { subtree: true });
         const nameBounds = await name.boundingBox();
         const ownerBounds = await owner.boundingBox();
         expect(ownerBounds.x).toBeGreaterThan(nameBounds.x + nameBounds.width);

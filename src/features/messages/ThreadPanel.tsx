@@ -67,6 +67,7 @@ import { JumpToLatestButton } from "./JumpToLatestButton";
 import { correctScrollTop } from "./scroll-correction";
 
 export type ThreadPanelProps = {
+  intro?: ReactNode;
   extensions?: ConversationExtensions | undefined;
   session: RelaySession;
   scope: string;
@@ -406,6 +407,7 @@ function RetainedThreadPanel(props: ThreadPanelProps) {
   );
 }
 function OwnedThreadPanel({
+  intro,
   session,
   extensions,
   scope,
@@ -482,6 +484,7 @@ function OwnedThreadPanel({
     </div>
   ) : view ? (
     <ThreadMessages
+      intro={intro}
       soloConversation={soloConversation}
       disabled={disabled}
       extensions={extensions}
@@ -510,6 +513,7 @@ function OwnedThreadPanel({
   );
 }
 function ThreadMessages({
+  intro,
   session,
   extensions,
   scope,
@@ -537,6 +541,7 @@ function ThreadMessages({
   onResolvedRoot,
   routePending,
 }: {
+  intro?: ReactNode;
   onResolvedRoot?: ThreadPanelProps["onResolvedRoot"];
   /** A route to this reader is on its way: until it lands, a reader not yet
    * shown stays hidden and unread rather than showing a place the route
@@ -1057,6 +1062,13 @@ function ThreadMessages({
   const rootActivity = rootId ? rootPresentation.byRow.get(rootId) : undefined;
   // A stopped note may follow only a reply that is always shown: collapsed
   // branches do not mount their rows.
+  // Each displayed level is projected alone, but a signed claim may name a
+  // request loaded at another level.
+  const loadedRows = useMemo(
+    () =>
+      snapshot.root ? [snapshot.root, ...snapshot.replies] : snapshot.replies,
+    [snapshot.root, snapshot.replies],
+  );
   const rootReplies = useMemo(
     () =>
       activityPresentation(
@@ -1064,8 +1076,10 @@ function ThreadMessages({
         activitySnapshot,
         agentPubkeys,
         rootId,
+        undefined,
+        loadedRows,
       ),
-    [tree, activitySnapshot, agentPubkeys, rootId],
+    [tree, activitySnapshot, agentPubkeys, rootId, loadedRows],
   );
   const liveAgents = useLiveConversationAgents(session, channelId, rootId);
   const lastMessage = publicMessageNeighbor(rows, rows.length, -1);
@@ -1483,6 +1497,7 @@ function ThreadMessages({
       parent ?? rootId,
       // A failure with replies needs its own visible branch controls.
       (failure) => !tree.children.get(failure.id)?.length,
+      loadedRows,
     );
     const groups = presentation.groups.filter((group) =>
       group.ids.every((id) => !tree.children.get(id)?.length),
@@ -1865,6 +1880,7 @@ function ThreadMessages({
           data-activity-history-scope=""
           inert={positioning}
         >
+          {snapshot.root && intro}
           {snapshot.root ? (
             <MessageRow
               viewer={session.viewer}

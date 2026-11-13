@@ -397,7 +397,7 @@ export function harnessKit(sources: Sources): HarnessKit {
         text: [
           resumed ? `${text}\n\n${RESUMED_PROMPT}` : text,
           ...notes,
-          turnNote(agent),
+          turnNote(agent, channelId, noteRoot),
         ]
           .filter(Boolean)
           .join("\n\n"),
@@ -454,7 +454,7 @@ export function harnessKit(sources: Sources): HarnessKit {
         });
         const added = sources.added();
         return respond(client, context, message, added, {
-          instructions: sessionHint(added, !!client.ownerAccess),
+          instructions: sessionHint(added),
         });
       };
     },
