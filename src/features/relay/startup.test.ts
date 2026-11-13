@@ -880,8 +880,12 @@ describe("device-local startup", () => {
     owners.push(owner);
     await owner.restore();
     const names = owner.session.profiles.snapshot();
-    expect(check).toHaveBeenCalledTimes(1);
-    expect(check.mock.calls[0]?.[0]).toHaveLength(3);
+    // Saved discovery and heads use the same check; one call holds the names.
+    const calls = check.mock.calls.filter(([claims]) =>
+      claims.some((claim) => claim.sig === first.sig),
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[0]).toHaveLength(3);
     expect(names.get(first.pubkey)?.name).toBe("Saved 0");
     // A host that accepts the record is trusted: the JS check never ran.
     expect(names.get(second.pubkey)?.name).toBe(

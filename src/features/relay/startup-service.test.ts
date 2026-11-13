@@ -29,12 +29,14 @@ function setup({
   verifyStored,
   relay = keypair(),
   verifiedProfiles,
+  forged = false,
 }: {
   saved?: boolean;
   profiles?: unknown[];
   verifyStored?: ReadTransport["verifyStored"];
   relay?: ReturnType<typeof keypair>;
   verifiedProfiles?: unknown;
+  forged?: boolean;
 } = {}) {
   const viewer = keypair();
   const events = [
@@ -55,7 +57,12 @@ function setup({
           savedAt: Date.now(),
           profiles: [],
           events: [
-            message(viewer, "alpha", "Saved history", 20),
+            forged
+              ? {
+                  ...message(viewer, "alpha", "Saved history", 20),
+                  sig: "0".repeat(128),
+                }
+              : message(viewer, "alpha", "Saved history", 20),
             bounds(relay, "alpha", "head", {
               has_more: false,
               next_cursor: null,
@@ -127,12 +134,16 @@ it("verifies cached profiles through the host before publishing while offline", 
     content: JSON.stringify({ name: "Saved member" }),
   });
   const checking = deferred<RelayEvent[]>();
-  const verifyStored = vi.fn(() => checking.promise);
+  const verifyStored = vi.fn(async (values: readonly unknown[]) =>
+    values.some((value) => (value as RelayEvent).kind === 0)
+      ? checking.promise
+      : values.map((value) => eventDto(JSON.parse(JSON.stringify(value)))),
+  );
   const { data, restored, source } = setup({
     profiles: [profile],
     verifyStored,
   });
-  await vi.waitFor(() => expect(verifyStored).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(verifyStored).toHaveBeenCalled());
   expect(data.snapshot().cached).toBeUndefined();
   checking.resolve([eventDto(JSON.parse(JSON.stringify(profile)))]);
   const snapshot = await restored();
@@ -164,9 +175,30 @@ it.each([false, true])(
     expect(snapshot.session.profiles.snapshot().get(profile.pubkey)?.name).toBe(
       "Saved member",
     );
-    if (verifyStored) expect(verifyStored).toHaveBeenCalledTimes(1);
+    // Profiles, discovery and the head each fall back on their own.
+    if (verifyStored) expect(verifyStored).toHaveBeenCalledTimes(3);
   },
 );
+it("restores cached discovery and heads from the host's batch check", async () => {
+  // Only the host's result can admit this head: JS would reject its signature.
+  const verifyStored = vi.fn(async (values: readonly unknown[]) =>
+    values.map((value) => structuredClone(value) as RelayEvent),
+  );
+  const { restored } = setup({ forged: true, verifyStored });
+  await restored();
+  expect(verifyStored).toHaveBeenCalledTimes(3);
+});
+it("drops a forged cached head when the host rejects it", async () => {
+  const verifyStored = vi.fn(async (values: readonly unknown[]) => {
+    if (values.some((value) => (value as RelayEvent).sig === "0".repeat(128)))
+      throw new Error("Relay supplied a malformed or invalidly signed event");
+    return values.map((value) => eventDto(JSON.parse(JSON.stringify(value))));
+  });
+  const { data } = setup({ forged: true, verifyStored });
+  await vi.waitFor(() => expect(data.snapshot().cached).toBe(true));
+  data.snapshot().session.channels.ensure("alpha");
+  expect(data.snapshot().session.channels.window("alpha").rows).toEqual([]);
+});
 it.each([
   ["the saved authority", true],
   ["no saved authority", false],

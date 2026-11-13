@@ -1387,8 +1387,22 @@ export function createChannelStore(
           ...record.events,
           ...(Array.isArray(record.notices) ? record.notices : []),
         ];
-        const verified: RelayEvent[] = [];
-        for (let index = 0; index < saved.length; index += 8) {
+        // A native host checks a head's signatures in one call off the main
+        // thread. Any host failure or bad record falls back to checking here.
+        const native = await transport
+          .verifyStored?.(saved)
+          .catch(() => undefined);
+        if (
+          disposed ||
+          generation !== epoch ||
+          accessVersion !== (accessVersions.get(record.channelId) ?? 0) ||
+          !allowed?.has(record.channelId)
+        )
+          return;
+        // The host answers for every record or none: this loop then runs
+        // only without its answer.
+        const verified: RelayEvent[] = native ? [...native] : [];
+        for (let index = verified.length; index < saved.length; index += 8) {
           const started = performance.now();
           const batch = saved.slice(index, index + 8).map(verifySaved);
           clientMetrics.cpu(
@@ -1617,8 +1631,18 @@ export function createChannelStore(
         byteSize(saved) > 8 * 1024 * 1024
       )
         return;
-      const events: RelayEvent[] = [];
-      for (let index = 0; index < saved.events.length; index += 12) {
+      // As for heads: the host answers for every record or none, and this
+      // loop checks them here only without its answer.
+      const native = await transport
+        .verifyStored?.(saved.events)
+        .catch(() => undefined);
+      if (disposed || generation !== epoch || discoveryObserved) return;
+      const events: RelayEvent[] = native ? [...native] : [];
+      for (
+        let index = events.length;
+        index < saved.events.length;
+        index += 12
+      ) {
         events.push(
           ...saved.events
             .slice(index, index + 12)
