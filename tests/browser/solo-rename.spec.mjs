@@ -17,8 +17,10 @@ test.use({
 
 const sidebar = (page) =>
   page.getByRole("navigation", { name: "Solo conversations" });
-const row = (page, id) =>
+const rowCopies = (page, id) =>
   sidebar(page).locator(`[data-solo-channel-id="${id}"]`);
+const row = (page, id) =>
+  sidebar(page).locator(`[data-solo-channel-id="${id}"]:not([inert] *)`);
 const input = (page) =>
   sidebar(page).getByRole("textbox", { name: "Chat name", exact: true });
 const composer = (page) =>
@@ -471,8 +473,13 @@ test("live conversion removes the old editor and permits renaming another Solo c
       content: "",
     }),
   );
+  // Inert exit copies are already absent from role queries but can still move
+  // the next row when they unmount. Wait for the actual editor to leave.
+  await expect(
+    sidebar(page).locator('form[aria-label="Rename Alpha"]'),
+  ).toHaveCount(0);
   await expect(input(page)).toHaveCount(0);
-  await expect(row(page, alpha)).toHaveCount(0);
+  await expect(rowCopies(page, alpha)).toHaveCount(0);
   await row(page, beta).dblclick();
   await expect(input(page)).toHaveValue("Beta");
   await expect(input(page)).toBeFocused();
@@ -531,7 +538,7 @@ test("collapsing a workspace waits for its rename save before hiding the editor"
     await expect(input(page)).toHaveCount(0);
     // The editor closes before its panel finishes collapsing. Wait for the
     // panel's unmount so the next double-click has a stationary target.
-    await expect(row(page, alpha)).toHaveCount(0);
+    await expect(rowCopies(page, alpha)).toHaveCount(0);
     await expect(row(page, beta)).toBeFocused();
     await row(page, beta).dblclick();
     await expect(input(page)).toHaveValue("Beta");
@@ -558,7 +565,7 @@ test("collapsing a workspace waits for its rename save before hiding the editor"
           .getByRole("button", { name: cancellation, exact: true })
           .click();
       // Wait for the closing transition's actual unmount, not just aria-expanded.
-      await expect(row(page, alpha)).toHaveCount(0);
+      await expect(rowCopies(page, alpha)).toHaveCount(0);
       await expect(work).toBeFocused();
       await work.click();
       await expect(row(page, alpha)).toBeVisible();
@@ -586,7 +593,7 @@ test("collapsing a workspace waits for its rename save before hiding the editor"
       await work.click();
       await input(page).focus();
       finishSave();
-      await expect(row(page, alpha)).toHaveCount(0);
+      await expect(rowCopies(page, alpha)).toHaveCount(0);
       await expect(work).toBeFocused();
     } finally {
       finishSave();
