@@ -713,18 +713,11 @@ int main(void) {
         );
         assert_eq!(found.as_deref(), Some("111"));
         assert_eq!(reads, 3);
+        // Descheduling can put the first read past the deadline, so only the
+        // outcome is asserted here; the reads above prove the re-read.
         let soon = Instant::now() + Duration::from_millis(50);
-        let mut reads = 0;
-        let found = inode_of(
-            || {
-                reads += 1;
-                Some(HEADER.to_owned())
-            },
-            want,
-            soon,
-        );
+        let found = inode_of(|| Some(HEADER.to_owned()), want, soon);
         assert_eq!(found, None);
-        assert!(reads > 1, "read {reads} times");
         assert!(Instant::now() >= soon);
         let twice = format!(
             "{HEADER}{exact}{}",
