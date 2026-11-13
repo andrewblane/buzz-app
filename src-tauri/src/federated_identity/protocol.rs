@@ -171,15 +171,15 @@ pub(crate) async fn json<T: DeserializeOwned>(
         Err("network-unavailable".into())
     })
     .await
-    .map_err(|_| {
-        Failure::from(
+    .unwrap_or_else(|_| {
+        Err(Failure::from(
             if terminal_headers.load(std::sync::atomic::Ordering::Relaxed) {
                 "adapter-refused"
             } else {
                 "network-timeout"
             },
-        )
-    })?
+        ))
+    })
     .map_err(|failure| Failure {
         rate_limited: rate_limited.load(std::sync::atomic::Ordering::Relaxed),
         ..failure
@@ -255,5 +255,40 @@ mod tests {
             requests, 2,
             "successful body transport failures should recover"
         );
+    }
+
+    #[tokio::test]
+    async fn a_retry_after_past_the_deadline_keeps_the_rate_limit() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let (answered, waiting) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                socket.read_exact(&mut byte).await.unwrap();
+                request.push(byte[0]);
+            }
+            socket
+                .write_all(b"HTTP/1.1 429 Test\r\nRetry-After: 60\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .await
+                .unwrap();
+            // The client closes only after classifying the 429.
+            let _ = socket.read_to_end(&mut Vec::new()).await;
+            answered.send(()).unwrap();
+        });
+        let client = client().unwrap();
+        let advance = async {
+            waiting.await.unwrap();
+            tokio::time::pause();
+            tokio::time::advance(DEADLINE + Duration::from_secs(1)).await;
+        };
+        let (result, ()) = tokio::join!(json::<serde_json::Value>(|| client.get(&url)), advance);
+        tokio::time::resume();
+        server.await.unwrap();
+        let failure = result.unwrap_err();
+        assert_eq!(failure.code, "network-timeout");
+        assert!(failure.rate_limited);
     }
 }
