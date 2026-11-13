@@ -879,3 +879,89 @@ it("a proof that can't be issued archives nothing", async () => {
   ).rejects.toThrow("Set up your identity first");
   expect(fixture.signedBy).toEqual([]);
 });
+
+it("a malformed replay cannot make retained archives current on a continuous reconnect", async () => {
+  const h = harness();
+  h.live.state({ status: "connected", routes: [] });
+  await drain(h, []);
+  h.live.receive([snapshot(5)]);
+  h.live.state({ status: "retrying", routes: [] });
+  h.live.state({ status: "connected", routes: [] });
+  h.live.receive(
+    [
+      signed(relay, {
+        kind: 13535,
+        created_at: 6,
+        content: "x",
+        tags: [["-"]],
+      }),
+    ],
+    { phase: "replay" },
+  );
+  h.live.established(undefined, { route: "profiles", continuous: true });
+  expect(await drain(h, [])).toBe(0);
+  expect(h.archives.snapshot().status).toBe("error");
+  expect(h.archives.state(target.pubkey)).toBe("unknown");
+  expect(archiveHides(h.archives, target.pubkey, viewer.pubkey)).toBe(true);
+  // Neither an old replay nor an explicit read of it can restore freshness.
+  h.live.receive([snapshot(5)]);
+  await read(h, [snapshot(5)]);
+  expect(h.archives.state(target.pubkey)).toBe("unknown");
+  h.live.receive([snapshot(7, [])]);
+  expect(h.archives.state(target.pubkey)).toBe("not-archived");
+});
+it.each([
+  ["an older snapshot", [snapshot(4)]],
+  ["the previous head", [snapshot(5)]],
+  ["no snapshot", []],
+  ["a failed read", new Error("unreachable")],
+])(
+  "a malformed live snapshot fences an outstanding read returning %s",
+  async (_, response) => {
+    const h = harness();
+    h.live.receive([snapshot(5)]);
+    const pending = h.archives.refresh();
+    const request = h.wire.next();
+    h.live.receive([
+      signed(relay, {
+        kind: 13535,
+        created_at: 6,
+        content: "x",
+        tags: [["-"]],
+      }),
+    ]);
+    if (response instanceof Error) request.fail(response);
+    else request.respond(response);
+    await pending;
+    expect(h.archives.snapshot().status).toBe("error");
+    expect(h.archives.state(target.pubkey)).toBe("unknown");
+    expect(archiveHides(h.archives, target.pubkey, viewer.pubkey)).toBe(true);
+    await read(h, [snapshot(7, [])]);
+    expect(h.archives.state(target.pubkey)).toBe("not-archived");
+  },
+);
+it("a malformed first live snapshot fences an empty outstanding read", async () => {
+  const h = harness();
+  const pending = h.archives.refresh();
+  const request = h.wire.next();
+  h.live.receive([
+    signed(relay, { kind: 13535, created_at: 6, content: "x", tags: [["-"]] }),
+  ]);
+  request.respond([]);
+  await pending;
+  expect(h.archives.snapshot().status).toBe("error");
+  expect(h.archives.state(target.pubkey)).toBe("unknown");
+});
+it("ensure records demand after a live snapshot so a cut reconnect repairs once", async () => {
+  const h = harness();
+  h.live.state({ status: "connected", routes: [] });
+  await drain(h, []);
+  h.live.receive([snapshot(5)]);
+  await h.archives.ensure();
+  expect(h.query).not.toHaveBeenCalled();
+  h.live.state({ status: "retrying", routes: [] });
+  h.live.state({ status: "connected", routes: [] });
+  h.live.established(undefined, { route: "profiles", continuous: false });
+  expect(await drain(h, [snapshot(6, [])])).toBe(1);
+  expect(h.archives.state(target.pubkey)).toBe("not-archived");
+});

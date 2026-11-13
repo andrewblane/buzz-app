@@ -313,13 +313,17 @@ export function createIdentityArchives(
       if (older(event) || event.id === head?.id) continue;
       const archived = snapshotArchives(event, authority);
       if (archived) apply(event, archived);
-      else
+      else {
+        // Malformed current evidence also fences older reads and replays.
+        head = { id: event.id, created_at: event.created_at };
+        resumable = false;
         publish({
           ...snapshot,
           status: "error",
           error:
             "Archive visibility is unknown. The relay sent an invalid snapshot.",
         });
+      }
     }
   }
   /** After the profiles route re-establishes. A continuous replay delivered
@@ -361,8 +365,12 @@ export function createIdentityArchives(
         };
       },
       state,
-      ensure: () =>
-        snapshot.status === "idle" ? refresh() : (pending ?? Promise.resolve()),
+      ensure: () => {
+        requested = true;
+        return snapshot.status === "idle"
+          ? refresh()
+          : (pending ?? Promise.resolve());
+      },
       refresh,
       /** Whether this community advertises an archive authority; fixed per session. */
       supported: available,
