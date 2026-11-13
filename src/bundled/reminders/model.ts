@@ -148,6 +148,22 @@ export function dueInputs(at: number | undefined) {
     : inputs;
 }
 
+/**
+ * Custom values that may still be the ones `due` was shown as. Local values
+ * can't say which pass through an hour repeated by daylight saving they mean,
+ * and parse as the first, so values still showing `due` keep its time.
+ */
+export function parseCustomOrDue(
+  date: string,
+  time: string,
+  due: number | undefined,
+) {
+  const at = parseCustomDateTime(date, time);
+  if (at === null || due === undefined) return at;
+  const shown = customInputs(due);
+  return shown.date === date && shown.time === time ? due : at;
+}
+
 /** A strictly future local date and time in unix seconds, or null. */
 export function parseCustomDateTime(date: string, time: string) {
   if (!date || !time) return null;

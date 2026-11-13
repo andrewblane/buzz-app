@@ -393,6 +393,75 @@ it("starts a custom snooze at the reminder's due time while it is ahead, else th
   }
 });
 
+it("saves an untouched custom snooze at its due time, even in the hour daylight saving repeats", async () => {
+  // In Los Angeles 01:30 on 2027-11-07 comes round twice: PDT, then PST.
+  const first = 1_825_576_200;
+  const second = first + 3600;
+  const zone = process.env.TZ;
+  process.env.TZ = "America/Los_Angeles";
+  vi.useFakeTimers({ toFake: ["Date"], now: (first - 3600) * 1000 });
+  try {
+    const user = userEvent.setup();
+    const open = (due: number) => {
+      cleanup();
+      const save = vi.fn(async (_notBefore: number) => {});
+      const props = {
+        title: "Snooze reminder",
+        cancelled: false,
+        save,
+        close: vi.fn(),
+        finalFocus: () => null,
+      };
+      const view = render(<SnoozeDialog {...props} due={due} />);
+      return {
+        saved: async () => {
+          await user.click(screen.getByRole("button", { name: "Save" }));
+          await waitFor(() => expect(props.close).toHaveBeenCalledOnce());
+          return save.mock.calls;
+        },
+        move: (to: number) =>
+          view.rerender(<SnoozeDialog {...props} due={to} />),
+      };
+    };
+    const date = () => screen.getByLabelText("Reminder date");
+    const time = () => screen.getByLabelText("Reminder time");
+    const enter = (value: string) =>
+      fireEvent.change(time(), { target: { value } });
+
+    const later = open(second);
+    expect(date()).toHaveValue("2027-11-07");
+    expect(time()).toHaveValue("01:30");
+    expect(await later.saved()).toEqual([[second]]);
+    const earlier = open(first);
+    expect(time()).toHaveValue("01:30");
+    expect(await earlier.saved()).toEqual([[first]]);
+    // An entered time is read as the hour's first pass, as anywhere else.
+    const edited = open(second);
+    enter("01:45");
+    expect(await edited.saved()).toEqual([[first + 900]]);
+    const restored = open(second);
+    enter("01:45");
+    enter("01:30");
+    expect(await restored.saved()).toEqual([[second]]);
+    // Another device moving the reminder leaves the fields, and what they
+    // stand for, as they opened.
+    const moved = open(second);
+    moved.move(second + 86_400);
+    expect(time()).toHaveValue("01:30");
+    expect(await moved.saved()).toEqual([[second]]);
+    // Between the two passes the fields would read as past, so the dialog
+    // starts from the next 9am instead.
+    vi.setSystemTime((first + 900) * 1000);
+    open(second);
+    expect(date()).toHaveValue("2027-11-07");
+    expect(time()).toHaveValue("09:00");
+  } finally {
+    vi.useRealTimers();
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  }
+});
+
 it("keeps a cancelled reminder's custom snooze open, with what was typed, but won't save it", async () => {
   const save = vi.fn(() => Promise.reject(new Error("offline")));
   const props = {

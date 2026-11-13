@@ -16,6 +16,7 @@ import {
   formatDue,
   nextDayAt9am,
   parseCustomDateTime,
+  parseCustomOrDue,
   shiftedFrom,
   todayDateString,
 } from "./model";
@@ -220,8 +221,9 @@ function CustomTimeFields({
 /**
  * Snooze's Custom…: moves a reminder to a date and time the person enters,
  * starting from its current due time while that is still ahead, otherwise the
- * next 9am, so an Overdue or Done reminder never opens on a past time. Once
- * the reminder is `cancelled`, the dialog keeps what was typed but won't save.
+ * next 9am, so an Overdue or Done reminder never opens on a past time. Saved
+ * untouched, it keeps that due time exactly. Once the reminder is `cancelled`,
+ * the dialog keeps what was typed but won't save.
  */
 export function SnoozeDialog({
   title,
@@ -239,7 +241,9 @@ export function SnoozeDialog({
   finalFocus(): HTMLElement | null;
 }) {
   const fields = useRef<HTMLDivElement>(null);
-  const [start] = useState(() => dueInputs(due) ?? defaultCustomInputs());
+  // The fields don't follow a reminder that moves while the dialog is open.
+  const [opened] = useState(due);
+  const [start] = useState(() => dueInputs(opened) ?? defaultCustomInputs());
   const [date, setDate] = useState(start.date);
   const [time, setTime] = useState(start.time);
   const [pending, setPending] = useState(false);
@@ -247,7 +251,7 @@ export function SnoozeDialog({
   const custom = parseCustomDateTime(date, time);
   const submit = async () => {
     // The clock may have passed the entered time since the last render.
-    const at = parseCustomDateTime(date, time);
+    const at = parseCustomOrDue(date, time, opened);
     if (at === null || pending) return;
     setPending(true);
     setError(undefined);
