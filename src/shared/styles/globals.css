@@ -367,15 +367,15 @@
   }
   /* Split workspaces use the available canvas; readers retain their own measure. */
   .shell-workspace[data-side-panel],
-  .shell-workspace[data-list-column] {
+  .shell-workspace[data-full-width-workspace] {
     --shell-balance-gutter: 0rem;
   }
   .shell-workspace[data-side-panel] .shell-body > div,
-  .shell-workspace[data-list-column] .shell-body > div {
+  .shell-workspace[data-full-width-workspace] .shell-body > div {
     max-width: none;
   }
   /* Collection headers and rows own equal insets at both pane edges. */
-  .shell-workspace[data-list-column] .shell-body {
+  .shell-workspace[data-full-width-workspace] .shell-body {
     padding-inline: 0;
   }
   /* A full-width reader owns its edge insets, just as it does beside the list. */

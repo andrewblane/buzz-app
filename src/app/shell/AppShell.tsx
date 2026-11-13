@@ -532,6 +532,12 @@ function AppShellContent({
         }
         data-detail-container=""
         data-feed-layout={activityPage || undefined}
+        data-full-width-workspace={
+          !!listSection ||
+          activityPage ||
+          selected === "buzz.drafts-and-sent/drafts-sent" ||
+          undefined
+        }
         data-rail-open={visibleRail || undefined}
         data-rail-compact={compactRail || undefined}
         data-side-panel={sidePanels > 0 || undefined}
